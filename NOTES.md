@@ -7,9 +7,18 @@ learn something the next session would otherwise rediscover the hard way.
 
 ## Where things run
 
-- **Production:** Cloud Run, service `poken`, `us-central1`. Deploys are manual:
-  `gcloud builds submit --config cloudbuild.yaml` (builds the image, pushes it, deploys).
-  The service URL is printed at the end; `scripts/smoke-prod.mjs` defaults to it.
+- **Production:** https://poken-7skula3n3a-uc.a.run.app — Cloud Run service `poken`,
+  `us-central1`, in its own GCP project **`poken-app-260919`** (project number 619178789674,
+  billing "My Billing Account"). Deploys are manual:
+  `gcloud builds submit --config cloudbuild.yaml --project poken-app-260919`
+  (builds the image, pushes it, deploys). `scripts/smoke-prod.mjs` defaults to the URL.
+- **Project setup that was needed (once):** enable `run`, `cloudbuild`, `secretmanager`,
+  `containerregistry`, `artifactregistry`; create secret `gemini-api-key`; grant both
+  `619178789674-compute@developer.gserviceaccount.com` and
+  `619178789674@cloudbuild.gserviceaccount.com` the roles run.admin, iam.serviceAccountUser,
+  secretmanager.secretAccessor, storage.admin, artifactregistry.writer. The first
+  `builds submit` right after enabling APIs failed with PERMISSION_DENIED even as project
+  owner — propagation delay; the retry a minute later succeeded.
 - **One process** (`main.ts` → `api/server.ts`): Hono serves `public/` and `/api/*`, and the
   same `http.Server` upgrades `/ws/live` to a WebSocket. Nothing is written to disk.
 - **Local dev:** `npm run dev` (tsx watch on :8000). `npm run typecheck` runs strict `tsc`.
@@ -96,6 +105,11 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
 - Local: deadline handover with `DEV_MAX_DURATION_S=150` — reconnect, `Resuming session
   (1 Gemini handle)`, `Gemini Live session opened (solo, resumed)`, no re-greeting.
 - Production: WebSocket over the `/ws/live` rewrite (also reachable at `/api/server`).
+- Cloud Run (2026-09-19, project `poken-app-260919`): `/`, `/app.js`, `/api/topics` 200;
+  WebSocket session opens through the Cloud Run proxy, greeting + typed exchange + spoken reply
+  + `session_state` tokens; service shows timeout 3600, session affinity on, secret bound.
+- Local, same code, `SESSION_TIMEOUT_S=150`: in-place Gemini reopen (`debug_reopen`) keeps the
+  socket and the memory; request-timeout handover at 105s resumes with memory.
 - Not verified in a browser here: mic/VAD/echo-guard/camera paths (device capture is
   blocked in the tool browser) — only `wsSend` queuing changed on those paths.
 

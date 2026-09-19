@@ -1,9 +1,11 @@
 // Smoke test: a solo session that (1) survives an in-place Gemini reopen (debug_reopen,
 // non-production only) and (2) rides through the request-timeout handover with memory intact.
-// Usage: node scripts/smoke-prod.mjs   (BASE=wss://... to point elsewhere; takes ~5 min)
+// Usage: BASE=ws://localhost:8000 node scripts/smoke-prod.mjs   (local dev with SESSION_TIMEOUT_S=150; ~4 min)
+//        SKIP_REOPEN=1 node scripts/smoke-prod.mjs               (production: debug_reopen is ignored there,
+//        and the timeout handover only fires after 60 min — expect 'NO HANDOVER within 300 s')
 import WebSocket from 'ws';
 
-const BASE = process.env.BASE || 'wss://poken-19v33swnpq-uc.a.run.app';
+const BASE = process.env.BASE || 'wss://poken-7skula3n3a-uc.a.run.app';
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
 function connect(query, { resume } = {}) {

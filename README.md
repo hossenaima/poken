@@ -23,9 +23,10 @@ npm run dev            # http://localhost:8000
 Cloud Run, via Cloud Build:
 
 ```bash
-gcloud builds submit --config cloudbuild.yaml
+gcloud builds submit --config cloudbuild.yaml --project poken-app-260919
 ```
 
+Production: https://poken-7skula3n3a-uc.a.run.app (GCP project `poken-app-260919`).
 Needs the Secret Manager secret `gemini-api-key` in the project. `cloudbuild.yaml` sets the
 60-minute request timeout, session affinity (required for WebSockets), and
 `SESSION_TIMEOUT_S` to match the timeout.
