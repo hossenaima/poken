@@ -1,7 +1,10 @@
 // Runnable check for the language-switch and cleanup-guard helpers:
-//   npx tsx --env-file=.env scripts/test-language.ts   (server.ts needs the key at import)
+//   npx tsx --env-file=.env scripts/test-language.ts
+// (server.ts throws at import unless GEMINI_API_KEY is non-empty; no network calls are made,
+//  so any placeholder value in .env is enough to run these.)
 import assert from 'node:assert/strict';
 import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage } from '../api/server.js';
+import { mapScribeLanguage, segmentDelta, parseScribeEvent } from '../server/scribe.js';
 
 // explicit requests, including Gemini's fragmented ASR and CJK phrasing
 assert.equal(detectLanguageSwitchRequest('Can we switch to Chinese now?'), 'Simplified Chinese');
@@ -37,4 +40,38 @@ assert.equal(enforceTranscriptLanguage('葉綠素 absorbs 陽光', 'Simplified C
 assert.equal(enforceTranscriptLanguage('the water cycle', 'English'), 'the water cycle');
 assert.equal(enforceTranscriptLanguage('photosynthesis needs 陽光', 'English'), 'photosynthesis needs');
 assert.equal(enforceTranscriptLanguage('', 'Simplified Chinese'), '');
+// Scribe language codes → the 8 session languages; anything else is ignored
+assert.equal(mapScribeLanguage('en'), 'English');
+assert.equal(mapScribeLanguage('spa'), 'Spanish');
+assert.equal(mapScribeLanguage('zh'), 'Simplified Chinese');
+assert.equal(mapScribeLanguage('cmn-Hans'), 'Simplified Chinese');
+assert.equal(mapScribeLanguage('ja'), null);
+assert.equal(mapScribeLanguage(null), null);
+// Scribe re-sends the whole segment as it settles; only the new tail is ingested
+assert.equal(segmentDelta('the water', 'the water cycle'), ' cycle');
+assert.equal(segmentDelta('the water cycle', 'the water'), '');
+assert.equal(segmentDelta('', 'photosynthesis'), 'photosynthesis');
+// a revision that is not a forward extension is dropped rather than duplicated downstream
+assert.equal(segmentDelta('I scream', 'ice cream'), '');
+assert.equal(segmentDelta('a rewritten', 'completely different'), '');
+// Scribe event parsing: only final/committed segments carry transcript, partials are dropped
+assert.deepEqual(parseScribeEvent('{"message_type":"session_started","session_id":"x"}'), { kind: 'started' });
+assert.deepEqual(parseScribeEvent('{"message_type":"partial_transcript","text":"the wa"}'), { kind: 'ignore' });
+assert.deepEqual(parseScribeEvent('{"message_type":"final_transcript","text":"the water cycle"}'),
+  { kind: 'transcript', text: 'the water cycle', committed: false });
+assert.deepEqual(parseScribeEvent('{"message_type":"committed_transcript","text":"the water cycle."}'),
+  { kind: 'transcript', text: 'the water cycle.', committed: true });
+assert.deepEqual(parseScribeEvent('{"message_type":"committed_transcript_with_timestamps","language_code":"zh"}'),
+  { kind: 'language', language: 'Simplified Chinese' });
+assert.deepEqual(parseScribeEvent('{"message_type":"final_transcript_with_timestamps","language_code":"ja"}'), { kind: 'ignore' });
+assert.deepEqual(parseScribeEvent('{"message_type":"error","error":"auth_error"}'),
+  { kind: 'error', code: 'auth_error', permanent: true });
+assert.deepEqual(parseScribeEvent('{"message_type":"error","error":"internal_error"}'),
+  { kind: 'error', code: 'internal_error', permanent: false });
+// a rejected frame comes back as input_error, retryable unless the code itself is permanent
+assert.deepEqual(parseScribeEvent('{"message_type":"input_error","error":"Unexpected message type: commit"}'),
+  { kind: 'error', code: 'Unexpected message type: commit', permanent: false });
+assert.deepEqual(parseScribeEvent('{"message_type":"input_error","error":"auth_error"}'),
+  { kind: 'error', code: 'auth_error', permanent: true });
+assert.deepEqual(parseScribeEvent('not json'), { kind: 'ignore' });
 console.log('language + cleanup checks OK');
