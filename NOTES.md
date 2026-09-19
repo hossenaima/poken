@@ -12,6 +12,15 @@ learn something the next session would otherwise rediscover the hard way.
   billing "My Billing Account"). Deploys are manual:
   `gcloud builds submit --config cloudbuild.yaml --project poken-app-260919`
   (builds the image, pushes it, deploys). `scripts/smoke-prod.mjs` defaults to the URL.
+- **Deploying — two people deploy by hand, so the last deploy wins, even if its code is
+  older.** `builds submit` uploads your *working directory*, not GitHub. So: `git pull` first;
+  deploy only from a clean tree whose HEAD is pushed (`git status -sb` shows
+  `## main...origin/main` and nothing else); say so in chat before deploying; after, confirm
+  with `gcloud run services describe poken --region us-central1 --project poken-app-260919
+  --format="value(status.latestReadyRevisionName)"`. On 2026-09-19 two overlapping deploys
+  put a stale copy live for ~4 minutes (`poken-00005`) and silently rolled back a fix that was
+  already on `main`. To see what any revision actually shipped, its source tarball is kept in
+  `gs://poken-app-260919_cloudbuild/source/`.
 - **Project setup that was needed (once):** enable `run`, `cloudbuild`, `secretmanager`,
   `containerregistry`, `artifactregistry`; create secret `gemini-api-key`; grant both
   `619178789674-compute@developer.gserviceaccount.com` and
