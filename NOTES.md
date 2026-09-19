@@ -92,6 +92,16 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
 - **Teacher transcription is Gemini Live's `inputTranscription`**; an ElevenLabs Scribe
   integration was tried and removed (2026-09-19) — its punctuation and segment timing caused
   more transcript bugs than it fixed.
+- **The student cannot draw.** On-demand diagram generation was removed (2026-09-19): the image
+  model added seconds of latency to a request that also fired on phrases that were not requests,
+  and the sketch often did not match what the teacher had just explained. Gone: the image model
+  and `generateStudentDiagram`, request detection (`isDiagramRequest`, the spaceless fallback),
+  `buildDiagramBrief`, `triggerOnDemandDiagram`, `POST /api/diagram/test`, the `student_diagram`
+  and `diagram_frame` / `diagram_popup_*` frames, and the annotatable sketch popup in the client.
+  The prompt now tells the student to say it cannot draw and describe the picture in words.
+  The teacher's own whiteboard is untouched, and Learn Mode's `/visual` diagrams are a separate
+  feature that still works.
+
 - **No classroom mode.** Multi-student sessions (mic arbitration, N Live sessions,
   addressed-student locks) were the buggiest subsystem by far; the product is one student. Gone: `classroom`/`students` query params, the `student_speaking` /
   `student_turn_complete` / `student_interrupted` / `teacher_turn` / `classroom_audio` messages,

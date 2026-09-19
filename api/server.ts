@@ -58,7 +58,6 @@ const VIDEO_MODEL    = AUDIO_MODEL;  // same model; the video flag only picks pr
 const FAST_MODEL     = 'gemini-2.5-flash';
 // Heavier model for transcript cleanup only (accuracy over latency).
 const CLEANUP_MODEL  = process.env.CLEANUP_MODEL || 'gemini-2.5-pro';
-const IMAGE_MODEL    = 'gemini-3.1-flash-image';
 
 // ── Session timing constants — tuned empirically against real hardware; do not round ──
 const AUDIO_BLACKOUT_MS            = 1500;   // buffer teacher audio this long after Gemini onopen, then flush
@@ -336,7 +335,7 @@ You are NOT a blank slate. You come in with partial knowledge, possible misconce
 - If the teacher asks you a question back, redirect naturally: "I mean, I have a guess, but I'd rather hear you explain it properly."
 - Don't be sycophantic. "Great explanation!" is not something a real student says — they just nod and ask the next question.
 - Stay on topic. If you drift, the teacher will redirect you.
-- You have a whiteboard. If the teacher asks for a diagram, sketch, drawing or picture, say you'll sketch it (e.g. "Sure, let me sketch that") — never say you can't draw.
+- You cannot draw, sketch, or show pictures. If the teacher asks for one, say so in one short sentence and describe what you picture in words instead (e.g. "I can't sketch it, but in my head it's the arrows going one way").
 
 
 ${video ? GESTURE_INSTRUCTION.trim() : GESTURE_INSTRUCTION_VOICE_ONLY.trim()}
@@ -673,215 +672,6 @@ async function generateReflection(
   }
 }
 
-// ── Diagram generation ───────────────────────────────────────────────────────
-
-function extractImageFromResult(result: any): { base64: string; mimeType: string } | null {
-  // Strategy 1: standard candidates shape
-  const candidates = result?.candidates ?? [];
-  for (const cand of candidates) {
-    for (const part of (cand?.content?.parts ?? [])) {
-      if (part?.inlineData?.data) return { base64: part.inlineData.data, mimeType: part.inlineData.mimeType ?? 'image/png' };
-    }
-  }
-  // Strategy 2: result.response wrapper
-  const respCandidates = result?.response?.candidates ?? [];
-  for (const cand of respCandidates) {
-    for (const part of (cand?.content?.parts ?? [])) {
-      if (part?.inlineData?.data) return { base64: part.inlineData.data, mimeType: part.inlineData.mimeType ?? 'image/png' };
-    }
-  }
-  // Strategy 3: top-level parts (newer SDK)
-  for (const part of (result?.parts ?? [])) {
-    if (part?.inlineData?.data) return { base64: part.inlineData.data, mimeType: part.inlineData.mimeType ?? 'image/png' };
-  }
-  // Strategy 4: image property (some SDK versions)
-  if (result?.image?.imageBytes) {
-    const b64 = typeof result.image.imageBytes === 'string'
-      ? result.image.imageBytes
-      : Buffer.from(result.image.imageBytes).toString('base64');
-    return { base64: b64, mimeType: result.image.mimeType ?? 'image/png' };
-  }
-  return null;
-}
-
-/** What an on-demand diagram should depict: the student's latest utterance(s) and the
- *  teacher's explanatory turns before the request (the request itself is excluded). */
-export function buildDiagramBrief(sessionLog: SessionEntry[], topic: string): string {
-  const MAX = 400;
-  const lastStudent = sessionLog.map(e => e.role).lastIndexOf('student');
-  const student: string[] = [];
-  for (let i = lastStudent; i >= 0 && sessionLog[i].role === 'student'; i--) student.unshift(sessionLog[i].text);
-  const teacher: string[] = [];
-  for (let i = (lastStudent >= 0 ? lastStudent : sessionLog.length) - 1; i >= 0 && teacher.length < 2; i--) {
-    if (sessionLog[i].role === 'teacher') teacher.unshift(sessionLog[i].text);
-  }
-  const studentText = student.join(' ').trim().slice(0, MAX);
-  const teacherText = teacher.join(' ').trim().slice(0, MAX);
-  const parts: string[] = [];
-  if (studentText) parts.push(`Draw the concept the student just described: "${studentText}".`);
-  if (teacherText) parts.push(`The teacher explained: "${teacherText}".`);
-  parts.push(`Topic: ${topic}.`);
-  return parts.join(' ');
-}
-
-async function generateStudentDiagram(
-  ai: GoogleGenAI,
-  topic: string,
-  content: string,
-  studentName: string,
-  onDemand: boolean = false,
-): Promise<{ base64: string; mimeType: string; hasMistake: boolean } | null> {
-  const wordCount = content.trim().split(/\s+/).length;
-  console.log(`[Poken][DiagramGen] generateStudentDiagram | student=${studentName} | onDemand=${onDemand} | words=${wordCount}`);
-  if (!onDemand && wordCount < 15) {
-    console.log(`[Poken][DiagramGen] Skipped: word count ${wordCount} < 15 and not on-demand`);
-    return null;
-  }
-
-  const hasMistake = onDemand ? false : Math.random() < 0.25;
-
-  const mistakeClause = hasMistake
-    ? `\n\nIMPORTANT: Embed exactly ONE deliberate factual error in the diagram — a wrong arrow direction, an incorrect label, or a reversed relationship. Do NOT mark or highlight the error in any way.`
-    : '';
-
-  const contextText = onDemand
-    ? content
-    : `Student said: "${content.slice(0, 400)}"`;
-  const labelRule = onDemand
-    ? `\n- Labels must name the concepts above. Do NOT write the request, the words 'teacher' or 'student', or any sentence`
-    : '';
-
-  const prompt =
-    `Generate an image: a quick, messy whiteboard doodle (black marker on white) about "${topic}".\n\n` +
-    `${contextText}\n\n` +
-    `Style rules:\n` +
-    `- Maximum 3-5 short labels (1-3 words each, NO sentences)\n` +
-    `- Big simple shapes (circles, boxes, arrows) — like a student's quick doodle\n` +
-    `- Lots of white space — do NOT fill the image\n` +
-    `- Hand-drawn, imperfect, slightly crooked lines\n` +
-    `- NO paragraphs, NO bullet points, NO detailed text\n` +
-    `- Think: what a student scribbles in 15 seconds on a whiteboard` +
-    labelRule +
-    mistakeClause;
-
-  let timeoutHandle: ReturnType<typeof setTimeout>;
-  const timeoutPromise = new Promise<null>(resolve => {
-    timeoutHandle = setTimeout(() => {
-      console.log(`[Poken] generateStudentDiagram: TIMEOUT for ${studentName}`);
-      resolve(null);
-    }, 30000);
-  });
-
-  const genPromise = (async () => {
-    console.log(`[Poken] generateStudentDiagram: starting for ${studentName}`);
-    const result = await ai.models.generateContent({
-      model: IMAGE_MODEL,
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
-    });
-
-    // Log the full shape of the result for debugging
-    const topKeys = Object.keys(result || {});
-    console.log(`[Poken] generateStudentDiagram: result keys = [${topKeys.join(', ')}]`);
-
-    const img = extractImageFromResult(result);
-    if (img) {
-      console.log(`[Poken] generateStudentDiagram: got image (${img.mimeType}, ${img.base64.length} chars)`);
-      return { ...img, hasMistake };
-    }
-
-    // Log what we actually got
-    console.log(`[Poken] generateStudentDiagram: no image found. text=${(result?.text || '').slice(0, 200)}`);
-    return null;
-  })();
-
-  try {
-    const result = await Promise.race([genPromise, timeoutPromise]);
-    clearTimeout(timeoutHandle!); // cancel timeout if generation won the race
-    return result;
-  } catch (err) {
-    clearTimeout(timeoutHandle!);
-    console.error(`[Poken] generateStudentDiagram error for ${studentName}:`, err);
-    return null;
-  }
-}
-
-// ── On-demand diagram detection ─────────────────────────────────────────────
-
-// Only trigger diagram generation on EXPLICIT teacher requests — not incidental
-// words like "draw a conclusion" or "illustrate my point". Requires a clear
-// action verb + visual noun directed at the student.
-const DIAGRAM_REQUEST_PATTERNS = [
-  /\b(draw|sketch|make|create|generate|produce|build|put\s+together|give\s+(me|us))\s+(me\s+|us\s+)?(a\s+)?(diagram|picture|image|drawing|sketch|chart|graph|flowchart|figure|illustration)\b/i,
-  /\bshow\s+(me\s+|us\s+)?(a\s+)?(diagram|picture|sketch|drawing|chart|graph|flowchart|figure|illustration)\b/i,
-  /\b(can|could)\s+you\s+(please\s+)?(draw|sketch|make|create|generate|produce|build|put\s+together|give|show)\b/i,
-  /\b(can|could)\s+you\s+(please\s+)?(\w+\s+){1,4}?a\s+diagram\b/i,
-  /\bdiagram\s+(this|that)\b/i,
-  /\b(put|write|draw)\s+(it|that|this)\s+(on|on the)\s+(the\s+)?(board|whiteboard)\b/i,
-  /\bshow\s+(me\s+|us\s+)?(your\s+)?work\b/i,
-  /\bvisuali[sz]e\s+(it|this|that)\b/i,
-];
-
-/** Spaceless key phrases for diagram detection fallback.
- *  Gemini's input transcription often fragments words across chunks
- *  (e.g. "gene ra te me a dia gram"). Regex on the raw text fails.
- *  Fallback: strip ALL spaces from the text and check for these substrings. */
-const DIAGRAM_SPACELESS_PHRASES = [
-  // verb + (me +) (a +) noun — all lowercased, no spaces
-  ...[
-    'draw', 'sketch', 'make', 'create', 'generate', 'produce', 'build', 'puttogether', 'give',
-  ].flatMap(verb => [
-    'diagram', 'picture', 'image', 'drawing', 'sketch', 'chart',
-    'graph', 'flowchart', 'figure', 'illustration',
-  ].flatMap(noun => [
-    `${verb}${noun}`,       // "drawdiagram"
-    `${verb}a${noun}`,      // "drawadiagram"
-    `${verb}me${noun}`,     // "drawmediagram"
-    `${verb}mea${noun}`,    // "drawmeadiagram"
-    `${verb}us${noun}`,     // "giveusdiagram"
-    `${verb}usa${noun}`,    // "giveusadiagram"
-  ])),
-  // "show me/us a ..."
-  ...[
-    'diagram', 'picture', 'sketch', 'drawing', 'chart',
-    'graph', 'flowchart', 'figure', 'illustration',
-  ].flatMap(noun => [`show${noun}`, `showme${noun}`, `showmea${noun}`, `showus${noun}`, `showusa${noun}`]),
-  // "can/could you (please) ..."
-  ...['canyou', 'couldyou', 'canyouplease', 'couldyouplease'].flatMap(lead => [
-    'draw', 'sketch', 'make', 'create', 'generate', 'produce', 'build', 'puttogether', 'give', 'show',
-  ].map(verb => `${lead}${verb}`)),
-  // "diagram this/that"
-  'diagramthis', 'diagramthat',
-  // whiteboard
-  'putitontheboard', 'putitonthewhiteboard', 'putthisontheboard',
-  'putthatontheboard', 'drawitontheboard', 'drawitonthewhiteboard',
-  'writeitontheboard', 'writeitonthewhiteboard',
-  // other
-  'showmeyourwork', 'showusyourwork', 'showmework', 'showuswork',
-  'visualizeit', 'visualiseit', 'visualizethis', 'visualisethat',
-  'visualizethis', 'visualisethat',
-];
-
-export function isDiagramRequest(text: string): boolean {
-  // Primary: regex on original text (works when transcription is clean)
-  const regexMatch = DIAGRAM_REQUEST_PATTERNS.some(p => p.test(text));
-  if (regexMatch) {
-    const pattern = DIAGRAM_REQUEST_PATTERNS.find(p => p.test(text));
-    console.log(`[Poken][DiagramDetect] isDiagramRequest → true (regex: ${pattern})`);
-    return true;
-  }
-  // Fallback: strip ALL spaces and check for key phrases.
-  // This handles badly fragmented transcription like "gene ra te me a dia gram".
-  const stripped = text.replace(/\s+/g, '').toLowerCase();
-  const phraseMatch = DIAGRAM_SPACELESS_PHRASES.find(p => stripped.includes(p));
-  if (phraseMatch) {
-    console.log(`[Poken][DiagramDetect] isDiagramRequest → true (spaceless: "${phraseMatch}" found in "${stripped.slice(0, 80)}")`);
-    return true;
-  }
-  console.log(`[Poken][DiagramDetect] isDiagramRequest("${text.slice(0, 120)}") → false`);
-  return false;
-}
-
 // ── Vision refresh detection ────────────────────────────────────────────────
 const VISION_REFRESH_PATTERN = /\b(can you see|do you see|what do you see|look at this|are you seeing|are you looking|what am i showing)\b/i;
 const VISION_SPACELESS_PHRASES = [
@@ -895,54 +685,6 @@ function isVisionRefreshRequest(text: string): boolean {
   if (VISION_REFRESH_PATTERN.test(text)) return true;
   const stripped = text.replace(/\s+/g, '').toLowerCase();
   return VISION_SPACELESS_PHRASES.some(p => stripped.includes(p));
-}
-
-function triggerOnDemandDiagram(
-  ai: GoogleGenAI,
-  topic: string,
-  content: string,
-  studentName: string,
-  liveSession: any,
-  socket: WebSocket,
-  sendJson: (data: object) => void,
-) {
-  console.log(`[Poken][DiagramGen] triggerOnDemandDiagram called | student=${studentName} | topic="${topic}" | content="${content.slice(0, 100)}"`);
-
-  // Tell the student to acknowledge the request verbally.
-  // IMPORTANT: The native-audio model doesn't know it can generate images (a separate
-  // model handles that). Without strong instruction, it says "I can't draw." The prompt
-  // must override this by framing it as role-play — the student IS drawing on a whiteboard.
-  try {
-    liveSession.sendRealtimeInput({
-      text: `[SYSTEM: The teacher asked you to draw a diagram. You HAVE a whiteboard and you ARE drawing on it right now. The diagram is being generated automatically. Your ONLY job is to say ONE short sentence acknowledging you're drawing — e.g. "Sure, let me sketch that out!" or "Okay, drawing it now!" Do NOT say you cannot draw. Do NOT say you don't have drawing capabilities. Do NOT describe what you're drawing. Just briefly acknowledge and wait.]`,
-    });
-    console.log(`[Poken][DiagramGen] Sent acknowledgment prompt to ${studentName}'s Live session`);
-  } catch (e: any) {
-    console.error(`[Poken][DiagramGen] Failed to send acknowledgment to ${studentName}:`, e.message ?? e);
-  }
-
-  // Fire-and-forget diagram generation (on-demand = true to bypass word count check)
-  console.log(`[Poken][DiagramGen] Starting image generation with model=${IMAGE_MODEL}...`);
-  generateStudentDiagram(ai, topic, content, studentName, true).then(result => {
-    if (!result) {
-      console.warn(`[Poken][DiagramGen] generateStudentDiagram returned null for ${studentName}`);
-      return;
-    }
-    if (socket.readyState !== WebSocket.OPEN) {
-      console.warn(`[Poken][DiagramGen] Socket closed before diagram could be sent for ${studentName}`);
-      return;
-    }
-    sendJson({ type: 'student_diagram', studentId: studentName === 'Student' ? 'solo' : studentName, base64: result.base64, mimeType: result.mimeType });
-    console.log(`[Poken][DiagramGen] On-demand diagram generated & sent for ${studentName} (${result.mimeType}, ${result.base64.length} chars, mistake=${result.hasMistake})`);
-
-    // Send the diagram image to the Live session so the student can "see" its own diagram
-    try {
-      liveSession.sendRealtimeInput({ video: { data: result.base64, mimeType: result.mimeType } });
-      liveSession.sendRealtimeInput({ text: '[You just drew this diagram on the whiteboard. The teacher can see it and may draw on it or point at parts of it.]' });
-    } catch (_) {}
-  }).catch(err => {
-    console.error(`[Poken] On-demand diagram failed:`, err);
-  });
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -1088,24 +830,6 @@ function buildServer(): http.Server {
     const since = Number(c.req.query('since')) || 0;
     const filtered = since ? logRing.filter(l => l.ts > since) : logRing.slice();
     return c.json({ logs: filtered });
-  });
-
-  // Test diagram generation directly (useful for debugging)
-  app.post('/api/diagram/test', async (c) => {
-    try {
-      const body = await c.req.json<{ topic?: string; text?: string }>();
-      const topic = body?.topic || 'Photosynthesis';
-      const text = body?.text || 'So the plant takes in sunlight and carbon dioxide through its leaves, and then through chloroplasts it converts that energy into glucose and oxygen. The chlorophyll in the leaves is what makes them green and captures the light energy.';
-      console.log(`[Poken] /api/diagram/test: starting generation for topic="${topic}"`);
-      const content = buildDiagramBrief([{ role: 'student', name: 'Test', text, time: Date.now() }], topic);
-      const result = await generateStudentDiagram(ai, topic, content, 'Test', true);
-      if (!result) return c.json({ error: 'No image generated — check server logs for details' }, 500);
-      return c.json({ ok: true, mimeType: result.mimeType, base64Length: result.base64.length, hasMistake: result.hasMistake, base64: result.base64 });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('[Poken] /api/diagram/test error:', msg);
-      return c.json({ error: msg }, 500);
-    }
   });
 
   registerLearnRoutes(app, ai, normalizeSessionLanguage);
@@ -1548,11 +1272,6 @@ function buildServer(): http.Server {
       if (teacherTurns % 10 === 0) refreshDigestSummary().catch(() => {});
       pushSessionState();
 
-      if (isDiagramRequest(text)) {
-        console.log('[Poken] On-demand diagram requested via speech:', text.slice(0, 80));
-        triggerDiagramFromTeacher();
-      }
-
       if (isVisionRefreshRequest(text)) {
         console.log('[Poken] Vision refresh requested via speech:', text.slice(0, 80));
         sendJson({ type: 'request_screenshot' });
@@ -1572,12 +1291,6 @@ function buildServer(): http.Server {
       });
     }
 
-    function triggerDiagramFromTeacher() {
-      // The request sentence is the last log entry; the brief is built from what preceded it.
-      const content = buildDiagramBrief(sessionLog.slice(0, -1), topic);
-      if (session) triggerOnDemandDiagram(ai, topic, content, 'Student', session, socket, sendJson);
-    }
-
     async function onStudentSpeech(name: string, text: string) {
       if (!text) return;
       sessionLog.push({ role: 'student', name, text, time: Date.now() });
@@ -1595,10 +1308,6 @@ function buildServer(): http.Server {
       sessionLog.push({ role: 'teacher', name: 'Teacher', text: userText, time: Date.now() });
       lastExchangeAt = Date.now();
       pushSessionState();
-      if (isDiagramRequest(userText)) {
-        console.log('[Poken] On-demand diagram requested via text_input');
-        triggerDiagramFromTeacher();
-      }
       if (isVisionRefreshRequest(userText)) {
         console.log('[Poken] Vision refresh requested via text_input');
         sendJson({ type: 'request_screenshot' });
@@ -1844,8 +1553,6 @@ function buildServer(): http.Server {
           return;
         }
         case 'video_frame':
-        case 'diagram_frame':
-          // Relay unconditionally — gating on the diagram popup blinded the student during diagram review.
           if (typeof msg.base64 === 'string') sendImage(msg.base64);
           return;
         case 'vision_screenshot':
@@ -1854,9 +1561,6 @@ function buildServer(): http.Server {
             sendText(VISION_SCREENSHOT_NOTE);
           }
           return;
-        case 'diagram_popup_open':
-        case 'diagram_popup_closed':
-          return; // tracked client-side only
         case 'debug_reopen':
           // Test hook (never in production): exercise the in-place Gemini reopen on demand.
           if (process.env.NODE_ENV !== 'production') reopenGemini('debug_reopen');

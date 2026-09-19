@@ -46,8 +46,8 @@ team's review are all on the PR.
 | Coaching tips for typed teacher messages | [#9](https://github.com/poken-app/poken/issues/9) | [#13](https://github.com/poken-app/poken/pull/13) (merged; cooldown fix added in review) | [03a071b6](https://app.devin.ai/sessions/03a071b636564376b841392ef0c77215) |
 | Demo hardening: pinned jsPDF, persona/language recap, protected `/api/logs` | [#10](https://github.com/poken-app/poken/issues/10) | [#14](https://github.com/poken-app/poken/pull/14) (merged) | [c957bb8a](https://app.devin.ai/sessions/c957bb8a588c42a882c84dbea7600102) |
 | Remove the ElevenLabs Scribe integration (Gemini transcription only) | [#27](https://github.com/poken-app/poken/issues/27) | [#28](https://github.com/poken-app/poken/pull/28) (merged) | [0f39c396](https://app.devin.ai/sessions/0f39c396a9114c3fab286bcae8dbca52) |
-| Detect more diagram-request phrasings; student never refuses to draw | [#29](https://github.com/poken-app/poken/issues/29) | [#30](https://github.com/poken-app/poken/pull/30) (merged) | — |
-| On-demand diagrams drawn from the student's explanation, not the request | [#31](https://github.com/poken-app/poken/issues/31) | [#32](https://github.com/poken-app/poken/pull/32) (merged) | — |
+| Detect more diagram-request phrasings; student never refuses to draw *(feature later removed)* | [#29](https://github.com/poken-app/poken/issues/29) | [#30](https://github.com/poken-app/poken/pull/30) (merged) | — |
+| On-demand diagrams drawn from the student's explanation, not the request *(feature later removed)* | [#31](https://github.com/poken-app/poken/issues/31) | [#32](https://github.com/poken-app/poken/pull/32) (merged) | — |
 | Gemini transcription: trailing silence + settle so utterance tails aren't dropped | [#33](https://github.com/poken-app/poken/issues/33) | [#34](https://github.com/poken-app/poken/pull/34) (merged) | — |
 | Transcript chunks concatenated verbatim (approach corrected in review) | [#35](https://github.com/poken-app/poken/issues/35) | [#36](https://github.com/poken-app/poken/pull/36) (merged) | — |
 

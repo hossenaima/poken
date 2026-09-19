@@ -330,13 +330,6 @@ const compositeCanvas = document.createElement("canvas");
 compositeCanvas.width = 1280;
 compositeCanvas.height = 720;
 
-// Diagram frame streaming (annotations → AI vision)
-let diagramFrameInterval = null;
-let diagramPopupOpen = false;
-let lastDiagramDrawTime = 0;
-const DIAGRAM_FRAME_INTERVAL_MS = 2000;
-const DIAGRAM_DRAW_WINDOW_MS = 4000;
-
 // Transcript
 let transcriptEntryId = 0;
 let currentTeacherEntry = null;
@@ -2269,16 +2262,6 @@ function disconnect(keepScreen = false) {
   if (frameInterval) { clearInterval(frameInterval); frameInterval = null; }
   stopTimer();
   stopPlayback();
-  // Close diagram popup if open
-  const diagPopup = document.getElementById("diagramPopup");
-  if (diagPopup) {
-    diagPopup.classList.remove("visible", "diagram-fullscreen");
-    diagPopup.style.display = "none"; // force hide in case CSS class removal isn't enough
-  }
-  diagramPopupOpen = false;
-  stopDiagramFrameSending();
-  // Also clear any diagram thumbnail cards from the transcript
-  document.querySelectorAll(".t-diagram-card").forEach(el => el.remove());
   stopIdleCheck();
   if (idleCountdownInterval) { clearInterval(idleCountdownInterval); idleCountdownInterval = null; }
   hideTimeoutModal();
@@ -2342,7 +2325,7 @@ function beginClientHandover(token, reason) {
 }
 
 // Message types still worth applying from a socket that a handover has replaced.
-const STALE_SOCKET_OK = new Set(["audio", "transcript", "teacher_transcript", "turn_complete", "emotion", "coaching_tip", "student_diagram"]);
+const STALE_SOCKET_OK = new Set(["audio", "transcript", "teacher_transcript", "turn_complete", "emotion", "coaching_tip"]);
 
 /**
  * Open the session socket. `opts.resume` reconnects with the held resume token:
@@ -2647,12 +2630,6 @@ async function connect(opts = {}) {
         addCoachingTip(msg.tip);
       }
 
-      // Student diagram
-      if (msg.type === "student_diagram" && msg.base64) {
-        console.log(`[Poken][Diagram] Received student_diagram from ${msg.studentId} (${msg.mimeType || "image/png"}, ${msg.base64.length} chars)`);
-        showDiagramThumbnail(msg.studentId, msg.base64, msg.mimeType || "image/png");
-      }
-
       // Reflection
       if (msg.type === "reflection" && msg.data) {
         awaitingReflection = false;
@@ -2913,25 +2890,7 @@ if (sessionHomeBtn) {
 }
 
 
-// ── Diagram frame streaming + vision refresh ────────────────────────────────
-
-function startDiagramFrameSending() {
-  if (diagramFrameInterval) clearInterval(diagramFrameInterval);
-  diagramFrameInterval = setInterval(() => {
-    if (!diagramPopupOpen) return;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    // Only send if teacher drew recently
-    if (Date.now() - lastDiagramDrawTime > DIAGRAM_DRAW_WINDOW_MS) return;
-    const canvas = document.getElementById("diagramCanvas");
-    if (!canvas) return;
-    const base64 = canvas.toDataURL("image/jpeg", 0.5).split(",")[1];
-    try { ws.send(JSON.stringify({ type: "diagram_frame", base64 })); } catch (_) {}
-  }, DIAGRAM_FRAME_INTERVAL_MS);
-}
-
-function stopDiagramFrameSending() {
-  if (diagramFrameInterval) { clearInterval(diagramFrameInterval); diagramFrameInterval = null; }
-}
+// ── Vision refresh ──────────────────────────────────────────────────────────
 
 function captureAndSendScreenshot() {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -2951,12 +2910,6 @@ function captureAndSendScreenshot() {
   if (screenEl && screenEl.srcObject)    sources.push({ type: "screen", el: screenEl });
   const wbCanvas = document.getElementById("whiteboardCanvas");
   if (wbCanvas && wbCanvas.width > 0)    sources.push({ type: "whiteboard", el: wbCanvas });
-  // Include diagram if popup is open
-  const diagCanvas = document.getElementById("diagramCanvas");
-  const diagPopup = document.getElementById("diagramPopup");
-  if (diagPopup && diagPopup.classList.contains("visible") && diagCanvas) {
-    sources.push({ type: "diagram", el: diagCanvas });
-  }
 
   // Smart tiling — every source gets maximum pixels
   if (sources.length === 1) {
@@ -3004,311 +2957,3 @@ function captureAndSendScreenshot() {
   const base64 = shotCanvas.toDataURL("image/jpeg", 0.7).split(",")[1];
   try { ws.send(JSON.stringify({ type: "vision_screenshot", base64 })); } catch (_) {}
 }
-
-// ── Diagram popup ─────────────────────────────────────────────────────────────
-(function () {
-  const popup          = document.getElementById("diagramPopup");
-  const titlebar       = document.getElementById("diagramTitlebar");
-  const closeBtn       = document.getElementById("diagramCloseBtn");
-  const fullscreenBtn  = document.getElementById("diagramFullscreenBtn");
-  const canvas         = document.getElementById("diagramCanvas");
-  const toolbar        = document.getElementById("diagramToolbar");
-  const penBtn         = document.getElementById("diagPenBtn");
-  const eraserBtn      = document.getElementById("diagEraserBtn");
-  const textBtn        = document.getElementById("diagTextBtn");
-  const clearBtn       = document.getElementById("diagClearBtn");
-  const sizeSlider     = document.getElementById("diagSizeSlider");
-  const resizeHandle   = document.getElementById("diagramResizeHandle");
-
-  if (!popup || !canvas) return;
-  const ctx = canvas.getContext("2d");
-
-  // ── State ──────────────────────────────────────────────────────────────────
-  let diagTool         = "pen";
-  let diagColor        = "#000000";
-  let diagPenSize      = 3;
-  let diagDrawing      = false;
-  let diagLastX        = 0;
-  let diagLastY        = 0;
-  let baseImageData    = null;   // snapshot after diagram image is drawn (for clear)
-  let isDraggingDiagram   = false;
-  let isResizingDiagram   = false;
-  let dragOffX = 0, dragOffY = 0;
-  let resizeStartX = 0, resizeStartY = 0;
-  let resizeStartW = 0, resizeStartH = 0;
-
-  // Keep last received diagram for re-loading after resize/fullscreen
-  let lastDiagramBase64  = null;
-  let lastDiagramMime    = "image/png";
-
-  // ── Tool switching ──────────────────────────────────────────────────────────
-  function setDiagTool(t) {
-    diagTool = t;
-    [penBtn, eraserBtn, textBtn].forEach(b => b && b.classList.remove("active"));
-    if (t === "pen"    && penBtn)    penBtn.classList.add("active");
-    if (t === "eraser" && eraserBtn) eraserBtn.classList.add("active");
-    if (t === "text"   && textBtn)   textBtn.classList.add("active");
-    canvas.style.cursor = t === "eraser" ? "cell" : t === "text" ? "text" : "crosshair";
-  }
-
-  if (penBtn)    penBtn.addEventListener("click",    () => setDiagTool("pen"));
-  if (eraserBtn) eraserBtn.addEventListener("click", () => setDiagTool("eraser"));
-  if (textBtn)   textBtn.addEventListener("click",   () => setDiagTool("text"));
-
-  // ── Color swatches ──────────────────────────────────────────────────────────
-  if (toolbar) {
-    toolbar.querySelectorAll(".diag-color-swatch").forEach(swatch => {
-      swatch.addEventListener("click", () => {
-        toolbar.querySelectorAll(".diag-color-swatch").forEach(s => s.classList.remove("active"));
-        swatch.classList.add("active");
-        diagColor = swatch.dataset.color || "#000000";
-        if (diagTool === "eraser") setDiagTool("pen");
-      });
-    });
-  }
-
-  // ── Size slider ─────────────────────────────────────────────────────────────
-  if (sizeSlider) {
-    sizeSlider.addEventListener("input", () => { diagPenSize = parseInt(sizeSlider.value, 10) || 3; });
-  }
-
-  // ── Clear ───────────────────────────────────────────────────────────────────
-  if (clearBtn) {
-    clearBtn.addEventListener("click", () => {
-      if (baseImageData) {
-        ctx.putImageData(baseImageData, 0, 0);
-      } else {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-      }
-    });
-  }
-
-  // ── Close / fullscreen ──────────────────────────────────────────────────────
-  if (closeBtn) {
-    closeBtn.addEventListener("click", () => {
-      popup.classList.remove("visible");
-      diagramPopupOpen = false;
-      stopDiagramFrameSending();
-      // Notify server that diagram popup is closed
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        try { ws.send(JSON.stringify({ type: "diagram_popup_closed" })); } catch (_) {}
-      }
-    });
-  }
-  if (fullscreenBtn) {
-    fullscreenBtn.addEventListener("click", () => {
-      popup.classList.toggle("diagram-fullscreen");
-      fullscreenBtn.textContent = popup.classList.contains("diagram-fullscreen") ? "\u2716" : "\u26F6";
-      // Re-draw the diagram image into the now-resized canvas
-      if (lastDiagramBase64) {
-        setTimeout(() => loadDiagramIntoCanvas(lastDiagramBase64, lastDiagramMime), 50);
-      }
-    });
-  }
-
-  // ── Drawing events ──────────────────────────────────────────────────────────
-  function getCanvasPos(e) {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width  / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
-  }
-
-  canvas.addEventListener("mousedown", onDiagStart);
-  canvas.addEventListener("mousemove", onDiagMove);
-  canvas.addEventListener("mouseup",   onDiagEnd);
-  canvas.addEventListener("mouseleave", onDiagEnd);
-  canvas.addEventListener("touchstart", onDiagStart, { passive: false });
-  canvas.addEventListener("touchmove",  onDiagMove,  { passive: false });
-  canvas.addEventListener("touchend",   onDiagEnd);
-
-  function onDiagStart(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    lastDiagramDrawTime = Date.now(); // track for annotation streaming
-    const { x, y } = getCanvasPos(e);
-    if (diagTool === "text") {
-      const input = prompt("Enter text:");
-      if (input) {
-        ctx.font = `${diagPenSize * 5 + 10}px Inter, sans-serif`;
-        ctx.fillStyle = diagColor;
-        ctx.fillText(input, x, y);
-      }
-      return;
-    }
-    diagDrawing = true;
-    diagLastX   = x;
-    diagLastY   = y;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-  }
-
-  function onDiagMove(e) {
-    e.preventDefault();
-    if (!diagDrawing) return;
-    lastDiagramDrawTime = Date.now(); // track for annotation streaming
-    const { x, y } = getCanvasPos(e);
-    ctx.lineJoin = "round";
-    ctx.lineCap  = "round";
-    if (diagTool === "eraser") {
-      ctx.globalCompositeOperation = "destination-out";
-      ctx.lineWidth = diagPenSize * 6;
-      ctx.strokeStyle = "rgba(0,0,0,1)";
-    } else {
-      ctx.globalCompositeOperation = "source-over";
-      ctx.lineWidth   = diagPenSize;
-      ctx.strokeStyle = diagColor;
-    }
-    ctx.lineTo(x, y);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    diagLastX = x; diagLastY = y;
-  }
-
-  function onDiagEnd(e) {
-    if (diagDrawing) {
-      ctx.globalCompositeOperation = "source-over";
-      diagDrawing = false;
-    }
-  }
-
-  // ── Drag (titlebar) ─────────────────────────────────────────────────────────
-  if (titlebar) {
-    titlebar.addEventListener("mousedown", (e) => {
-      if (e.target.tagName === "BUTTON") return;
-      if (popup.classList.contains("diagram-fullscreen")) return;
-      isDraggingDiagram = true;
-      const rect = popup.getBoundingClientRect();
-      dragOffX = e.clientX - rect.left;
-      dragOffY = e.clientY - rect.top;
-      e.preventDefault();
-    });
-  }
-
-  // ── Resize handle ───────────────────────────────────────────────────────────
-  if (resizeHandle) {
-    resizeHandle.addEventListener("mousedown", (e) => {
-      if (popup.classList.contains("diagram-fullscreen")) return;
-      isResizingDiagram = true;
-      const rect = popup.getBoundingClientRect();
-      resizeStartX = e.clientX;
-      resizeStartY = e.clientY;
-      resizeStartW = rect.width;
-      resizeStartH = rect.height;
-      e.preventDefault();
-      e.stopPropagation();
-    });
-  }
-
-  document.addEventListener("mousemove", (e) => {
-    if (isDraggingDiagram) {
-      popup.style.left   = (e.clientX - dragOffX) + "px";
-      popup.style.top    = (e.clientY - dragOffY) + "px";
-      popup.style.bottom = "auto";
-      popup.style.right  = "auto";
-    }
-    if (isResizingDiagram) {
-      const newW = Math.max(300, resizeStartW + (e.clientX - resizeStartX));
-      const newH = Math.max(250, resizeStartH + (e.clientY - resizeStartY));
-      popup.style.width  = newW + "px";
-      popup.style.height = newH + "px";
-    }
-  });
-  document.addEventListener("mouseup", () => {
-    isDraggingDiagram = isResizingDiagram = false;
-  });
-
-  // ── Stop popup events reaching session ─────────────────────────────────────
-  popup.addEventListener("mousedown", (e) => e.stopPropagation());
-  popup.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: true });
-
-  // ── Load image into canvas ──────────────────────────────────────────────────
-  function loadDiagramIntoCanvas(base64, mimeType) {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const popupW = popup.offsetWidth   || 480;
-        const popupH = (popup.offsetHeight || 400) - (titlebar ? titlebar.offsetHeight : 32) - (toolbar ? toolbar.offsetHeight : 42);
-        canvas.width  = Math.max(popupW, 480);
-        canvas.height = Math.max(popupH, 250);
-        // Fill white background
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        // Scale image to fit, preserving aspect ratio
-        const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
-        const drawW = img.width  * scale;
-        const drawH = img.height * scale;
-        const drawX = (canvas.width  - drawW) / 2;
-        const drawY = (canvas.height - drawH) / 2;
-        ctx.drawImage(img, drawX, drawY, drawW, drawH);
-        // Snapshot after base image is drawn (for "clear annotations")
-        baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        resolve();
-      };
-      img.onerror = () => resolve();
-      img.src = `data:${mimeType};base64,${base64}`;
-    });
-  }
-
-  // ── Public: open popup with a diagram ──────────────────────────────────────
-  async function openDiagramPopup(base64, mimeType) {
-    lastDiagramBase64 = base64;
-    lastDiagramMime   = mimeType || "image/png";
-    // Reset position to default (bottom-right) unless user has moved it
-    if (!popup.style.left && !popup.style.top) {
-      popup.style.bottom = "80px";
-      popup.style.right  = "20px";
-    }
-    // Ensure visible before measuring dimensions
-    popup.classList.remove("diagram-fullscreen");
-    popup.classList.add("visible");
-    fullscreenBtn.textContent = "\u26F6";
-    setDiagTool("pen");
-    await loadDiagramIntoCanvas(base64, mimeType || "image/png");
-
-    // Start diagram annotation streaming
-    diagramPopupOpen = true;
-    startDiagramFrameSending();
-    // Notify server that diagram popup is open (pause regular video frames)
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      try { ws.send(JSON.stringify({ type: "diagram_popup_open" })); } catch (_) {}
-    }
-  }
-
-  // ── Public: show thumbnail card in transcript ───────────────────────────────
-  window.showDiagramThumbnail = function (studentId, base64, mimeType) {
-    const mime = mimeType || "image/png";
-    // Find the last transcript entry (the most recent student bubble) and append to it
-    const entries = transcriptBody ? transcriptBody.querySelectorAll(".t-entry") : [];
-    const targetEntry = entries.length ? entries[entries.length - 1] : null;
-
-    const card = document.createElement("div");
-    card.className = "t-diagram-card";
-
-    const thumb = document.createElement("img");
-    thumb.className = "t-diagram-thumb";
-    thumb.src = `data:${mime};base64,${base64}`;
-    thumb.alt = "Student sketch";
-
-    const btn = document.createElement("button");
-    btn.className = "t-diagram-open-btn";
-    btn.textContent = "\u270F\uFE0F Open & Annotate";
-
-    const openFn = () => openDiagramPopup(base64, mime);
-    thumb.addEventListener("click", openFn);
-    btn.addEventListener("click",   openFn);
-
-    card.appendChild(thumb);
-    card.appendChild(btn);
-
-    if (targetEntry) {
-      targetEntry.appendChild(card);
-    } else if (transcriptBody) {
-      transcriptBody.appendChild(card);
-    }
-    if (transcriptBody) transcriptBody.scrollTop = transcriptBody.scrollHeight;
-  };
-})();
