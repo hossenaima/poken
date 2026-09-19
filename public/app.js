@@ -157,6 +157,13 @@ const SERVER_EMOTION_STATES = new Set(["curious", "confused", "excited", "listen
 
 // ── State ────────────────────────────────────────────────────────────────────
 let selectedPersona  = "eager";
+const sessionPersonaEl = document.getElementById("sessionPersona");
+if (sessionPersonaEl) {
+  sessionPersonaEl.addEventListener("change", () => {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "set_persona", persona: sessionPersonaEl.value }));
+    else sessionPersonaEl.value = selectedPersona;
+  });
+}
 
 let ws               = null;
 let lastError        = null;
@@ -351,6 +358,7 @@ const MAX_TRANSCRIPT_CONTEXT_ITEMS = 10;
 let sessionTopic     = "";
 let sessionLanguage  = "English";
 let sessionMaterials = "";
+let sessionLearnNotes = "";   // the Learn Mode tree for this topic, compiled by learn.js
 let sessionStartTime = 0;
 let sessionDuration  = 0;
 let timerInterval    = null;
@@ -1914,6 +1922,8 @@ function hideTimeoutModal() {
 // ── Session lifecycle ────────────────────────────────────────────────────────
 function showSession(topic) {
   setupScreen.style.display = "none";
+  landingScreen.style.display = "none";   // Learn Mode starts sessions straight from the landing/learn screens
+  if (sessionPersonaEl) sessionPersonaEl.value = selectedPersona;
   if (ambientViz) ambientViz.stop();
   reflectionScreen.style.display = "none";
   if (reflectionLoadingScreen) reflectionLoadingScreen.classList.remove("visible");
@@ -2357,7 +2367,10 @@ async function connect(opts = {}) {
     stopSetupHardware();
     sessionTopic = resuming ? (resumeToken.topic || getSelectedTopic()) : getSelectedTopic();
     sessionLanguage = resuming ? (resumeToken.language || getSessionLanguage()) : getSessionLanguage();
-    sessionMaterials = materialsEl.value.trim();
+    // What the teacher studied in Learn Mode on this topic goes to the student ahead of any
+    // pasted notes, in the same materials_text frame (docs/LEARN_MODE_PLAN.md §3).
+    sessionLearnNotes = resuming ? "" : (window.pokenLearnNotes?.(sessionTopic) || "");
+    sessionMaterials = [sessionLearnNotes, materialsEl.value.trim()].filter(Boolean).join("\n\n---\n\n");
     cameraEnabled = useCameraEl.checked;
     whiteboardEnabled = useWhiteboardEl.checked;
     screenEnabled = false; // Screen share toggled on during session
@@ -2470,6 +2483,10 @@ async function connect(opts = {}) {
         updateActivity();
         startIdleCheck();
         resumeFailures = 0;
+        if (!resuming && sessionLearnNotes) {
+          showSessionToast("Your student has read your Learn notes on this topic", "success");
+          setTimeout(() => hideSessionToast(), 4000);
+        }
         if (resuming) {
           if (oldWs) { oldWs.onclose = null; try { oldWs.close(); } catch (_) {} oldWs = null; }
           handoverInProgress = false;
@@ -2506,6 +2523,14 @@ async function connect(opts = {}) {
       }
 
       // Mid-session language switch (requested or auto-detected): cleanup, resume and the UI follow.
+      if (msg.type === "persona_changed" && msg.persona) {
+        selectedPersona = msg.persona;   // the resume URL is built from this, so a handover keeps it
+        if (sessionPersonaEl) sessionPersonaEl.value = msg.persona;
+        showSessionToast(`Your student is now ${msg.persona}`, "success");
+        setTimeout(() => hideSessionToast(), 3000);
+        storeSessionForResume();
+      }
+
       if (msg.type === "language_changed" && msg.language) {
         sessionLanguage = msg.language;
         if (sessionLanguageEl) sessionLanguageEl.value = msg.language;

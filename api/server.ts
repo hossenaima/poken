@@ -8,6 +8,7 @@ import { GoogleGenAI, Modality } from '@google/genai';
 import * as types from '@google/genai';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Converter } from 'opencc-js';
+import { registerLearnRoutes } from '../server/learn.js';
 import { extractFromBuffer } from '../server/materials-extract.js';
 import {
   analyzePdfWithVision,
@@ -946,6 +947,8 @@ function buildServer(): http.Server {
     }
   });
 
+  registerLearnRoutes(app, ai, normalizeSessionLanguage);
+
   app.post('/api/cleanup-transcript', async (c) => {
     let text = '';
     let fallback = '';
@@ -1028,7 +1031,7 @@ function buildServer(): http.Server {
     const url = new URL(request.url || '/', 'http://localhost');
 
     const topic      = url.searchParams.get('topic')     || 'the topic the teacher will explain';
-    const persona    = url.searchParams.get('persona')   || 'eager';
+    let persona      = url.searchParams.get('persona')   || 'eager';  // live: set_persona switches it mid-lesson
     let language     = normalizeSessionLanguage(url.searchParams.get('language'));
     let rawTeacherWindow = '';   // last ~80 raw transcript chars: script detection across Gemini's one-character chunks
     let droppedRaw = '';         // raw text the language filter stripped this utterance; recovered if the language switches
@@ -1677,6 +1680,19 @@ function buildServer(): http.Server {
         case 'text_input':
           if (typeof msg.text === 'string' && msg.text.trim()) onTextInput(msg.text.trim());
           return;
+        case 'set_persona': {
+          // Mid-lesson persona switch, same mechanism as switchLanguage: a [SYSTEM] note, no reopen.
+          // The resume token carries `persona`, so a handover rebuilds with the new one.
+          const next = typeof msg.persona === 'string' ? msg.persona : '';
+          if (!PERSONA_TRAITS[next] || next === persona) return;
+          console.log(`[Poken] Persona ${persona} → ${next}`);
+          persona = next;
+          sendText(`[SYSTEM] The teacher changed which student you are. From now on, drop your previous persona entirely and take on this one:\n${PERSONA_TRAITS[next]}\nDo not announce or comment on the change — just continue the lesson as this student, keeping everything you have learned so far.`);
+          sendDebug('info', `Persona switched to ${next}`);
+          sendJson({ type: 'persona_changed', persona: next });
+          pushSessionState();
+          return;
+        }
         case 'media_state': {
           const parts: string[] = [];
           if (typeof msg.camera === 'boolean')     { mediaState.camera = msg.camera;         parts.push(`[MEDIA] Camera ${msg.camera ? 'ON' : 'OFF'}`); }

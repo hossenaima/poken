@@ -341,11 +341,31 @@ of persistence: the first half of the loop works before any database exists.
 
 **Phase 1 — Learn Mode vertical slice.** `start` + `deeper` + drag-select + streaming render
 + breadcrumbs. The tree lives in memory only. Proves the core interaction is pleasant before
-anything is saved.
+anything is saved. *Built:* `server/learn.ts` (one route, `POST /api/learn/explain`, SSE),
+`public/learn.js`, a `learn-screen` in `index.html`, three lines in `api/server.ts`.
+Simplification: **blocks are paragraphs** — the model writes prose split by blank lines and
+the client splits on them, so there is no structuring pass yet. Typed blocks with
+`responseSchema` arrive with web sources in Phase 3. "Teach this" skips the setup screen
+and starts the teaching session directly (topic + language carried over); the student
+persona is a dropdown in the session top bar and switches mid-lesson via a `set_persona`
+frame (a `[SYSTEM]` note, same mechanism as language switching — no Gemini reopen). The
+`materials_text` compile is Phase 2. The selection toolbar also has **Ask a question** (the
+same endpoint with a `question` field; answer-first, shorter), every node shows a spinner
+until its first words arrive (with a slow-connection note after 8s), and the reflection
+screen has **Back to learning**, which returns to the same in-memory tree — the first
+manual version of the Phase 5 return path.
 
 **Phase 2 — Learn → Teach handoff.** Client-side compiler (tree → about 30k chars of text) →
 sent as a `materials_text` frame (joined with any pasted notes), with topic and language
 prefilled. **The first half of the loop works here**, with no server change and no database.
+*Built:* `compileNotes()` in `public/learn.js` writes the tree in document order (each
+deep-dive right after its paragraph) as `## trail` sections under a one-line header, drops
+the deepest-then-oldest branches past 30k and says how many it left out. It is exposed as
+`window.pokenLearnNotes(topic)`; `connect()` in `app.js` calls it, so **the tree belongs to
+its topic** — Teach this, Teach Again and a setup-screen start on the same topic
+(case-insensitive) all carry it; a different topic gets nothing. A toast tells the teacher
+the student has read their notes. Verified: the student cited "my notes" and made its
+deliberate mistake against them ("chlorophyll absorbs green light the strongest").
 
 **Phase 3 — Web sources and the rest of the aids.** Two-pass grounding with citation chips,
 plus Simplify, Get images, key terms and suggested rabbit holes. Matches Learn About.

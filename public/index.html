@@ -1075,6 +1075,89 @@
     @media (max-width: 600px) {
       .session-toolbar { flex-wrap: wrap; }
     }
+
+    /* ── LEARN (Phase 1) ─────────────────────────── */
+    .landing-actions { display: flex; gap: 0.75rem; margin-top: 0.75rem; }
+    .landing-actions .landing-cta { margin-top: 0; min-width: 8.5rem; }
+    .session-persona {
+      font-family: inherit; font-size: 0.8rem; font-weight: 500; color: #374151; background: #fff;
+      border: 1px solid var(--poken-border-solid); border-radius: 8px; padding: 0.3rem 0.5rem; cursor: pointer;
+    }
+    .session-persona:focus { outline: none; border-color: #9CA3AF; }
+    #learn-screen { display: none; min-height: 100vh; background: #fff; }
+    .learn-shell { max-width: 44rem; margin: 0 auto; padding: 2rem 1.25rem 6rem; }
+    .learn-top { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+    .learn-back, .learn-teach {
+      font-family: inherit; font-size: 0.875rem; cursor: pointer; border-radius: 10px; padding: 0.55rem 0.9rem;
+    }
+    .learn-back { background: none; border: 1px solid var(--poken-border-solid); color: var(--poken-text-secondary); }
+    .learn-back:hover { color: var(--poken-text); }
+    .learn-teach { background: #111827; color: #fff; border: none; margin-left: auto; font-weight: 500; }
+    .learn-teach:disabled { opacity: 0.35; cursor: default; }
+    .learn-form { display: flex; gap: 0.5rem; flex: 1 1 100%; order: 2; }
+    .learn-form input, .learn-form select {
+      font-family: inherit; font-size: 0.9375rem; padding: 0.55rem 0.8rem; border: 1px solid var(--poken-border-solid);
+      border-radius: 10px; background: #fff; color: var(--poken-text);
+    }
+    .learn-form input { flex: 1 1 10rem; min-width: 8rem; }
+    .learn-form select { flex: 0 0 auto; max-width: 11rem; }
+    .learn-form input:focus, .learn-form select:focus { outline: none; border-color: #9CA3AF; }
+    #learnGoBtn {
+      font-family: inherit; font-size: 0.875rem; font-weight: 500; padding: 0.55rem 1rem; border: none;
+      border-radius: 10px; background: var(--poken-accent); color: #fff; cursor: pointer;
+    }
+    #learnGoBtn:disabled { opacity: 0.5; cursor: default; }
+    .learn-hint { margin: 1.25rem 0 0; font-size: 0.8125rem; color: #9CA3AF; }
+    .learn-node { margin-top: 1.25rem; }
+    .learn-node.child { margin: 0.75rem 0 1rem 0.25rem; padding-left: 1rem; border-left: 2px solid var(--poken-accent); }
+    .learn-crumb { font-size: 0.75rem; color: var(--poken-text-secondary); margin-bottom: 0.5rem; letter-spacing: 0.01em; }
+    .learn-crumb b { color: var(--poken-text); font-weight: 600; }
+    .learn-block { font-size: 1rem; line-height: 1.65; color: var(--poken-text); margin: 0 0 0.9rem; }
+    .learn-block::selection { background: rgba(255, 115, 85, 0.3); }
+    .learn-node.streaming .learn-block:last-of-type::after {
+      content: ''; display: inline-block; width: 0.5em; height: 1em; margin-left: 2px; vertical-align: text-bottom;
+      background: var(--poken-accent); animation: learnBlink 0.9s steps(2) infinite;
+    }
+    @keyframes learnBlink { 50% { opacity: 0; } }
+    .learn-error { color: #B91C1C; font-size: 0.875rem; margin: 0.5rem 0; }
+    .learn-toolbar {
+      position: absolute; z-index: 50; transform: translate(-50%, calc(-100% - 8px));
+      background: #111827; border-radius: 10px; padding: 0.25rem; box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+    }
+    .learn-toolbar::after {
+      content: ''; position: absolute; left: 50%; top: 100%; transform: translateX(-50%);
+      border: 6px solid transparent; border-top-color: #111827;
+    }
+    .learn-toolbar button {
+      font-family: inherit; font-size: 0.8125rem; font-weight: 500; color: #fff; background: none; border: none;
+      padding: 0.4rem 0.75rem; border-radius: 7px; cursor: pointer; white-space: nowrap;
+    }
+    .learn-toolbar button:hover { background: rgba(255,255,255,0.12); }
+    .learn-toolbar-actions { display: flex; gap: 0.125rem; }
+    .learn-ask { display: flex; gap: 0.25rem; align-items: center; }
+    /* A display rule beats the hidden attribute — without this both were always shown. */
+    .learn-toolbar [hidden] { display: none; }
+    .learn-ask input {
+      font-family: inherit; font-size: 0.8125rem; width: min(20rem, 70vw); padding: 0.4rem 0.6rem;
+      border: none; border-radius: 7px; background: rgba(255,255,255,0.12); color: #fff;
+    }
+    .learn-ask input::placeholder { color: rgba(255,255,255,0.55); }
+    .learn-ask input:focus { outline: 1px solid rgba(255,255,255,0.4); }
+    .learn-question { font-size: 0.9375rem; font-weight: 600; color: var(--poken-text); margin: 0 0 0.6rem; }
+    .learn-thinking {
+      display: flex; align-items: center; gap: 0.6rem; font-size: 0.875rem; color: var(--poken-text-secondary);
+      margin: 0.25rem 0 0.9rem;
+    }
+    .learn-spinner {
+      width: 16px; height: 16px; border-radius: 50%; flex: 0 0 auto;
+      border: 2px solid rgba(255,115,85,0.25); border-top-color: var(--poken-accent);
+      animation: learnSpin 0.8s linear infinite;
+    }
+    @keyframes learnSpin { to { transform: rotate(360deg); } }
+    #learnGoBtn .learn-spinner, .learn-teach .learn-spinner {
+      display: inline-block; width: 12px; height: 12px; vertical-align: -1px; margin-right: 0.4rem;
+      border-color: rgba(255,255,255,0.35); border-top-color: #fff;
+    }
   </style>
 </head>
 <body>
@@ -1088,7 +1171,46 @@
     <div class="landing-copy">
       <h1 class="landing-title">Poken</h1>
       <p class="landing-tagline">Teach it. Understand it.</p>
-      <button class="landing-cta" id="getStartedBtn">Get started</button>
+      <div class="landing-actions">
+        <button class="landing-cta" id="learnFirstBtn">Learn</button>
+        <button class="landing-cta" id="getStartedBtn">Teach</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LEARN (Phase 1) -->
+  <div id="learn-screen">
+    <div class="learn-shell">
+      <header class="learn-top">
+        <button class="learn-back" id="learnBackBtn" type="button">&larr; Back</button>
+        <form class="learn-form" id="learnForm">
+          <input type="text" id="learnTopic" placeholder="What do you want to learn?" autocomplete="off" />
+          <select id="learnLanguage" aria-label="Language">
+            <option value="English" selected>English</option>
+            <option value="Spanish">Spanish</option>
+            <option value="French">French</option>
+            <option value="German">German</option>
+            <option value="Portuguese">Portuguese</option>
+            <option value="Hindi">Hindi</option>
+            <option value="Arabic">Arabic</option>
+            <option value="Simplified Chinese">Simplified Chinese</option>
+          </select>
+          <button type="submit" id="learnGoBtn">Learn</button>
+        </form>
+        <button class="learn-teach" id="learnTeachBtn" type="button" disabled>Teach this &rarr;</button>
+      </header>
+      <p class="learn-hint" id="learnHint">Select any words in the explanation to go deeper on exactly that.</p>
+      <div id="learnTree"></div>
+    </div>
+    <div class="learn-toolbar" id="learnToolbar" hidden>
+      <div class="learn-toolbar-actions" id="learnToolbarActions">
+        <button type="button" id="learnDeeperBtn">Go deeper</button>
+        <button type="button" id="learnAskBtn">Ask a question</button>
+      </div>
+      <form class="learn-ask" id="learnAskForm" hidden>
+        <input type="text" id="learnAskInput" placeholder="Ask about the highlighted text…" autocomplete="off" maxlength="600" />
+        <button type="submit">Ask</button>
+      </form>
     </div>
   </div>
 
@@ -1219,6 +1341,11 @@
         <span class="session-topic-badge" id="sessionTopicLabel"></span>
       </div>
       <div class="session-top-right">
+        <select class="session-persona" id="sessionPersona" title="Change your student mid-session" aria-label="Student persona">
+          <option value="eager">🙋 Eager</option>
+          <option value="skeptic">🤨 Skeptic</option>
+          <option value="confused">😕 Confused</option>
+        </select>
         <span class="session-timer" id="sessionTimer">00:00</span>
         <div class="session-status">
           <div class="status-dot" id="statusDot"></div>
@@ -1477,6 +1604,7 @@
       <!-- Actions -->
       <div class="reflection-actions">
         <button class="reflection-btn primary" id="teachAgainBtn" type="button">&#x1F393; Teach Again</button>
+        <button class="reflection-btn" id="backToLearnBtn" type="button">&#x1F4DA; Back to learning</button>
         <button class="reflection-btn" id="changeTopicBtn" type="button">Change topic</button>
       </div>
     </div>
@@ -1521,5 +1649,6 @@
   </div>
 
   <script src="app.js"></script>
+  <script src="learn.js"></script>
 </body>
 </html>
