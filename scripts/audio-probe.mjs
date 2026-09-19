@@ -20,7 +20,7 @@ ws.on('message', async (d) => {
   console.log(stamp(), m.type, m.language || '', m.source || '', m.message ? m.message.slice(0, 70) : '');
   if (m.type === 'session_ready' && !ready) {
     ready = true;
-    await sleep(3500); // greeting first
+    await sleep(Number(process.env.PROBE_DELAY_MS) || 3500); // greeting first; PROBE_DELAY_MS=30000 exercises the idle-reopen path
     ws.send(JSON.stringify({ type: 'speech_start' }));
     for (let i = 0; i < pcm.length; i += 4096) { ws.send(pcm.subarray(i, i + 4096)); await sleep(128); }
     ws.send(JSON.stringify({ type: 'speech_end', media: { camera: false, whiteboard: false, screen: false } }));

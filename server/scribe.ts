@@ -146,6 +146,14 @@ export class ScribeTranscriber {
       this.socket = null;
       this.resolveCommitWaiters();
       if (this.stopped || this.failed) return;
+      // ElevenLabs closes an idle stream (code 1000, nothing pending) after ~20s of silence.
+      // Reconnecting immediately just churns every 20s of a quiet lesson; sendAudio() reopens
+      // the socket on the next utterance instead, queueing the first frames meanwhile.
+      if (code === 1000 && !this.uncommittedSince && !this.commitOutstanding) {
+        this.emitted = '';
+        this.cb.onDebug('info', 'Scribe idle stream closed; it reopens on the next speech');
+        return;
+      }
       this.scheduleReconnect(`socket closed (code ${code}${reason?.length ? ': ' + reason.toString().slice(0, 60) : ''})`);
     });
   }
