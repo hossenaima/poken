@@ -20,7 +20,6 @@ import {
   formatVideoForContext,
   isVideoMime,
 } from '../server/materials-video.js';
-import { ScribeTranscriber } from '../server/scribe.js';
 
 // ── Crash prevention: an unhandled throw would take down the whole process
 //    and every session on the instance. Log, never rethrow. ──
@@ -60,9 +59,6 @@ const FAST_MODEL     = 'gemini-2.5-flash';
 // Heavier model for transcript cleanup only (accuracy over latency).
 const CLEANUP_MODEL  = process.env.CLEANUP_MODEL || 'gemini-2.5-pro';
 const IMAGE_MODEL    = 'gemini-3.1-flash-image';
-// ElevenLabs Scribe transcribes the teacher when this is set; without it Gemini's own input
-// transcription is used, exactly as before.
-const ELEVENLABS_API_KEY = (process.env.ELEVENLABS_API_KEY || '').trim();
 
 // ── Session timing constants — tuned empirically against real hardware; do not round ──
 const AUDIO_BLACKOUT_MS            = 1500;   // buffer teacher audio this long after Gemini onopen, then flush
@@ -70,7 +66,6 @@ const COACHING_COOLDOWN_MS         = 10_000;
 const GREETING_KICK_DELAY_MS       = 400;
 const ERROR_FLUSH_DELAY_MS         = 500;    // let a fatal {type:'error'} reach the browser before closing
 const HANDOVER_LEAD_MS             = 45_000; // hand the client over this long before the request timeout
-const SCRIBE_COMMIT_WAIT_MS        = 1200;   // wait this long after speech_end for Scribe's committed segment
 // Must equal the Cloud Run --timeout (cloudbuild.yaml sets both to 3600). Override locally, e.g.
 // SESSION_TIMEOUT_S=120, to rehearse a client handover in two minutes.
 const SESSION_TIMEOUT_MS           = (Number(process.env.SESSION_TIMEOUT_S) || 3600) * 1000;
@@ -1040,13 +1035,6 @@ function buildServer(): http.Server {
       return Math.round(tokenEstimate.audioSec * 32 + tokenEstimate.textChars / 4 + tokenEstimate.frames * 258);
     }
 
-    // Teacher transcription: Scribe when the key is set, Gemini's inputTranscription otherwise —
-    // and again as soon as Scribe gives up.
-    let scribe: ScribeTranscriber | null = null;
-    function scribeOwnsTranscription(): boolean {
-      return !!scribe?.active;
-    }
-
     // Session ref
     let session: LiveSession | null = null;
     const sessionOpenedAt = new Map<string, number>();
@@ -1276,7 +1264,7 @@ function buildServer(): http.Server {
     }
 
     /** Teacher ASR chunk: language-enforced, logged, relayed. */
-    function ingestTeacherTranscript(rawChunk: string, opts: { final?: boolean } = {}) {
+    function ingestTeacherTranscript(rawChunk: string) {
       if (!teacherHasSpoken) {
         pendingTeacherTranscript.push({ text: rawChunk, ts: Date.now() });
         if (pendingTeacherTranscript.length > 20) pendingTeacherTranscript.shift();
@@ -1286,10 +1274,7 @@ function buildServer(): http.Server {
       const chunk = enforceTranscriptLanguage(rawChunk, language);
       if (!chunk) { if (rawChunk.trim()) droppedRaw += rawChunk; return; }
       teacherTranscriptBuf = joinChunk(teacherTranscriptBuf, chunk);
-      // A Scribe segment is the whole utterance, already clean: the client replaces its preview
-      // and skips the Gemini cleanup pass. Gemini's own chunks still append and get cleaned.
-      sendJson(opts.final ? { type: 'teacher_transcript', text: chunk, replace: true, clean: true } : { type: 'teacher_transcript', text: chunk });
-
+      sendJson({ type: 'teacher_transcript', text: chunk });
     }
 
     function flushBlackout() {
@@ -1303,9 +1288,6 @@ function buildServer(): http.Server {
     function onTeacherAudio(data: Buffer) {
       markTeacherSpoken('first audio');
       const b64 = data.toString('base64');
-      // Fork: Scribe hears every VAD-gated frame as it arrives, Gemini keeps its own blackout
-      // buffering below (the student must still hear the teacher).
-      scribe?.sendAudio(b64);
       const sinceOpen = Date.now() - sessionStartedAt;
       if (sinceOpen < AUDIO_BLACKOUT_MS) {
         blackoutBuffer.push(b64);
@@ -1330,15 +1312,6 @@ function buildServer(): http.Server {
         sendJson({ type: 'material_processed', filename: name });
         return `[The teacher has shared a file: "${name}".] (analysis failed: ${e.message})`;
       }
-    }
-
-    /** The tail of an utterance rides in on Scribe's committed segment — let it land before the turn closes. */
-    async function endTeacherTurn(media?: { camera?: boolean; whiteboard?: boolean; screen?: boolean }) {
-      if (scribeOwnsTranscription()) {
-        scribe!.commit();
-        await scribe!.waitForCommit(SCRIBE_COMMIT_WAIT_MS);
-      }
-      await onTeacherSpeechEnd(media);
     }
 
     async function onTeacherSpeechEnd(media?: { camera?: boolean; whiteboard?: boolean; screen?: boolean }) {
@@ -1485,29 +1458,7 @@ function buildServer(): http.Server {
       setTimeout(() => { try { getSess()?.sendRealtimeInput({ text }); } catch (_) {} }, GREETING_KICK_DELAY_MS);
     }
 
-    /** Open (or re-open) the Scribe socket. Idempotent: called on session start and every Gemini reopen. */
-    function ensureScribe() {
-      if (!ELEVENLABS_API_KEY || tearingDown) return;
-      if (!scribe) {
-        scribe = new ScribeTranscriber(ELEVENLABS_API_KEY, {
-          onTranscript: (text) => ingestTeacherTranscript(text, { final: true }),
-          onPartial: (text) => {
-            autoDetectLanguage(text);   // switch as soon as the script is visible, not only at commit
-            sendJson({ type: 'teacher_preview', text });
-          },
-          onLanguage: (next) => switchLanguage(next, 'detected'),
-          onFallback: (reason) => {
-            console.warn(`[Poken] Scribe unavailable (${reason}) — teacher transcription falls back to Gemini`);
-            sendDebug('warn', 'Teacher transcription fell back to Gemini');
-          },
-          onDebug: (level, message) => sendDebug(level, message),
-        });
-      }
-      scribe.start();
-    }
-
     async function startSolo(fullMaterials: string) {
-      ensureScribe();
       const instruction = getStudentInstruction(topic, persona, fullMaterials, video, language);
       let sess: LiveSession | null = null;
       try {
@@ -1526,7 +1477,7 @@ function buildServer(): http.Server {
           },
           onmessage: (message: types.LiveServerMessage) => {
             handleSessionMeta('solo', message);
-            if (message.serverContent?.inputTranscription?.text && !scribeOwnsTranscription()) {
+            if (message.serverContent?.inputTranscription?.text) {
               ingestTeacherTranscript(message.serverContent.inputTranscription.text);
             }
             if (message.serverContent?.outputTranscription?.text) {
@@ -1625,7 +1576,7 @@ function buildServer(): http.Server {
           // Interruption is NOT triggered here — speech_start fires on any noise.
           return;
         case 'speech_end':
-          endTeacherTurn(msg.media);
+          onTeacherSpeechEnd(msg.media);
           return;
         case 'request_reflection':
           if (reflectionRequested) return;
@@ -1702,7 +1653,6 @@ function buildServer(): http.Server {
       clearInterval(pingTimer);
       if (blackoutFlushTimer) { clearTimeout(blackoutFlushTimer); blackoutFlushTimer = null; }
       try { session?.close(); } catch (_) {}
-      scribe?.close();
     }
 
     socket.on('close', () => {
