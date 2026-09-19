@@ -10,7 +10,7 @@
   // window.POKEN_SUPABASE = { url, key } (set before this script) points at another
   // project, e.g. the local stack in tests.
   const override = window.POKEN_SUPABASE || {};
-  const SUPABASE_URL = override.url || "https://qdaqmtgfikkrtnjsjmnu.supabase.co";
+  const SUPABASE_URL = override.url || "https://poken.supabase.co";
   const SUPABASE_PUBLISHABLE_KEY = override.key || "sb_publishable_bv-rl4U4GZVc1j7gb8eTbQ_7BdK0hX8";
 
   const SUPABASE_JS_URL = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/+esm";

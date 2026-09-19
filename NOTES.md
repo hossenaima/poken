@@ -44,6 +44,13 @@ learn something the next session would otherwise rediscover the hard way.
   `sessionStorage` and rebuilt + saved on return. A page cannot show its own dialog on tab
   close (browsers allow only the generic *Leave site?* box), so the in-page banner is the
   warning. Google OAuth client ID/secret live in the Supabase dashboard, never in the repo.
+- **Supabase vanity subdomain:** the project answers on **`poken.supabase.co`** as well as its
+  ref domain (free on Pro; `supabase vanity-subdomains ... --experimental`). It exists so
+  Google's consent screen says "continue to poken.supabase.co" instead of the project ref.
+  `public/learn-store.js` uses it, so the OAuth callback is
+  `https://poken.supabase.co/auth/v1/callback` — that exact URI must be in the Google OAuth
+  client's authorized redirect URIs, or sign-in fails with `redirect_uri_mismatch`. The ref
+  domain keeps working; both are the same project.
 - **Supabase** (Learn Mode's knowledge tree; schema applied 2026-09-19): project `Poken`, ref
   `qdaqmtgfikkrtnjsjmnu`, `us-west-2`, in Jerry's Pro org. `supabase/config.toml` is committed;
   link state (`supabase/.temp`) is gitignored, so each machine links once:
