@@ -528,14 +528,34 @@ function extractImageFromResult(result: any): { base64: string; mimeType: string
   return null;
 }
 
+/** What an on-demand diagram should depict: the student's latest utterance(s) and the
+ *  teacher's explanatory turns before the request (the request itself is excluded). */
+export function buildDiagramBrief(sessionLog: SessionEntry[], topic: string): string {
+  const MAX = 400;
+  const lastStudent = sessionLog.map(e => e.role).lastIndexOf('student');
+  const student: string[] = [];
+  for (let i = lastStudent; i >= 0 && sessionLog[i].role === 'student'; i--) student.unshift(sessionLog[i].text);
+  const teacher: string[] = [];
+  for (let i = (lastStudent >= 0 ? lastStudent : sessionLog.length) - 1; i >= 0 && teacher.length < 2; i--) {
+    if (sessionLog[i].role === 'teacher') teacher.unshift(sessionLog[i].text);
+  }
+  const studentText = student.join(' ').trim().slice(0, MAX);
+  const teacherText = teacher.join(' ').trim().slice(0, MAX);
+  const parts: string[] = [];
+  if (studentText) parts.push(`Draw the concept the student just described: "${studentText}".`);
+  if (teacherText) parts.push(`The teacher explained: "${teacherText}".`);
+  parts.push(`Topic: ${topic}.`);
+  return parts.join(' ');
+}
+
 async function generateStudentDiagram(
   ai: GoogleGenAI,
   topic: string,
-  studentText: string,
+  content: string,
   studentName: string,
   onDemand: boolean = false,
 ): Promise<{ base64: string; mimeType: string; hasMistake: boolean } | null> {
-  const wordCount = studentText.trim().split(/\s+/).length;
+  const wordCount = content.trim().split(/\s+/).length;
   console.log(`[Poken][DiagramGen] generateStudentDiagram | student=${studentName} | onDemand=${onDemand} | words=${wordCount}`);
   if (!onDemand && wordCount < 15) {
     console.log(`[Poken][DiagramGen] Skipped: word count ${wordCount} < 15 and not on-demand`);
@@ -549,8 +569,11 @@ async function generateStudentDiagram(
     : '';
 
   const contextText = onDemand
-    ? `The teacher asked: "${studentText.slice(0, 400)}"`
-    : `Student said: "${studentText.slice(0, 400)}"`;
+    ? content
+    : `Student said: "${content.slice(0, 400)}"`;
+  const labelRule = onDemand
+    ? `\n- Labels must name the concepts above. Do NOT write the request, the words 'teacher' or 'student', or any sentence`
+    : '';
 
   const prompt =
     `Generate an image: a quick, messy whiteboard doodle (black marker on white) about "${topic}".\n\n` +
@@ -562,6 +585,7 @@ async function generateStudentDiagram(
     `- Hand-drawn, imperfect, slightly crooked lines\n` +
     `- NO paragraphs, NO bullet points, NO detailed text\n` +
     `- Think: what a student scribbles in 15 seconds on a whiteboard` +
+    labelRule +
     mistakeClause;
 
   let timeoutHandle: ReturnType<typeof setTimeout>;
@@ -700,13 +724,13 @@ function isVisionRefreshRequest(text: string): boolean {
 function triggerOnDemandDiagram(
   ai: GoogleGenAI,
   topic: string,
-  teacherText: string,
+  content: string,
   studentName: string,
   liveSession: any,
   socket: WebSocket,
   sendJson: (data: object) => void,
 ) {
-  console.log(`[Poken][DiagramGen] triggerOnDemandDiagram called | student=${studentName} | topic="${topic}" | text="${teacherText.slice(0, 100)}"`);
+  console.log(`[Poken][DiagramGen] triggerOnDemandDiagram called | student=${studentName} | topic="${topic}" | content="${content.slice(0, 100)}"`);
 
   // Tell the student to acknowledge the request verbally.
   // IMPORTANT: The native-audio model doesn't know it can generate images (a separate
@@ -723,7 +747,7 @@ function triggerOnDemandDiagram(
 
   // Fire-and-forget diagram generation (on-demand = true to bypass word count check)
   console.log(`[Poken][DiagramGen] Starting image generation with model=${IMAGE_MODEL}...`);
-  generateStudentDiagram(ai, topic, teacherText, studentName, true).then(result => {
+  generateStudentDiagram(ai, topic, content, studentName, true).then(result => {
     if (!result) {
       console.warn(`[Poken][DiagramGen] generateStudentDiagram returned null for ${studentName}`);
       return;
@@ -897,7 +921,8 @@ function buildServer(): http.Server {
       const topic = body?.topic || 'Photosynthesis';
       const text = body?.text || 'So the plant takes in sunlight and carbon dioxide through its leaves, and then through chloroplasts it converts that energy into glucose and oxygen. The chlorophyll in the leaves is what makes them green and captures the light energy.';
       console.log(`[Poken] /api/diagram/test: starting generation for topic="${topic}"`);
-      const result = await generateStudentDiagram(ai, topic, text, 'Test');
+      const content = buildDiagramBrief([{ role: 'student', name: 'Test', text, time: Date.now() }], topic);
+      const result = await generateStudentDiagram(ai, topic, content, 'Test', true);
       if (!result) return c.json({ error: 'No image generated — check server logs for details' }, 500);
       return c.json({ ok: true, mimeType: result.mimeType, base64Length: result.base64.length, hasMistake: result.hasMistake, base64: result.base64 });
     } catch (e) {
@@ -1368,7 +1393,7 @@ function buildServer(): http.Server {
 
       if (isDiagramRequest(text)) {
         console.log('[Poken] On-demand diagram requested via speech:', text.slice(0, 80));
-        triggerDiagramFromTeacher(text);
+        triggerDiagramFromTeacher();
       }
 
       if (isVisionRefreshRequest(text)) {
@@ -1390,8 +1415,10 @@ function buildServer(): http.Server {
       });
     }
 
-    function triggerDiagramFromTeacher(text: string) {
-      if (session) triggerOnDemandDiagram(ai, topic, text, 'Student', session, socket, sendJson);
+    function triggerDiagramFromTeacher() {
+      // The request sentence is the last log entry; the brief is built from what preceded it.
+      const content = buildDiagramBrief(sessionLog.slice(0, -1), topic);
+      if (session) triggerOnDemandDiagram(ai, topic, content, 'Student', session, socket, sendJson);
     }
 
     async function onStudentSpeech(name: string, text: string) {
@@ -1413,7 +1440,7 @@ function buildServer(): http.Server {
       pushSessionState();
       if (isDiagramRequest(userText)) {
         console.log('[Poken] On-demand diagram requested via text_input');
-        triggerDiagramFromTeacher(userText);
+        triggerDiagramFromTeacher();
       }
       if (isVisionRefreshRequest(userText)) {
         console.log('[Poken] Vision refresh requested via text_input');
