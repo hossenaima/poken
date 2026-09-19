@@ -1,5 +1,7 @@
 // Runnable check for the language-switch and cleanup-guard helpers:
-//   npx tsx --env-file=.env scripts/test-language.ts   (server.ts needs the key at import)
+//   npx tsx --env-file=.env scripts/test-language.ts
+// (server.ts throws at import unless GEMINI_API_KEY is non-empty; no network calls are made,
+//  so any placeholder value in .env is enough to run these.)
 import assert from 'node:assert/strict';
 import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage } from '../api/server.js';
 import { mapScribeLanguage, segmentDelta, parseScribeEvent } from '../server/scribe.js';
@@ -49,7 +51,9 @@ assert.equal(mapScribeLanguage(null), null);
 assert.equal(segmentDelta('the water', 'the water cycle'), ' cycle');
 assert.equal(segmentDelta('the water cycle', 'the water'), '');
 assert.equal(segmentDelta('', 'photosynthesis'), 'photosynthesis');
-assert.equal(segmentDelta('a rewritten', 'completely different'), 'completely different');
+// a revision that is not a forward extension is dropped rather than duplicated downstream
+assert.equal(segmentDelta('I scream', 'ice cream'), '');
+assert.equal(segmentDelta('a rewritten', 'completely different'), '');
 // Scribe event parsing: only final/committed segments carry transcript, partials are dropped
 assert.deepEqual(parseScribeEvent('{"message_type":"session_started","session_id":"x"}'), { kind: 'started' });
 assert.deepEqual(parseScribeEvent('{"message_type":"partial_transcript","text":"the wa"}'), { kind: 'ignore' });
@@ -64,5 +68,10 @@ assert.deepEqual(parseScribeEvent('{"message_type":"error","error":"auth_error"}
   { kind: 'error', code: 'auth_error', permanent: true });
 assert.deepEqual(parseScribeEvent('{"message_type":"error","error":"internal_error"}'),
   { kind: 'error', code: 'internal_error', permanent: false });
+// a rejected frame comes back as input_error, retryable unless the code itself is permanent
+assert.deepEqual(parseScribeEvent('{"message_type":"input_error","error":"Unexpected message type: commit"}'),
+  { kind: 'error', code: 'Unexpected message type: commit', permanent: false });
+assert.deepEqual(parseScribeEvent('{"message_type":"input_error","error":"auth_error"}'),
+  { kind: 'error', code: 'auth_error', permanent: true });
 assert.deepEqual(parseScribeEvent('not json'), { kind: 'ignore' });
 console.log('language + cleanup checks OK');

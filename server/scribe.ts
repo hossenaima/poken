@@ -11,6 +11,10 @@ const SCRIBE_MODEL = 'scribe_v2_realtime';
 const SCRIBE_URL = process.env.ELEVENLABS_STT_URL || 'wss://api.elevenlabs.io/v1/speech-to-text/realtime';
 
 const MAX_QUEUED_CHUNKS = 400;      // ~50s of 128ms frames held while the socket opens
+// Under commit_strategy=manual nothing but partials comes back until a commit lands, so segments
+// are cut mid-utterance too — otherwise the whole turn would only arrive after the browser's VAD
+// has already closed the teacher's transcript entry.
+const SEGMENT_COMMIT_MS = 1500;
 const MAX_CONSECUTIVE_FAILURES = 3; // reset by every `session_started`
 const RECONNECT_DELAYS_MS = [500, 1000, 2000];
 
@@ -38,8 +42,9 @@ export function segmentDelta(emitted: string, text: string): string {
   if (!text) return '';
   if (!emitted) return text;
   if (text.startsWith(emitted)) return text.slice(emitted.length);
-  if (emitted.startsWith(text)) return '';
-  return text;
+  // A revision that is not a forward extension cannot be applied: the transcript downstream is
+  // append-only, so re-sending it would duplicate the words instead of replacing them.
+  return '';
 }
 
 /** Errors that will not fix themselves on a retry. */
@@ -70,6 +75,8 @@ export function parseScribeEvent(raw: string): ScribeEvent {
       const language = mapScribeLanguage(msg.language_code);
       return language ? { kind: 'language', language } : { kind: 'ignore' };
     }
+    // `input_error` rejects a frame we sent; `error` is the session-level form.
+    case 'input_error':
     case 'error': {
       const code = String(msg.error || msg.message || 'error');
       return { kind: 'error', code, permanent: PERMANENT_ERRORS.has(code) };
@@ -98,6 +105,8 @@ export class ScribeTranscriber {
   private failures = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private commitWaiters: (() => void)[] = [];
+  private uncommittedSince = 0;             // 0 = nothing to commit
+  private commitOutstanding = false;
 
   constructor(private apiKey: string, private cb: ScribeCallbacks) {}
 
@@ -120,7 +129,8 @@ export class ScribeTranscriber {
     socket.on('open', () => {
       this.cb.onDebug('info', 'ElevenLabs Scribe transcription connected');
       const queued = this.queue.splice(0, this.queue.length);
-      for (const b64 of queued) this.publishAudio(b64);
+      if (queued.length) this.uncommittedSince = Date.now();
+      for (const b64 of queued) this.publishAudio(b64, false);
     });
     socket.on('message', (data: Buffer) => this.onMessage(data));
     socket.on('error', (e: any) => {
@@ -139,7 +149,10 @@ export class ScribeTranscriber {
   sendAudio(base64: string) {
     if (!this.active) return;
     if (this.socket?.readyState === WebSocket.OPEN) {
-      this.publishAudio(base64);
+      const now = Date.now();
+      if (!this.uncommittedSince) this.uncommittedSince = now;
+      const due = now - this.uncommittedSince >= SEGMENT_COMMIT_MS;
+      this.publishAudio(base64, due);
       return;
     }
     this.queue.push(base64);
@@ -147,16 +160,18 @@ export class ScribeTranscriber {
     if (!this.socket && !this.reconnectTimer) this.start();
   }
 
-  /** End of a teacher utterance (the browser's VAD): finalize the segment. */
+  /** End of a teacher utterance (the browser's VAD): finalize the open segment. */
   commit() {
-    if (!this.active || this.socket?.readyState !== WebSocket.OPEN) return;
-    try { this.socket.send(JSON.stringify({ message_type: 'commit' })); } catch (_) {}
+    if (!this.active || this.socket?.readyState !== WebSocket.OPEN || !this.uncommittedSince) return;
+    this.publishAudio('', true);
   }
 
   /** Resolves on the next committed transcript, or after `timeoutMs` — the tail of an utterance
    *  arrives with the commit, so the caller's turn handling waits briefly for it. */
   waitForCommit(timeoutMs: number): Promise<void> {
-    if (!this.active || this.socket?.readyState !== WebSocket.OPEN) return Promise.resolve();
+    if (!this.active || this.socket?.readyState !== WebSocket.OPEN || !this.commitOutstanding) {
+      return Promise.resolve();
+    }
     return new Promise<void>((resolve) => {
       let done = false;
       const finish = () => { if (done) return; done = true; clearTimeout(timer); resolve(); };
@@ -175,15 +190,20 @@ export class ScribeTranscriber {
   }
 
   // ── internals ────────────────────────────────────────────────────────────
-  private publishAudio(base64: string) {
+  /** The API has no `commit` message type: a commit is an audio frame (possibly empty) flagged as one. */
+  private publishAudio(base64: string, commit: boolean) {
     try {
       this.socket?.send(JSON.stringify({
         message_type: 'input_audio_chunk',
         audio_base_64: base64,
-        commit: false,
+        commit,
         sample_rate: 16000,
       }));
     } catch (_) {}
+    if (commit) {
+      this.uncommittedSince = 0;
+      this.commitOutstanding = true;
+    }
   }
 
   private onMessage(data: Buffer) {
@@ -201,6 +221,7 @@ export class ScribeTranscriber {
       case 'error':
         console.warn('[Poken][Scribe] error event:', event.code);
         if (event.permanent) this.giveUp(event.code);
+        else this.cb.onDebug('warn', `Scribe error: ${event.code}`);
         return;
       default:
         return;
@@ -219,12 +240,14 @@ export class ScribeTranscriber {
   }
 
   private resolveCommitWaiters() {
+    this.commitOutstanding = false;
     const waiters = this.commitWaiters.splice(0, this.commitWaiters.length);
     for (const w of waiters) w();
   }
 
   private scheduleReconnect(reason: string) {
     this.emitted = '';
+    this.uncommittedSince = 0;
     this.failures += 1;
     if (this.failures > MAX_CONSECUTIVE_FAILURES) { this.giveUp(reason); return; }
     const delay = RECONNECT_DELAYS_MS[Math.min(this.failures - 1, RECONNECT_DELAYS_MS.length - 1)];
