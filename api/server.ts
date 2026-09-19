@@ -1,0 +1,1519 @@
+import http from 'node:http';
+import type { IncomingMessage } from 'node:http';
+import { getRequestListener } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
+import { getDeadline } from '@vercel/functions';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { GoogleGenAI, Modality } from '@google/genai';
+import * as types from '@google/genai';
+import { WebSocketServer, WebSocket } from 'ws';
+import { extractFromBuffer } from '../server/materials-extract.js';
+import {
+  analyzePdfWithVision,
+  analyzeImageWithVision,
+  formatForContext,
+} from '../server/materials-vision.js';
+import {
+  processVideoMaterial,
+  formatVideoForContext,
+  isVideoMime,
+} from '../server/materials-video.js';
+
+// ── Crash prevention: an unhandled throw would take down the whole Fluid instance
+//    and every session sharing it. Log, never rethrow. ──
+process.on('uncaughtException', (err) => {
+  console.error('[Poken] UNCAUGHT EXCEPTION (process kept alive):', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[Poken] UNHANDLED REJECTION (process kept alive):', reason);
+});
+
+// ── Server log capture (ring buffer for /api/logs) ──────────────────────────
+const LOG_RING_MAX = 500;
+const logRing: { ts: number; level: string; msg: string }[] = [];
+function pushLog(level: string, ...args: any[]) {
+  const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+  logRing.push({ ts: Date.now(), level, msg });
+  if (logRing.length > LOG_RING_MAX) logRing.splice(0, logRing.length - LOG_RING_MAX);
+}
+const origLog = console.log.bind(console);
+const origError = console.error.bind(console);
+const origWarn = console.warn.bind(console);
+console.log = (...args: any[]) => { origLog(...args); pushLog('info', ...args); };
+console.error = (...args: any[]) => { origError(...args); pushLog('error', ...args); };
+console.warn = (...args: any[]) => { origWarn(...args); pushLog('warn', ...args); };
+
+const GOOGLE_API_KEY = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
+if (!GOOGLE_API_KEY) {
+  // Throw, never process.exit() — exiting kills the shared Fluid instance.
+  throw new Error('Missing GEMINI_API_KEY');
+}
+
+const AUDIO_MODEL    = 'gemini-2.5-flash-native-audio-latest';
+const VIDEO_MODEL    = 'gemini-2.5-flash-native-audio-latest';
+const FAST_MODEL     = 'gemini-2.5-flash';
+// Heavier model for transcript cleanup only (accuracy over latency).
+const CLEANUP_MODEL  = process.env.CLEANUP_MODEL || 'gemini-2.5-pro';
+const IMAGE_MODEL    = 'gemini-2.5-flash-image';
+
+// ── Session timing constants — tuned empirically against real hardware; do not round ──
+const AUDIO_BLACKOUT_MS            = 1500;   // buffer teacher audio this long after Gemini onopen, then flush
+const COACHING_COOLDOWN_MS         = 10_000;
+const GREETING_KICK_DELAY_MS       = 400;
+const ERROR_FLUSH_DELAY_MS         = 500;    // let a fatal {type:'error'} reach the browser before closing
+const HANDOVER_LEAD_MS             = 45_000; // hand over this long before the Vercel function deadline
+const DEV_MAX_DURATION_MS          = (Number(process.env.DEV_MAX_DURATION_S) || 780) * 1000; // dev.ts only; Vercel provides getDeadline()
+
+const VISION_SCREENSHOT_NOTE = '[Fresh screenshot attached. Answer the teacher\'s question briefly — just confirm what you can see in 1-2 short sentences. Do NOT describe the whole image. Do NOT repeat yourself if you already answered a similar question.]';
+
+type LiveSession = Awaited<ReturnType<GoogleGenAI['live']['connect']>>;
+
+/** Everything a fresh function invocation needs to pick a lesson back up. Held by the browser. */
+type ResumeToken = {
+  v: 1;
+  topic: string; persona: string; language: string; video: boolean;
+  handles: Record<string, string>;   // Gemini session-resumption handle, keyed 'solo'
+  digest: string;                    // fallback memory when a handle is missing or rejected
+  logTail: SessionEntry[];
+  elapsedMs: number;
+  issuedAt: number;
+};
+
+
+const VALID_EMOTIONS = new Set(['curious', 'confused', 'excited', 'listening', 'thinking']);
+
+const TOPICS = [
+  'Photosynthesis',
+  'Quadratic equations',
+  'Supply and demand',
+  "Newton's laws of motion",
+  'The water cycle',
+  'Cell division (mitosis/meiosis)',
+];
+
+type SessionEntry = { role: 'teacher' | 'student'; name: string; text: string; time: number };
+const SHARED_URL_REGEX = /https?:\/\/[^\s<>"')\]]+/gi;
+
+// ── Prompt builders ──────────────────────────────────────────────────────────
+
+const GESTURE_INSTRUCTION = `
+## Visual awareness
+You may receive a live image stream from the teacher — their camera (face, gestures, paper they hold up), an on-screen whiteboard, or a screen share. Pay close attention to what they write, draw, point at, or hold up. Only mention visible details when they are directly relevant to the explanation. Never narrate your perception process (do not say you are analyzing/looking at images, frames, feeds, or video). If it's camera-only, body language matters (uncertainty, pauses). If it's whiteboard-heavy, treat it like a classroom board: read labels and follow arrows and diagrams.
+
+**HONESTY ABOUT WHAT YOU CAN SEE:** You will receive system messages like "[MEDIA] Camera ON", "[MEDIA] Camera OFF", "[MEDIA] Whiteboard ON", etc. These tell you the current state. ONLY claim to see something if you are actually receiving image frames AND the corresponding media is marked ON. If a media source is OFF or you haven't received any images, you MUST say "I can't see that right now" when asked. NEVER fabricate or hallucinate visual content you haven't actually received. If the teacher asks "can you see my screen/whiteboard/camera?" and you haven't received any recent images, be honest and say no.
+
+**Non-verbal cues (video):** When camera is ON and you are receiving frames, treat the teacher's head nods as agreement or "yes" and head shakes as disagreement or "no". These count as full responses — if you see a clear nod, respond as if they said "yes"; if you see a clear shake, respond as if they said "no". You do not need them to say the words out loud.`;
+
+const GESTURE_INSTRUCTION_VOICE_ONLY = `
+## Senses
+This is a voice-only session. You can only hear the teacher.`;
+
+const ALLOWED_SESSION_LANGUAGES = new Set([
+  'English',
+  'Spanish',
+  'French',
+  'German',
+  'Portuguese',
+  'Hindi',
+  'Arabic',
+  'Simplified Chinese',
+]);
+
+function normalizeSessionLanguage(raw: string | null): string {
+  const value = (raw || '').trim();
+  return ALLOWED_SESSION_LANGUAGES.has(value) ? value : 'English';
+}
+
+function isAllowedCharForLanguage(ch: string, language: string): boolean {
+  // Whitespace and common punctuation/symbols
+  if (/\s/u.test(ch) || /\p{Script=Common}/u.test(ch) || /\p{Script=Inherited}/u.test(ch)) return true;
+  if (/\p{Number}/u.test(ch)) return true;
+
+  if (language === 'Simplified Chinese') return /\p{Script=Han}/u.test(ch);
+  if (language === 'Hindi') return /\p{Script=Devanagari}/u.test(ch);
+  if (language === 'Arabic') return /\p{Script=Arabic}/u.test(ch);
+
+  // English/Spanish/French/German/Portuguese are Latin-script sessions.
+  return /\p{Script=Latin}/u.test(ch);
+}
+
+function enforceTranscriptLanguage(text: string, language: string): string {
+  if (!text) return text;
+  let out = '';
+  for (const ch of text) {
+    if (isAllowedCharForLanguage(ch, language)) out += ch;
+  }
+  out = out
+    .replace(/\u200B|\u200C|\u200D|\uFEFF/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return out;
+}
+
+function languageInstruction(language: string): string {
+  if (language === 'Simplified Chinese') {
+    return `## Language
+Use Simplified Chinese (简体中文) for your spoken responses in this session.
+You MUST use simplified Chinese characters exclusively — never use traditional Chinese characters (繁體字).
+Keep terminology natural for Simplified Chinese.`;
+  }
+  return `## Language
+Use ${language} for your spoken responses in this session.
+Keep terminology natural for ${language}.`;
+}
+
+const MISTAKE_INSTRUCTION = `\n\n**Confident mistakes:** About 30% of your summary statements should contain a real error — wrong cause/effect, reversed relationship, missed condition, or confused concepts. State errors confidently; never hedge. When corrected, push back once naturally ("wait, but I thought that meant…") before conceding. Do NOT make a mistake every turn — vary: some turns genuine questions, some correct summaries, ~30% have a real error. Self-correction safety net: if you stated something wrong and the teacher has NOT corrected it after 1-2 exchanges (they accepted it, moved on, or built on it), surface it yourself: "Wait, actually I think I got that wrong earlier — didn't you say it was actually…?"`;
+
+const PERSONA_TRAITS: Record<string, string> = {
+  eager: `You are enthusiastic and eager to learn. You sometimes jump ahead and make confident guesses — which are occasionally wrong. You get excited when things click ("Oh! So that's like...!") and ask "but what about...?" a lot. You might over-simplify things in your head and need the teacher to correct you.` + MISTAKE_INSTRUCTION,
+
+  skeptic: `You are naturally skeptical and need to be convinced. You question assumptions ("but why is that true?"), ask about edge cases and exceptions, and push back when something feels hand-wavy. You're not rude — just intellectually demanding. You want evidence and logic, not just assertions.` + MISTAKE_INSTRUCTION,
+
+  confused: `You get lost easily and need things broken down step by step. You often circle back to earlier points, ask "wait, can you say that differently?", and need concrete real-world examples before abstract ideas land. You're not slow — you just have high standards for your own understanding.` + MISTAKE_INSTRUCTION,
+};
+
+function getStudentInstruction(topic: string, persona: string, materials: string, video: boolean, language: string): string {
+  const personaTrait = PERSONA_TRAITS[persona] || PERSONA_TRAITS.eager;
+
+  const hasVisualElements = materials.includes('### Visual Elements') || materials.includes('### Visual Summary');
+  const materialsSection = materials.trim()
+    ? `You have the teacher's notes and documents below (PDFs, slides, videos, etc. — kept as reference). You've gone through them but didn't fully understand everything — some parts confused you or didn't stick:\n\n---\n${materials.trim()}\n---\n\nRefer to these naturally as **your notes**: "In the handout it said… but I didn't get…" or "The slide about X — is that the same as what you're saying?" Do not recite long passages; treat them as something you half-understood and want the teacher to clarify.${hasVisualElements ? '\nWhen referencing visual elements from the materials, use the exact labels (e.g., "Figure 3 on page 5", "the chart showing...") so the teacher knows what you\'re referring to.' : ''}`
+    : `You have general background knowledge from school and everyday life, but you haven't formally studied this topic. You may have vague familiarity with some terms or ideas, but your understanding is patchy and you have real gaps.`;
+
+  return `You are a student in a "learn by teaching" session. The human is your teacher. They are going to explain "${topic}" to you.
+
+## CRITICAL RULES (never violate)
+1. NEVER use stage directions, brackets, or narrate inner states (e.g. "[listens intently]", "[nods]", "[thinking]", "[analyzing image]"). Only speak actual words out loud.
+2. NEVER speak unless the teacher has said something new via audio/speech. If the teacher is silent, stay COMPLETELY silent — produce NO audio output at all. Seeing a video frame or whiteboard image is NOT the teacher saying something. Only SPOKEN words from the teacher count as new input.
+3. NEVER hallucinate or invent teacher messages. If the teacher did not speak, do NOT generate a response. Do NOT imagine what the teacher might say or simulate their speech. If you are uncertain whether the teacher spoke, stay silent.
+4. NEVER say you are "analyzing", "looking at", or "examining" any image, video, feed, or file.
+5. Wait for the teacher to finish their full thought before responding. Do not jump in after a single sentence — wait for a clear pause.
+6. After your initial greeting, do NOT speak again until the teacher speaks first. Stay completely silent and wait.
+
+## Your persona
+${personaTrait}
+
+## Your prior knowledge
+${materialsSection}
+
+## Live in-class materials
+The teacher may share files during the lesson (handouts, images, slides). When you receive a message that the teacher has shared a study material file, look at it immediately and treat it as live class material for discussion: reference it in your questions or ask for clarification. Treat dropped-in files as "in-class work" or handouts just shared with you.
+If a shared file/link seems unrelated, unclear, or contradictory to the current topic, do not force a connection. Briefly flag the mismatch and ask what part to focus on.
+
+## How to behave like a real student
+
+You are NOT a blank slate. You come in with partial knowledge, possible misconceptions, and specific gaps. This is crucial — a real student has encountered ideas before; they just don't fully understand them yet.
+
+**Sound like a real person:**
+- Use natural, conversational speech.
+- Never use stage directions or bracketed actions (e.g. "[listens intently]" or "[nods]"). Speak only what you say aloud.
+- Vary your reactions — don't ask a question every single turn. Sometimes just react ("okay that actually makes sense") and let the teacher continue.
+- Show specific confusion: not "I don't understand" but "I'm following you up until the part about X — what happens there?"
+- Have genuine "aha!" moments: "Oh — so that's WHY it works like that. I was thinking it was just..."
+- Make wrong connections and let the teacher correct you: "Is this kind of like how [wrong analogy]?"
+- Do not invent teacher responses or pretend the teacher said something they did not.
+
+**Ask good questions:**
+- One question per turn, maximum. Pick the most important thing you don't understand.
+- Make your questions specific to what the teacher just said, not generic.
+- Sometimes summarise what you think you understood and check: "Okay so if I'm getting this right, it basically means... right?"
+- Reference things from prior reading if materials were provided.
+
+**Make confident, substantive mistakes:**
+- ~30% of your summary statements should contain a real error — wrong cause/effect, reversed relationship, missing a key condition, confused concepts.
+- State errors confidently. Never hedge ("I might be wrong but…").
+- When corrected, push back once naturally before conceding ("wait but I thought you said…").
+- Do NOT make mistakes every turn. Vary: some turns genuine questions, some correct summaries, ~30% have a real error.
+- **Self-correction safety net:** If you stated something wrong and the teacher has NOT corrected it after 1-2 exchanges — e.g. they accepted it as true, moved on, or built on it — you must gently surface it yourself: "Wait, actually I think I got that wrong earlier when I said X — didn't you say it was actually Y?" This prevents wrong information from going uncorrected.
+
+**Stay in your role:**
+- Never explain the topic yourself or give away the answer.
+- If the teacher asks you a question back, redirect naturally: "I mean, I have a guess, but I'd rather hear you explain it properly."
+- Don't be sycophantic. "Great explanation!" is not something a real student says — they just nod and ask the next question.
+- Stay on topic. If you drift, the teacher will redirect you.
+
+
+${video ? GESTURE_INSTRUCTION.trim() : GESTURE_INSTRUCTION_VOICE_ONLY.trim()}
+
+${languageInstruction(language)}
+
+## Transcription language lock
+Assume the teacher is speaking ${language}. If a phrase is ambiguous, prefer the ${language} interpretation over other languages.${language === 'Simplified Chinese' ? '\nAll Chinese text MUST use simplified characters (简体字). Never output traditional Chinese characters.' : ''}
+
+## Starting the session
+Your very first response must be a short spoken greeting (e.g. "Hi, ready when you are"). Do not say you cannot see or hear the teacher—greet them and indicate you're ready to listen.`;
+}
+
+// ── Gemini helper calls ──────────────────────────────────────────────────────
+
+async function classifyEmotion(ai: GoogleGenAI, transcript: string): Promise<string | null> {
+  if (!transcript.trim()) return null;
+  try {
+    const result = await ai.models.generateContent({
+      model: FAST_MODEL,
+      contents: [{
+        role: 'user',
+        parts: [{ text:
+          `You are classifying the emotional state of a student in a tutoring session based on their response.\n\n` +
+          `Student said: "${transcript}"\n\n` +
+          `Pick exactly one emotion that best describes their state:\n` +
+          `- curious: engaged, asking questions, making connections, wanting to know more\n` +
+          `- confused: lost, struggling to follow, asking for clarification or repetition\n` +
+          `- excited: a concept just clicked, enthusiastic, having an aha moment\n` +
+          `- thinking: processing, quiet acknowledgment, absorbing what was said\n` +
+          `- listening: neutral, receptive, waiting for more\n\n` +
+          `Respond with only the single emotion word. Nothing else.`
+        }]
+      }],
+    });
+    const emotion = result.text?.trim().toLowerCase() ?? '';
+    return VALID_EMOTIONS.has(emotion) ? emotion : null;
+  } catch {
+    return null;
+  }
+}
+
+async function generateCoachingTip(
+  ai: GoogleGenAI,
+  topic: string,
+  teacherSpeech: string,
+  media?: { camera?: boolean; whiteboard?: boolean; screen?: boolean },
+): Promise<string | null> {
+  if (teacherSpeech.split(/\s+/).length < 12) return null;
+  const hasVideo = media?.camera || media?.whiteboard || media?.screen;
+  const mediaNote = hasVideo
+    ? ` The teacher may have camera (${media?.camera ? 'on' : 'off'}), whiteboard (${media?.whiteboard ? 'on' : 'off'}), or screen share (${media?.screen ? 'on' : 'off'}) active. If they have visuals available, comment on whether they are using them effectively (e.g. pointing at the board, using the screen to illustrate). Suggest using the whiteboard or screen if it could clarify the point.`
+    : '';
+  try {
+    const result = await ai.models.generateContent({
+      model: FAST_MODEL,
+      contents: [{
+        role: 'user',
+        parts: [{ text:
+          `A teacher is explaining "${topic}". Here is what they just said:\n\n"${teacherSpeech}"\n\n` +
+          `Write ONE coaching tip — a single sentence, max 15 words. Alternate between two styles:\n\n` +
+          `Style A — ENCOURAGEMENT: Call out something the teacher is doing well right now. Be specific.\n` +
+          `Style B — DIRECTIVE: Tell the teacher one concrete thing to do next.\n\n` +
+          `Pick whichever style is more useful for this moment. If the teacher is doing well, encourage. If they could improve, give a directive.\n\n` +
+          `Rules:\n` +
+          `- Be hyper-specific to what was just said — not generic advice\n` +
+          `- Wrap the single most critical keyword or phrase in **double asterisks**\n` +
+          `- No label, no bullet, no "Tip:", no second sentence\n` +
+          `- NEVER be negative or critical. Frame everything positively.\n\n` +
+          `Examples (do NOT copy these):\n` +
+          `- "Great use of a **concrete example** to anchor that concept."\n` +
+          `- "Ask Emma: **what breaks** when this assumption fails?"\n` +
+          `- "Nice **pacing** — you gave them time to absorb that."\n` +
+          `- "Give a **real-world example** before going deeper."\n` +
+          (hasVideo ? `- Teacher has visuals active (camera: ${media?.camera}, whiteboard: ${media?.whiteboard}, screen: ${media?.screen}) — praise good visual use or suggest using them.\n` : '') +
+          `\nOutput only the single sentence.`
+        }]
+      }],
+    });
+    return result.text?.trim() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function generateReflection(
+  ai: GoogleGenAI,
+  topic: string,
+  sessionLog: SessionEntry[],
+  language: string = 'English',
+): Promise<object> {
+  if (sessionLog.length < 2) {
+    return {
+      summary: 'The session was too short to generate a meaningful reflection.',
+      strengths: [],
+      gaps: [],
+      topQuestions: [],
+      improvements: ['Try a longer session — aim for at least 5 minutes of explanation.'],
+      keyVocabulary: [],
+      presentationSkills: { visualsAndGestures: '', explanations: '', mediaUsage: '' },
+      presentationMechanics: { clarity: 'Fair', visuals: 'Fair', pacing: 'Steady', tools: 'Minimal' },
+    };
+  }
+
+  const transcript = sessionLog
+    .map(e => `${e.role === 'teacher' ? 'Teacher' : e.name}: ${e.text}`)
+    .join('\n');
+
+  try {
+    const result = await ai.models.generateContent({
+      model: FAST_MODEL,
+      contents: [{
+        role: 'user',
+        parts: [{ text:
+          `You are analyzing a "learn by teaching" session where a human taught "${topic}" to AI students.\n\n` +
+          `Full transcript:\n${transcript}\n\n` +
+          `Return a JSON object (no markdown, no code block) with exactly these keys:\n` +
+          `- "summary": string — 2-3 sentences summarising what was covered\n` +
+          `- "strengths": string[] — 2-3 specific things the teacher did well. Wrap the key phrase in **asterisks** (e.g. "**Clear examples** made the concept stick.")\n` +
+          `- "gaps": string[] — 2-3 concepts that were missed, skipped, or explained unclearly (empty array if none). Wrap the key problem in **asterisks** (e.g. "**The second step** was unclear.")\n` +
+          `- "topQuestions": string[] — the 3 most insightful student questions verbatim (fewer if session was short)\n` +
+          `- "improvements": string[] — 2-3 concrete, actionable suggestions. Wrap the key action in **asterisks** (e.g. "**Use the whiteboard** for the diagram.")\n` +
+          `- "keyVocabulary": string[] — 4-6 key vocabulary terms or concepts that were central to this teaching session (short 1-2 word terms only, e.g. "Prime Number", "Composite", "Factors")\n` +
+          `- "presentationSkills": object with exactly these three keys, each a single short sentence (or empty string if not applicable):\n` +
+          `  - "visualsAndGestures": Did the teacher use the camera, hands, or whiteboard effectively to demonstrate points?\n` +
+          `  - "explanations": Were the explanations concise and clear, or rambling?\n` +
+          `  - "mediaUsage": How effectively were screen sharing or shared files/materials utilized?\n` +
+          `- "presentationMechanics": object with exactly these four keys, each a single word rating:\n` +
+          `  - "clarity": one of "Excellent", "Good", "Fair", "Needs Work" — how clear and understandable was the teacher\n` +
+          `  - "visuals": one of "Excellent", "Good", "Fair", "Needs Work" — how well were visual aids used\n` +
+          `  - "pacing": one of "Excellent", "Steady", "Fast", "Slow" — was the pacing appropriate\n` +
+          `  - "tools": one of "Seamless", "Good", "Fair", "Minimal" — how well did the teacher use available tools (whiteboard, screen share, etc.)\n` +
+          `- "uiLabels": object with translated section headers for the reflection page in ${language}. Keys: "title", "summary", "strengths", "gaps", "gapsEmpty", "vocabulary", "nextSteps", "questions", "presentationFeedback", "mechanics", "teachAgain", "changeTopic", "downloadSummary". Values must be the natural ${language} translation of these UI labels: "Session Reflection", "What Went Well", "Concepts to Revisit", "Mastery achieved! You explained every point clearly.", "Key Vocabulary", "Next Steps", "Student Questions", "Presentation Skills Feedback", "Presentation & Mechanics", "Teach Again", "Change topic", "Download Summary".\n\n` +
+          (language !== 'English' ? `IMPORTANT: Write ALL text content (summary, strengths, gaps, topQuestions, improvements, keyVocabulary, presentationSkills values) in ${language}. Only the JSON keys and presentationMechanics rating words (Excellent/Good/Fair/etc.) should remain in English.\n` : '') +
+          (language === 'Simplified Chinese' ? `Use simplified Chinese characters (简体字) exclusively. Never use traditional Chinese characters.\n` : '') +
+          `Keep every bullet and presentationSkills value to at most one short sentence. Be explicit and useful. Return ONLY valid JSON. No extra text.`
+        }]
+      }],
+    });
+
+    const raw = result.text?.trim() ?? '';
+    const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '');
+    const parsed = JSON.parse(cleaned);
+    const ps = parsed.presentationSkills;
+    if (Array.isArray(ps)) {
+      parsed.presentationSkills = {
+        visualsAndGestures: ps[0] ?? '',
+        explanations: ps[1] ?? '',
+        mediaUsage: ps[2] ?? '',
+      };
+    } else if (ps && typeof ps === 'object' && !Array.isArray(ps)) {
+      parsed.presentationSkills = {
+        visualsAndGestures: typeof ps.visualsAndGestures === 'string' ? ps.visualsAndGestures : '',
+        explanations: typeof ps.explanations === 'string' ? ps.explanations : '',
+        mediaUsage: typeof ps.mediaUsage === 'string' ? ps.mediaUsage : '',
+      };
+    } else {
+      parsed.presentationSkills = { visualsAndGestures: '', explanations: '', mediaUsage: '' };
+    }
+    return parsed;
+  } catch {
+    return {
+      summary: `You taught "${topic}". A detailed reflection could not be generated.`,
+      strengths: [],
+      gaps: [],
+      topQuestions: [],
+      improvements: [],
+      keyVocabulary: [],
+      presentationSkills: { visualsAndGestures: '', explanations: '', mediaUsage: '' },
+      presentationMechanics: { clarity: 'Fair', visuals: 'Fair', pacing: 'Steady', tools: 'Minimal' },
+    };
+  }
+}
+
+// ── Diagram generation ───────────────────────────────────────────────────────
+
+function extractImageFromResult(result: any): { base64: string; mimeType: string } | null {
+  // Strategy 1: standard candidates shape
+  const candidates = result?.candidates ?? [];
+  for (const cand of candidates) {
+    for (const part of (cand?.content?.parts ?? [])) {
+      if (part?.inlineData?.data) return { base64: part.inlineData.data, mimeType: part.inlineData.mimeType ?? 'image/png' };
+    }
+  }
+  // Strategy 2: result.response wrapper
+  const respCandidates = result?.response?.candidates ?? [];
+  for (const cand of respCandidates) {
+    for (const part of (cand?.content?.parts ?? [])) {
+      if (part?.inlineData?.data) return { base64: part.inlineData.data, mimeType: part.inlineData.mimeType ?? 'image/png' };
+    }
+  }
+  // Strategy 3: top-level parts (newer SDK)
+  for (const part of (result?.parts ?? [])) {
+    if (part?.inlineData?.data) return { base64: part.inlineData.data, mimeType: part.inlineData.mimeType ?? 'image/png' };
+  }
+  // Strategy 4: image property (some SDK versions)
+  if (result?.image?.imageBytes) {
+    const b64 = typeof result.image.imageBytes === 'string'
+      ? result.image.imageBytes
+      : Buffer.from(result.image.imageBytes).toString('base64');
+    return { base64: b64, mimeType: result.image.mimeType ?? 'image/png' };
+  }
+  return null;
+}
+
+async function generateStudentDiagram(
+  ai: GoogleGenAI,
+  topic: string,
+  studentText: string,
+  studentName: string,
+  onDemand: boolean = false,
+): Promise<{ base64: string; mimeType: string; hasMistake: boolean } | null> {
+  const wordCount = studentText.trim().split(/\s+/).length;
+  console.log(`[Poken][DiagramGen] generateStudentDiagram | student=${studentName} | onDemand=${onDemand} | words=${wordCount}`);
+  if (!onDemand && wordCount < 15) {
+    console.log(`[Poken][DiagramGen] Skipped: word count ${wordCount} < 15 and not on-demand`);
+    return null;
+  }
+
+  const hasMistake = onDemand ? false : Math.random() < 0.25;
+
+  const mistakeClause = hasMistake
+    ? `\n\nIMPORTANT: Embed exactly ONE deliberate factual error in the diagram — a wrong arrow direction, an incorrect label, or a reversed relationship. Do NOT mark or highlight the error in any way.`
+    : '';
+
+  const contextText = onDemand
+    ? `The teacher asked: "${studentText.slice(0, 400)}"`
+    : `Student said: "${studentText.slice(0, 400)}"`;
+
+  const prompt =
+    `Generate an image: a quick, messy whiteboard doodle (black marker on white) about "${topic}".\n\n` +
+    `${contextText}\n\n` +
+    `Style rules:\n` +
+    `- Maximum 3-5 short labels (1-3 words each, NO sentences)\n` +
+    `- Big simple shapes (circles, boxes, arrows) — like a student's quick doodle\n` +
+    `- Lots of white space — do NOT fill the image\n` +
+    `- Hand-drawn, imperfect, slightly crooked lines\n` +
+    `- NO paragraphs, NO bullet points, NO detailed text\n` +
+    `- Think: what a student scribbles in 15 seconds on a whiteboard` +
+    mistakeClause;
+
+  let timeoutHandle: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<null>(resolve => {
+    timeoutHandle = setTimeout(() => {
+      console.log(`[Poken] generateStudentDiagram: TIMEOUT for ${studentName}`);
+      resolve(null);
+    }, 30000);
+  });
+
+  const genPromise = (async () => {
+    console.log(`[Poken] generateStudentDiagram: starting for ${studentName}`);
+    const result = await ai.models.generateContent({
+      model: IMAGE_MODEL,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+    });
+
+    // Log the full shape of the result for debugging
+    const topKeys = Object.keys(result || {});
+    console.log(`[Poken] generateStudentDiagram: result keys = [${topKeys.join(', ')}]`);
+
+    const img = extractImageFromResult(result);
+    if (img) {
+      console.log(`[Poken] generateStudentDiagram: got image (${img.mimeType}, ${img.base64.length} chars)`);
+      return { ...img, hasMistake };
+    }
+
+    // Log what we actually got
+    console.log(`[Poken] generateStudentDiagram: no image found. text=${(result?.text || '').slice(0, 200)}`);
+    return null;
+  })();
+
+  try {
+    const result = await Promise.race([genPromise, timeoutPromise]);
+    clearTimeout(timeoutHandle!); // cancel timeout if generation won the race
+    return result;
+  } catch (err) {
+    clearTimeout(timeoutHandle!);
+    console.error(`[Poken] generateStudentDiagram error for ${studentName}:`, err);
+    return null;
+  }
+}
+
+// ── On-demand diagram detection ─────────────────────────────────────────────
+
+// Only trigger diagram generation on EXPLICIT teacher requests — not incidental
+// words like "draw a conclusion" or "illustrate my point". Requires a clear
+// action verb + visual noun directed at the student.
+const DIAGRAM_REQUEST_PATTERNS = [
+  /\b(draw|sketch|make|create|generate)\s+(me\s+)?(a\s+)?(diagram|picture|image|drawing|sketch|chart|graph|flowchart|figure|illustration)\b/i,
+  /\bshow\s+(me\s+)?(a\s+)?(diagram|picture|sketch|drawing|chart|graph|flowchart|figure|illustration)\b/i,
+  /\bcan\s+you\s+(draw|sketch|make|create|generate)\b/i,
+  /\b(put|write|draw)\s+(it|that|this)\s+(on|on the)\s+(the\s+)?(board|whiteboard)\b/i,
+  /\bshow\s+(me\s+|us\s+)?(your\s+)?work\b/i,
+  /\bvisuali[sz]e\s+(it|this|that)\b/i,
+];
+
+/** Spaceless key phrases for diagram detection fallback.
+ *  Gemini's input transcription often fragments words across chunks
+ *  (e.g. "gene ra te me a dia gram"). Regex on the raw text fails.
+ *  Fallback: strip ALL spaces from the text and check for these substrings. */
+const DIAGRAM_SPACELESS_PHRASES = [
+  // verb + (me +) (a +) noun — all lowercased, no spaces
+  ...[
+    'draw', 'sketch', 'make', 'create', 'generate',
+  ].flatMap(verb => [
+    'diagram', 'picture', 'image', 'drawing', 'sketch', 'chart',
+    'graph', 'flowchart', 'figure', 'illustration',
+  ].flatMap(noun => [
+    `${verb}${noun}`,       // "drawdiagram"
+    `${verb}a${noun}`,      // "drawadiagram"
+    `${verb}me${noun}`,     // "drawmediagram"
+    `${verb}mea${noun}`,    // "drawmeadiagram"
+  ])),
+  // "show me a ..."
+  ...[
+    'diagram', 'picture', 'sketch', 'drawing', 'chart',
+    'graph', 'flowchart', 'figure', 'illustration',
+  ].flatMap(noun => [`show${noun}`, `showme${noun}`, `showmea${noun}`]),
+  // "can you ..."
+  'canyoudraw', 'canyousketch', 'canyoumake', 'canyoucreate', 'canyougenerate',
+  // whiteboard
+  'putitontheboard', 'putitonthewhiteboard', 'putthisontheboard',
+  'putthatontheboard', 'drawitontheboard', 'drawitonthewhiteboard',
+  'writeitontheboard', 'writeitonthewhiteboard',
+  // other
+  'showmeyourwork', 'showusyourwork', 'showmework', 'showuswork',
+  'visualizeit', 'visualiseit', 'visualizethis', 'visualisethat',
+  'visualizethis', 'visualisethat',
+];
+
+function isDiagramRequest(text: string): boolean {
+  // Primary: regex on original text (works when transcription is clean)
+  const regexMatch = DIAGRAM_REQUEST_PATTERNS.some(p => p.test(text));
+  if (regexMatch) {
+    const pattern = DIAGRAM_REQUEST_PATTERNS.find(p => p.test(text));
+    console.log(`[Poken][DiagramDetect] isDiagramRequest → true (regex: ${pattern})`);
+    return true;
+  }
+  // Fallback: strip ALL spaces and check for key phrases.
+  // This handles badly fragmented transcription like "gene ra te me a dia gram".
+  const stripped = text.replace(/\s+/g, '').toLowerCase();
+  const phraseMatch = DIAGRAM_SPACELESS_PHRASES.find(p => stripped.includes(p));
+  if (phraseMatch) {
+    console.log(`[Poken][DiagramDetect] isDiagramRequest → true (spaceless: "${phraseMatch}" found in "${stripped.slice(0, 80)}")`);
+    return true;
+  }
+  console.log(`[Poken][DiagramDetect] isDiagramRequest("${text.slice(0, 120)}") → false`);
+  return false;
+}
+
+// ── Vision refresh detection ────────────────────────────────────────────────
+const VISION_REFRESH_PATTERN = /\b(can you see|do you see|what do you see|look at this|are you seeing|are you looking|what am i showing)\b/i;
+const VISION_SPACELESS_PHRASES = [
+  'canyousee', 'doyousee', 'whatdoyousee', 'lookatthis',
+  'areyouseeing', 'areyoulooking', 'whatamishowing',
+  'canyouseemy', 'canyouseethis', 'canyouseethat',
+  'doyouseemy', 'doyouseethis', 'doyouseethat',
+];
+
+function isVisionRefreshRequest(text: string): boolean {
+  if (VISION_REFRESH_PATTERN.test(text)) return true;
+  const stripped = text.replace(/\s+/g, '').toLowerCase();
+  return VISION_SPACELESS_PHRASES.some(p => stripped.includes(p));
+}
+
+function triggerOnDemandDiagram(
+  ai: GoogleGenAI,
+  topic: string,
+  teacherText: string,
+  studentName: string,
+  liveSession: any,
+  socket: WebSocket,
+  sendJson: (data: object) => void,
+) {
+  console.log(`[Poken][DiagramGen] triggerOnDemandDiagram called | student=${studentName} | topic="${topic}" | text="${teacherText.slice(0, 100)}"`);
+
+  // Tell the student to acknowledge the request verbally.
+  // IMPORTANT: The native-audio model doesn't know it can generate images (a separate
+  // model handles that). Without strong instruction, it says "I can't draw." The prompt
+  // must override this by framing it as role-play — the student IS drawing on a whiteboard.
+  try {
+    liveSession.sendRealtimeInput({
+      text: `[SYSTEM: The teacher asked you to draw a diagram. You HAVE a whiteboard and you ARE drawing on it right now. The diagram is being generated automatically. Your ONLY job is to say ONE short sentence acknowledging you're drawing — e.g. "Sure, let me sketch that out!" or "Okay, drawing it now!" Do NOT say you cannot draw. Do NOT say you don't have drawing capabilities. Do NOT describe what you're drawing. Just briefly acknowledge and wait.]`,
+    });
+    console.log(`[Poken][DiagramGen] Sent acknowledgment prompt to ${studentName}'s Live session`);
+  } catch (e: any) {
+    console.error(`[Poken][DiagramGen] Failed to send acknowledgment to ${studentName}:`, e.message ?? e);
+  }
+
+  // Fire-and-forget diagram generation (on-demand = true to bypass word count check)
+  console.log(`[Poken][DiagramGen] Starting image generation with model=${IMAGE_MODEL}...`);
+  generateStudentDiagram(ai, topic, teacherText, studentName, true).then(result => {
+    if (!result) {
+      console.warn(`[Poken][DiagramGen] generateStudentDiagram returned null for ${studentName}`);
+      return;
+    }
+    if (socket.readyState !== WebSocket.OPEN) {
+      console.warn(`[Poken][DiagramGen] Socket closed before diagram could be sent for ${studentName}`);
+      return;
+    }
+    sendJson({ type: 'student_diagram', studentId: studentName === 'Student' ? 'solo' : studentName, base64: result.base64, mimeType: result.mimeType });
+    console.log(`[Poken][DiagramGen] On-demand diagram generated & sent for ${studentName} (${result.mimeType}, ${result.base64.length} chars, mistake=${result.hasMistake})`);
+
+    // Send the diagram image to the Live session so the student can "see" its own diagram
+    try {
+      liveSession.sendRealtimeInput({ media: { data: result.base64, mimeType: result.mimeType } });
+      liveSession.sendRealtimeInput({ text: '[You just drew this diagram on the whiteboard. The teacher can see it and may draw on it or point at parts of it.]' });
+    } catch (_) {}
+  }).catch(err => {
+    console.error(`[Poken] On-demand diagram failed:`, err);
+  });
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+
+function buildServer(): http.Server {
+  const ai = new GoogleGenAI({ vertexai: false, apiKey: GOOGLE_API_KEY });
+
+  function isImageLikeFile(mimeType: string, filename: string): boolean {
+    const lower = filename.toLowerCase();
+    if (mimeType.startsWith('image/')) return true;
+    return lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.gif') || lower.endsWith('.webp');
+  }
+
+  async function extractImageTextWithAi(buf: Buffer, mimeType: string): Promise<string> {
+    if (buf.length >= 4 * 1024 * 1024) return '';
+    try {
+      const b64 = buf.toString('base64');
+      const imageMime = mimeType || 'image/jpeg';
+      const gen = await ai.models.generateContent({
+        model: FAST_MODEL,
+        contents: [{
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType: imageMime, data: b64 } },
+            {
+              text:
+                'Transcribe every readable word in this image (slides, handwriting, diagrams with labels). ' +
+                'Output plain text only, preserve line breaks where helpful. If no text, say [no text].',
+            },
+          ],
+        }],
+      });
+      const text = (gen.text || '').trim();
+      if (!text || text === '[no text]') return '';
+      return text;
+    } catch {
+      return '';
+    }
+  }
+
+  async function extractMaterialTextWithFallback(name: string, base64: string, mimeType: string, maxChars: number): Promise<{ content: string; error?: string }> {
+    const buf = Buffer.from(base64, 'base64');
+    const lower = name.toLowerCase();
+    const isPdf = mimeType === 'application/pdf' || lower.endsWith('.pdf');
+    const isImage = isImageLikeFile(mimeType, name);
+    const isVideo = isVideoMime(mimeType);
+
+    // ── Vision path for PDFs, images, and videos ──
+    if (isPdf || isImage || isVideo) {
+      try {
+        if (isVideo) {
+          const videoResult = await processVideoMaterial(ai, buf, name, mimeType);
+          const formatted = formatVideoForContext(videoResult);
+          return { content: formatted.slice(0, maxChars) };
+        }
+        if (isPdf) {
+          const pdfResult = await analyzePdfWithVision(ai, buf, name);
+          const formatted = formatForContext(pdfResult);
+          return { content: formatted.slice(0, maxChars) };
+        }
+        if (isImage) {
+          const imageResult = await analyzeImageWithVision(ai, buf, mimeType, name);
+          const formatted = formatForContext(imageResult);
+          return { content: formatted.slice(0, maxChars) };
+        }
+      } catch (e: any) {
+        console.error(`[Poken] Vision analysis failed for ${name}, falling back to text:`, e.message);
+        // Fall through to legacy extraction
+      }
+    }
+
+    // ── Legacy text extraction path ──
+    let { text, error } = await extractFromBuffer(buf, mimeType, name);
+    if (!text.trim() && isImage) {
+      const ocrText = await extractImageTextWithAi(buf, mimeType || 'image/jpeg');
+      if (ocrText.trim()) {
+        text = ocrText;
+        error = undefined;
+      }
+    }
+    const trimmed = text.trim();
+    if (!trimmed) return { content: '', error };
+    const content = trimmed.slice(0, maxChars) + (trimmed.length > maxChars ? '\n\n[… truncated …]' : '');
+    return { content };
+  }
+
+  function extractSharedUrls(text: string): string[] {
+    if (!text) return [];
+    const matches = text.match(SHARED_URL_REGEX) || [];
+    const unique = Array.from(new Set(matches.map(u => u.trim())));
+    return unique.slice(0, 2);
+  }
+
+  function htmlToReadableText(html: string): string {
+    return html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&#39;/gi, "'")
+      .replace(/&quot;/gi, '"')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  async function fetchUrlContextNote(url: string): Promise<string | null> {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(url, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: controller.signal,
+        headers: { 'User-Agent': 'Poken/1.0 (session-link-reader)' },
+      });
+      clearTimeout(timeout);
+      if (!res.ok) return null;
+      const contentType = (res.headers.get('content-type') || '').toLowerCase();
+      if (!contentType.includes('text/html') && !contentType.includes('text/plain')) return null;
+      const raw = await res.text();
+      const plain = htmlToReadableText(raw).slice(0, 6000);
+      if (!plain) return null;
+      return `[The teacher shared a link: ${url}]\nPage context:\n${plain}`;
+    } catch {
+      return null;
+    }
+  }
+
+  const app = new Hono();
+  app.use('/*', cors());
+
+  app.get('/api/topics', (c) => {
+    return c.json({ topics: TOPICS });
+  });
+
+  app.get('/api/logs', (c) => {
+    const since = Number(c.req.query('since')) || 0;
+    const filtered = since ? logRing.filter(l => l.ts > since) : logRing.slice();
+    return c.json({ logs: filtered });
+  });
+
+  // Legacy: extract-only (no storage) — still used if something calls it directly.
+  app.post('/api/materials/extract', async (c) => {
+    try {
+      const formData = await c.req.formData();
+      const file = formData.get('file');
+      if (!file || typeof file === 'string' || !(file instanceof File)) {
+        return c.json({ error: 'Missing file field' }, 400);
+      }
+      const buf = Buffer.from(await file.arrayBuffer());
+      const mime = file.type || 'application/octet-stream';
+      let result = await extractFromBuffer(buf, mime, file.name);
+
+      // Images: OCR-ish via Gemini when extractFromBuffer returns unsupported
+      if (!result.text && mime.startsWith('image/') && buf.length < 4 * 1024 * 1024) {
+        try {
+          const b64 = buf.toString('base64');
+          const mimeType = mime || 'image/png';
+          const gen = await ai.models.generateContent({
+            model: FAST_MODEL,
+            contents: [{
+              role: 'user',
+              parts: [
+                {
+                  inlineData: { mimeType, data: b64 },
+                },
+                {
+                  text:
+                    'Transcribe every readable word in this image (slides, handwriting, diagrams with labels). ' +
+                    'Output plain text only, preserve line breaks where helpful. If no text, say [no text].',
+                },
+              ],
+            }],
+          });
+          const text = (gen.text || '').trim();
+          if (text && text !== '[no text]') result = { text: text.slice(0, 120_000) };
+          else result = { text: '', error: 'No text detected in image.' };
+        } catch (e) {
+          result = {
+            text: '',
+            error: e instanceof Error ? e.message : 'Image text extraction failed.',
+          };
+        }
+      }
+
+      if (result.error && !result.text) return c.json({ error: result.error }, 422);
+      return c.json({ text: result.text, filename: file.name });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[Poken] /api/materials/extract', msg);
+      return c.json({ error: msg }, 500);
+    }
+  });
+
+  // Test diagram generation directly (useful for debugging)
+  app.post('/api/diagram/test', async (c) => {
+    try {
+      const body = await c.req.json<{ topic?: string; text?: string }>();
+      const topic = body?.topic || 'Photosynthesis';
+      const text = body?.text || 'So the plant takes in sunlight and carbon dioxide through its leaves, and then through chloroplasts it converts that energy into glucose and oxygen. The chlorophyll in the leaves is what makes them green and captures the light energy.';
+      console.log(`[Poken] /api/diagram/test: starting generation for topic="${topic}"`);
+      const result = await generateStudentDiagram(ai, topic, text, 'Test');
+      if (!result) return c.json({ error: 'No image generated — check server logs for details' }, 500);
+      return c.json({ ok: true, mimeType: result.mimeType, base64Length: result.base64.length, hasMistake: result.hasMistake, base64: result.base64 });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[Poken] /api/diagram/test error:', msg);
+      return c.json({ error: msg }, 500);
+    }
+  });
+
+  app.post('/api/cleanup-transcript', async (c) => {
+    let text = '';
+    let fallback = '';
+    let language = 'English';
+    try {
+      const body = await c.req.json<{ text: string; topic: string; language?: string; mode?: 'live' | 'final'; speaker?: string; context?: string }>();
+      fallback = body?.text || '';
+      text = (body?.text || '').trim();
+      const topic = body?.topic || '';
+      language = normalizeSessionLanguage(body?.language || 'English');
+      const mode = body?.mode === 'live' ? 'live' : 'final';
+      const speaker = (body?.speaker || 'Speaker').trim() || 'Speaker';
+      const context = (body?.context || '').trim().slice(0, 2000);
+      if (!text) return c.json({ cleaned: body?.text || '' });
+      const simplifiedChinese = language === 'Simplified Chinese'
+        ? `- You MUST output simplified Chinese characters (简体字) exclusively. Convert any traditional Chinese characters (繁體字) to their simplified equivalents.\n`
+        : '';
+      const cleanupPrompt =
+        `Raw speech-to-text (may have missing spaces, merged words, or wrong words). Topic: "${topic}". Language: "${language}".\n\n` +
+        `Task: produce a single readable transcript that matches what ${speaker} likely said.\n` +
+        `- Insert spaces between words where ASR merged them (e.g. "thewater" → "the water").\n` +
+        `- Fix homophones and technical terms using topic context and ${language} spelling conventions.\n` +
+        `- Use prior conversation context to disambiguate words, names, and phrasing.\n` +
+        `- Keep the same order and meaning; do not summarize or add ideas.\n` +
+        simplifiedChinese +
+        (mode === 'live'
+          ? `- This is a live partial stream. Make spacing and grammar readable immediately, but preserve unfinished wording.\n`
+          : `- This is a final transcript. Use complete punctuation and capitalization.\n`) +
+        `- Output plain text only, no quotes or markdown.\n\n` +
+        (context ? `Prior conversation:\n${context}\n\n` : '') +
+        `Transcription:\n${text}`;
+      const chosenModel = mode === 'live' ? FAST_MODEL : CLEANUP_MODEL;
+      let result;
+      try {
+        result = await ai.models.generateContent({
+          model: chosenModel,
+          contents: [{ role: 'user', parts: [{ text: cleanupPrompt }] }],
+        });
+      } catch {
+        if (chosenModel !== FAST_MODEL) {
+          result = await ai.models.generateContent({
+            model: FAST_MODEL,
+            contents: [{ role: 'user', parts: [{ text: cleanupPrompt }] }],
+          });
+        } else {
+          throw new Error('Cleanup failed');
+        }
+      }
+      const cleanedRaw = (result.text?.trim() || text).replace(/\s+/g, ' ').trim();
+      const cleaned = enforceTranscriptLanguage(cleanedRaw, language);
+      return c.json({ cleaned: cleaned || text });
+    } catch {
+      const fallbackCleaned = enforceTranscriptLanguage(text || fallback, language);
+      return c.json({ cleaned: fallbackCleaned || text || fallback }, 500);
+    }
+  });
+
+  // ── HTTP server + WebSocket upgrade ────────────────────────────────────────
+  // Vercel imports this module and drives the exported server itself; dev.ts
+  // calls .listen() locally. Never listen here.
+  // Vercel serves public/ itself; only the local dev server needs this fallback.
+  if (!process.env.VERCEL) app.use('/*', serveStatic({ root: './public' }));
+
+  const server = http.createServer(getRequestListener(app.fetch));
+  const wss = new WebSocketServer({ noServer: true });
+
+  server.on('upgrade', (request, socket, head) => {
+    const pathname = new URL(request.url || '/', 'http://localhost').pathname;
+    // A Vercel rewrite may deliver either the public path or the function path.
+    if (pathname !== '/ws/live' && pathname !== '/api/server') {
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(request, socket, head, (ws) => wss.emit('connection', ws, request));
+  });
+
+  wss.on('connection', (socket: WebSocket, request: IncomingMessage) => {
+    const url = new URL(request.url || '/', 'http://localhost');
+
+    const topic      = url.searchParams.get('topic')     || 'the topic the teacher will explain';
+    const persona    = url.searchParams.get('persona')   || 'eager';
+    const language   = normalizeSessionLanguage(url.searchParams.get('language'));
+    const materials  = url.searchParams.get('materials') || '';
+    const video      = url.searchParams.get('video')     === '1';
+    const model      = video ? VIDEO_MODEL : AUDIO_MODEL;
+    const connectedAt = Date.now();
+
+    console.log('[Poken] New connection | topic:', topic, '| persona:', persona, '| language:', language, '| video:', video);
+
+    // ── Per-connection state ───────────────────────────────────────────────
+    const sessionLog: SessionEntry[] = [];
+    let teacherTranscriptBuf = '';
+    let coachingCooldown     = 0;
+    let reflectionRequested  = false;
+    let lastTeacherSpeechAt  = Date.now();
+    let teacherIsSpeaking    = false;
+    let teacherHasSpoken     = false;
+    let sessionStartedAt     = Date.now();  // reset in onopen so the blackout starts when Live is actually ready
+    let sessionReady         = false;
+    let tearingDown          = false;
+    let handoverStarted      = false;
+
+    // Media toggles must live in connection scope — the original referenced an
+    // undeclared `media` here, the ReferenceError was swallowed, and the
+    // [MEDIA] cues the prompt depends on were never delivered.
+    const mediaState = { camera: false, whiteboard: false, screen: false };
+
+    const pendingMaterialFiles: { name: string; base64: string; mimeType: string }[] = [];
+    const MAX_MATERIALS_CHARS = 30_000;
+    let materialsContext = '';  // final assembled context, handed to the client for resume
+
+    // Resume state (set by a `resume` frame before ready_to_start)
+    let resumeInfo: ResumeToken | null = null;
+    let resumeMaterialsContext = '';
+    const resumeHandles = new Map<string, string>();  // Gemini session-resumption handle, keyed 'solo'
+    let digestSummary = '';
+    let teacherTurns = 0;
+
+    // Blackout: buffer instead of discard, flush in order when the window lifts.
+    const blackoutBuffer: string[] = [];
+    let blackoutFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // Transcription that arrives before teacherHasSpoken is held, not dropped.
+    const pendingTeacherTranscript: { text: string; ts: number }[] = [];
+    const PENDING_TRANSCRIPT_WINDOW_MS = 3000;
+
+    // Token telemetry (estimates) — the diagnosis if a 1007 ever recurs.
+    const tokenEstimate = { audioSec: 0, textChars: 0, frames: 0 };
+    function estimatedTokens(): number {
+      return Math.round(tokenEstimate.audioSec * 32 + tokenEstimate.textChars / 4 + tokenEstimate.frames * 258);
+    }
+
+    // Session ref
+    let session: LiveSession | null = null;
+    const sessionOpenedAt = new Map<string, number>();
+    let studentTranscriptBuf = '';
+
+    function sendJson(data: object) {
+      try {
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data));
+      } catch (e) {
+        console.error('[Poken] sendJson failed (socket may be closing):', e);
+      }
+    }
+    function sendDebug(level: 'info' | 'warn' | 'error', message: string) {
+      sendJson({ type: 'debug', level, message });
+    }
+    function fatal(message: string) {
+      sendJson({ type: 'error', message });
+      setTimeout(() => { if (socket.readyState === WebSocket.OPEN) socket.close(); }, ERROR_FLUSH_DELAY_MS);
+    }
+
+    function sendToSession(input: types.LiveSendRealtimeInputParameters) {
+      try { session?.sendRealtimeInput(input); } catch (_) {}
+    }
+    function sendText(text: string) {
+      tokenEstimate.textChars += text.length;
+      sendToSession({ text });
+    }
+    function sendImage(base64: string) {
+      tokenEstimate.frames += 1;
+      sendToSession({ media: { data: base64, mimeType: 'image/jpeg' } });
+    }
+    function sendAudio(base64: string) {
+      tokenEstimate.audioSec += (base64.length * 0.75) / 32000; // PCM16 mono @16k = 32000 bytes/s
+      sendToSession({ media: { data: base64, mimeType: 'audio/pcm;rate=16000' } });
+    }
+
+    // Keep the connection alive through HTTP/1.1 proxies that drop idle sockets.
+    const pingTimer = setInterval(() => {
+      try { if (socket.readyState === WebSocket.OPEN) socket.ping(); } catch (_) {}
+    }, 25_000);
+
+    // ── Handover ───────────────────────────────────────────────────────────
+    function buildDigest(): string {
+      const tail = sessionLog
+        .slice(-20)
+        .map(e => `${e.role === 'teacher' ? 'Teacher' : e.name}: ${e.text}`)
+        .join('\n')
+        .slice(-2000);
+      return [digestSummary ? `Covered so far: ${digestSummary}` : '', tail].filter(Boolean).join('\n\n');
+    }
+
+    function buildResumeToken(opts: { dropHandles?: boolean } = {}): ResumeToken {
+      const handles: Record<string, string> = {};
+      if (!opts.dropHandles) resumeHandles.forEach((h, id) => { handles[id] = h; });
+      const elapsedMs = (resumeInfo?.elapsedMs ?? 0) + (Date.now() - connectedAt);
+      return {
+        v: 1,
+        topic, persona, language, video,
+        handles,
+        digest: buildDigest(),
+        logTail: sessionLog.slice(-60).map(e => ({ ...e, text: e.text.slice(0, 400) })),
+        elapsedMs,
+        issuedAt: Date.now(),
+      };
+    }
+
+    function pushSessionState() {
+      sendJson({ type: 'session_state', resumeToken: buildResumeToken() });
+    }
+
+    /** Ask the client to reconnect with a resume token. Idempotent. */
+    function beginHandover(reason: string, opts: { dropHandles?: boolean } = {}) {
+      if (handoverStarted || tearingDown || socket.readyState !== WebSocket.OPEN) return;
+      handoverStarted = true;
+      console.log(`[Poken] Handover (${reason}) | est tokens=${estimatedTokens()} | handles=${opts.dropHandles ? 0 : resumeHandles.size}`);
+      sendDebug('warn', `Session handover: ${reason}`);
+      sendJson({ type: 'session_handover', reason, resumeToken: buildResumeToken(opts) });
+    }
+
+    // Vercel closes the socket at the function deadline; hand over 45s before that.
+    const deadline = getDeadline()?.getTime() ?? (connectedAt + DEV_MAX_DURATION_MS);
+    const handoverTimer = setTimeout(() => beginHandover('deadline'), Math.max(5_000, deadline - HANDOVER_LEAD_MS - Date.now()));
+
+    async function refreshDigestSummary() {
+      const transcript = sessionLog.slice(-40).map(e => `${e.role === 'teacher' ? 'Teacher' : e.name}: ${e.text}`).join('\n');
+      if (!transcript) return;
+      try {
+        const result = await ai.models.generateContent({
+          model: FAST_MODEL,
+          contents: [{ role: 'user', parts: [{ text:
+            `A teacher is explaining "${topic}" to AI students. In at most 120 words, summarize what has been covered so far and any errors the students made that the teacher corrected. Plain text, no preamble.` +
+            (digestSummary ? `\n\nPrevious summary:\n${digestSummary}\n\n` : '\n\n') +
+            `Recent transcript:\n${transcript}`
+          }] }],
+        });
+        const text = result.text?.trim();
+        if (text) digestSummary = text.slice(0, 1200);
+      } catch (_) {}
+    }
+
+    /** The Live session gets resumption + compression; the handle rides in on resume. */
+    function liveConfig(voice: string, systemInstruction: string, handle?: string): types.LiveConnectConfig {
+      return {
+        responseModalities: [Modality.AUDIO],
+        outputAudioTranscription: {},
+        inputAudioTranscription: {},
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
+        systemInstruction,
+        contextWindowCompression: { slidingWindow: {} },
+        sessionResumption: handle ? { handle } : {},
+      };
+    }
+
+    function resumeBlock(): string {
+      const digest = buildDigest();
+      return `[RESUME] You are rejoining a lesson already in progress on "${topic}". Do NOT greet again. Do NOT mention reconnecting or any interruption. ` +
+        (digest ? `Here is what has happened so far:\n${digest}\n\n` : '') +
+        `Continue exactly as before: stay silent and wait for the teacher to speak next.`;
+    }
+
+    /** Called from every onclose. Decides between a real error and a recoverable handover. */
+    function onGeminiClosed(id: string, code: number, reason: string) {
+      if (tearingDown) return;
+      const openedAt = sessionOpenedAt.get(id) ?? Date.now();
+      const age = Date.now() - openedAt;
+      if (!sessionReady) return; // startup failure is reported by the connect catch
+      if (age < 10_000) {
+        if (resumeInfo && resumeHandles.has(id)) {
+          // The resumption handle was rejected — retry once from the digest instead.
+          resumeHandles.delete(id);
+          beginHandover(`resume handle rejected for ${id} (code ${code})`, { dropHandles: true });
+        } else {
+          fatal(`Live session ended (code ${code}${reason ? ': ' + reason : ''})`);
+        }
+        return;
+      }
+      beginHandover(`Gemini session closed for ${id} (code ${code}${reason ? ': ' + reason : ''})`);
+    }
+
+    function handleSessionMeta(id: string, msg: types.LiveServerMessage) {
+      const upd = msg.sessionResumptionUpdate;
+      if (upd?.resumable && upd.newHandle && resumeHandles.get(id) !== upd.newHandle) {
+        resumeHandles.set(id, upd.newHandle);
+        // A token pushed only on teacher turns would carry a handle from before the model's
+        // reply; refresh it whenever Gemini issues a newer one so resume never loses a turn.
+        if (sessionReady) pushSessionState();
+      }
+      if (msg.goAway) beginHandover(`Gemini goAway for ${id}${msg.goAway.timeLeft ? ' (' + msg.goAway.timeLeft + ' left)' : ''}`);
+    }
+
+    // ── Teacher speech plumbing ────────────────────────────────────────────
+    function markTeacherSpoken(source: string) {
+      if (teacherHasSpoken) return;
+      teacherHasSpoken = true;
+      sendDebug('info', `Teacher speech detected (${source})`);
+      const cutoff = Date.now() - PENDING_TRANSCRIPT_WINDOW_MS;
+      const flush = pendingTeacherTranscript.filter(p => p.ts >= cutoff);
+      pendingTeacherTranscript.length = 0;
+      for (const p of flush) ingestTeacherTranscript(p.text);
+    }
+
+    /** Teacher ASR chunk: language-enforced, logged, relayed. */
+    function ingestTeacherTranscript(rawChunk: string) {
+      if (!teacherHasSpoken) {
+        pendingTeacherTranscript.push({ text: rawChunk, ts: Date.now() });
+        if (pendingTeacherTranscript.length > 20) pendingTeacherTranscript.shift();
+        return;
+      }
+      const chunk = enforceTranscriptLanguage(rawChunk, language);
+      if (!chunk) return;
+      teacherTranscriptBuf += ' ' + chunk;
+      sendJson({ type: 'teacher_transcript', text: chunk });
+
+    }
+
+    function flushBlackout() {
+      blackoutFlushTimer = null;
+      if (!blackoutBuffer.length) return;
+      const chunks = blackoutBuffer.splice(0, blackoutBuffer.length);
+      sendDebug('info', `Blackout lifted — flushing ${chunks.length} buffered audio chunks`);
+      for (const b64 of chunks) sendAudio(b64);
+    }
+
+    function onTeacherAudio(data: Buffer) {
+      markTeacherSpoken('first audio');
+      teacherIsSpeaking = true;
+      lastTeacherSpeechAt = Date.now();
+      const b64 = data.toString('base64');
+      const sinceOpen = Date.now() - sessionStartedAt;
+      if (sinceOpen < AUDIO_BLACKOUT_MS) {
+        blackoutBuffer.push(b64);
+        if (!blackoutFlushTimer) blackoutFlushTimer = setTimeout(flushBlackout, AUDIO_BLACKOUT_MS - sinceOpen);
+        sendDebug('info', `Audio buffered (blackout: ${AUDIO_BLACKOUT_MS - sinceOpen}ms left)`);
+        return;
+      }
+      if (blackoutBuffer.length) flushBlackout();
+      sendAudio(b64);
+    }
+
+    /** Process material_file: vision-analyze, then hand the text to the Live session. */
+    async function processMaterialFile(name: string, base64: string, mimeType: string): Promise<string> {
+      const maxChars = 20_000;
+      sendJson({ type: 'material_processing', filename: name });
+      try {
+        const { content, error } = await extractMaterialTextWithFallback(name, base64, mimeType, maxChars);
+        sendJson({ type: 'material_processed', filename: name });
+        if (content) return `[The teacher has shared a study material: "${name}".]\n\nContent:\n${content}`;
+        return `[The teacher has shared a file: "${name}".]${error ? ` (${error})` : ''}`;
+      } catch (e: any) {
+        sendJson({ type: 'material_processed', filename: name });
+        return `[The teacher has shared a file: "${name}".] (analysis failed: ${e.message})`;
+      }
+    }
+
+    async function onTeacherSpeechEnd(media?: { camera?: boolean; whiteboard?: boolean; screen?: boolean }) {
+      const text = teacherTranscriptBuf.trim();
+      teacherTranscriptBuf = '';
+      if (!text) return;
+      console.log(`[Poken][SpeechEnd] Teacher said: "${text.slice(0, 200)}"`);
+      console.log(`[Poken][Tokens] est≈${estimatedTokens()} (audio ${tokenEstimate.audioSec.toFixed(1)}s, text ${tokenEstimate.textChars} chars, frames ${tokenEstimate.frames}) | handles=${resumeHandles.size}`);
+
+      sessionLog.push({ role: 'teacher', name: 'Teacher', text, time: Date.now() });
+      teacherTurns++;
+      if (teacherTurns % 10 === 0) refreshDigestSummary().catch(() => {});
+      pushSessionState();
+
+      if (isDiagramRequest(text)) {
+        console.log('[Poken] On-demand diagram requested via speech:', text.slice(0, 80));
+        triggerDiagramFromTeacher(text);
+      }
+
+      if (isVisionRefreshRequest(text)) {
+        console.log('[Poken] Vision refresh requested via speech:', text.slice(0, 80));
+        sendJson({ type: 'request_screenshot' });
+      }
+
+      const now = Date.now();
+      if (now > coachingCooldown) {
+        coachingCooldown = now + COACHING_COOLDOWN_MS;
+        generateCoachingTip(ai, topic, text, media ?? mediaState).then(tip => {
+          if (tip) sendJson({ type: 'coaching_tip', tip });
+        });
+      }
+    }
+
+    function triggerDiagramFromTeacher(text: string) {
+      if (session) triggerOnDemandDiagram(ai, topic, text, 'Student', session, socket, sendJson);
+    }
+
+    async function onStudentSpeech(name: string, text: string) {
+      if (!text) return;
+      sessionLog.push({ role: 'student', name, text, time: Date.now() });
+      const emotion = await classifyEmotion(ai, text);
+      if (emotion) sendJson({ type: 'emotion', state: emotion });
+    }
+
+    /** Typed teacher input. */
+    function onTextInput(userText: string) {
+      markTeacherSpoken('text input');
+      sendText(userText);
+      sessionLog.push({ role: 'teacher', name: 'Teacher', text: userText, time: Date.now() });
+      pushSessionState();
+      if (isDiagramRequest(userText)) {
+        console.log('[Poken] On-demand diagram requested via text_input');
+        triggerDiagramFromTeacher(userText);
+      }
+      if (isVisionRefreshRequest(userText)) {
+        console.log('[Poken] Vision refresh requested via text_input');
+        sendJson({ type: 'request_screenshot' });
+      }
+      const urls = extractSharedUrls(userText);
+      if (urls.length) {
+        (async () => {
+          for (const u of urls) {
+            const note = await fetchUrlContextNote(u);
+            if (note) sendText(note);
+          }
+        })();
+      }
+    }
+
+    // ── Session creation ───────────────────────────────────────────────────
+    /** Build the materials string (pasted notes + analyzed files, or the resumed context), then create the Live session. */
+    async function startSessionWithMaterials() {
+      let fullMaterials = resumeInfo ? resumeMaterialsContext : materials;
+      const total = pendingMaterialFiles.length;
+
+      if (total > 0) {
+        sendJson({ type: 'info', message: `Analyzing ${total} file${total > 1 ? 's' : ''} with AI vision...` });
+        const results = await Promise.allSettled(
+          pendingMaterialFiles.map(async (f, idx) => {
+            sendJson({ type: 'material_progress', filename: f.name, status: 'processing', current: idx + 1, total });
+            const { content } = await extractMaterialTextWithFallback(f.name, f.base64, f.mimeType, MAX_MATERIALS_CHARS);
+            sendJson({ type: 'material_progress', filename: f.name, status: 'done', current: idx + 1, total });
+            return { name: f.name, content };
+          })
+        );
+        for (const r of results) {
+          if (r.status === 'fulfilled' && r.value.content) {
+            fullMaterials += '\n\n---\n[From file: ' + r.value.name + ']\n' + r.value.content.slice(0, MAX_MATERIALS_CHARS);
+          }
+        }
+      }
+      if (fullMaterials.length > MAX_MATERIALS_CHARS * 2) {
+        fullMaterials = fullMaterials.slice(0, MAX_MATERIALS_CHARS * 2) + '\n\n[… truncated …]';
+      }
+      materialsContext = fullMaterials;
+      // The client holds this so a handover never re-runs vision analysis.
+      sendJson({ type: 'session_context', materialsContext });
+
+      if (socket.readyState !== WebSocket.OPEN) return;
+
+      await startSolo(fullMaterials);
+    }
+
+    /** ai.live.connect with the resumption handle; if the handle is refused, fall back to a fresh session + [RESUME] digest. */
+    async function connectLive(id: string, cfg: (handle?: string) => types.LiveConnectConfig, callbacks: any): Promise<LiveSession> {
+      const handle = resumeHandles.get(id);
+      if (handle) {
+        try {
+          return await ai.live.connect({ model, config: cfg(handle), callbacks });
+        } catch (e: any) {
+          console.warn(`[Poken] Resume handle rejected for ${id}, starting fresh: ${e.message ?? e}`);
+          resumeHandles.delete(id);
+        }
+      }
+      return await ai.live.connect({ model, config: cfg(), callbacks });
+    }
+
+    /**
+     * After onopen: either greet (fresh) or silently resume. Takes a getter because
+     * onopen fires synchronously inside ai.live.connect(), before the awaited
+     * session binding exists — the 400ms delay is what makes the read safe.
+     */
+    function afterOpen(getSess: () => LiveSession | null, id: string, greeting: string) {
+      sessionOpenedAt.set(id, Date.now());
+      const text = resumeInfo ? (resumeHandles.has(id) ? null : resumeBlock()) : greeting;
+      if (!text) return; // resumed from a Gemini handle: the model already remembers, no kick needed
+      setTimeout(() => { try { getSess()?.sendRealtimeInput({ text }); } catch (_) {} }, GREETING_KICK_DELAY_MS);
+    }
+
+    async function startSolo(fullMaterials: string) {
+      const instruction = getStudentInstruction(topic, persona, fullMaterials, video, language);
+      let sess: LiveSession | null = null;
+      try {
+        sess = await connectLive('solo', (h) => liveConfig('Zephyr', instruction, h), {
+          onopen: () => {
+            console.log(`[Poken] Live session opened${resumeHandles.has('solo') ? ' (resumed)' : ''}, topic:`, topic);
+            sendDebug('info', `Gemini Live session opened (solo${resumeHandles.has('solo') ? ', resumed' : ''})`);
+            sessionStartedAt = Date.now();
+            sendJson({ type: 'session_ready' });
+            sendJson({ type: 'info', message: resumeInfo ? `Reconnected. Keep going: ${topic}` : `Your student is ready. Start explaining: ${topic}` });
+            afterOpen(() => sess, 'solo', `Say a short greeting out loud in ${language} right now (e.g. "Hi, ready when you are!" or "Hey there!"). Say ONLY this greeting — nothing else. Do NOT ask a question. Do NOT mention the topic. Just greet and wait silently.`);
+          },
+          onmessage: (message: types.LiveServerMessage) => {
+            handleSessionMeta('solo', message);
+            if (message.serverContent?.inputTranscription?.text) {
+              ingestTeacherTranscript(message.serverContent.inputTranscription.text);
+            }
+            if (message.serverContent?.outputTranscription?.text) {
+              const chunk = enforceTranscriptLanguage(message.serverContent.outputTranscription.text, language);
+              if (chunk) {
+                studentTranscriptBuf += ' ' + chunk;
+                sendJson({ type: 'transcript', text: chunk });
+              }
+            }
+            if (message.serverContent?.modelTurn?.parts) {
+              for (const part of message.serverContent.modelTurn.parts) {
+                if (part.inlineData?.data) sendJson({ type: 'audio', base64: part.inlineData.data });
+              }
+            }
+            if (message.serverContent?.turnComplete) {
+              sendJson({ type: 'turn_complete' });
+              const full = studentTranscriptBuf.trim();
+              studentTranscriptBuf = '';
+              if (full) onStudentSpeech('Student', full);
+            }
+          },
+          onerror: (e: any) => {
+            console.error('[Poken] Session error:', e?.message ?? JSON.stringify(e));
+            sendDebug('error', `Gemini session error: ${e?.message ?? JSON.stringify(e)}`);
+          },
+          onclose: (e: any) => {
+            console.log('[Poken] Live session closed:', e?.code, e?.reason || '');
+            sendDebug('error', `Gemini session closed: code ${e?.code}${e?.reason ? ', reason: ' + e.reason : ''}`);
+            onGeminiClosed('solo', e?.code, e?.reason || '');
+          },
+        });
+        session = sess;
+        sessionReady = true;
+      } catch (e: any) {
+        console.error('[Poken] Failed to connect to Live API:', e);
+        sendDebug('error', `Failed to connect to Gemini Live API: ${e.message}`);
+        fatal(`Failed to connect: ${e.message}`);
+      }
+    }
+
+    // ── Message handler ────────────────────────────────────────────────────
+    socket.on('message', (data: Buffer, isBinary: boolean) => { try {
+      // Pre-session: only material_file / resume / ready_to_start; everything else (binary included) is dropped.
+      if (!sessionReady) {
+        if (isBinary) return;
+        let parsed: any;
+        try { parsed = JSON.parse(data.toString()); } catch (_) { return; }
+        if (parsed.type === 'material_file' && parsed.base64 && parsed.name) {
+          pendingMaterialFiles.push({ name: parsed.name, base64: parsed.base64, mimeType: parsed.mimeType || 'application/octet-stream' });
+          return;
+        }
+        if (parsed.type === 'resume' && parsed.token && parsed.token.v === 1) {
+          const t = parsed.token as ResumeToken;
+          resumeInfo = t;
+          resumeMaterialsContext = String(parsed.materialsContext || '').slice(0, MAX_MATERIALS_CHARS * 2);
+          resumeHandles.clear();
+          for (const [id, h] of Object.entries(t.handles || {})) if (typeof h === 'string' && h) resumeHandles.set(id, h);
+          digestSummary = typeof t.digest === 'string' ? t.digest.slice(0, 4000) : '';
+          for (const e of (Array.isArray(t.logTail) ? t.logTail : []).slice(-60)) {
+            if (e && typeof e.text === 'string') sessionLog.push({ role: e.role === 'teacher' ? 'teacher' : 'student', name: String(e.name || ''), text: e.text, time: Number(e.time) || Date.now() });
+          }
+          teacherHasSpoken = true; // mid-lesson: never gate transcription on resume
+          console.log(`[Poken] Resume requested | handles=${resumeHandles.size} | log=${sessionLog.length} | elapsed=${Math.round((t.elapsedMs || 0) / 1000)}s`);
+          sendDebug('info', `Resuming session (${resumeHandles.size} Gemini handle${resumeHandles.size === 1 ? '' : 's'})`);
+          return;
+        }
+        if (parsed.type === 'ready_to_start') {
+          startSessionWithMaterials().catch(err => {
+            console.error('[Poken] startSessionWithMaterials failed:', err);
+            fatal(`Failed to start: ${err?.message ?? err}`);
+          });
+          return;
+        }
+        return;
+      }
+
+      if (isBinary) { onTeacherAudio(data); return; }
+
+      let msg: any;
+      try { msg = JSON.parse(data.toString()); } catch (_) { return; }
+
+      switch (msg.type) {
+        case 'speech_start':
+          teacherIsSpeaking = true;
+          markTeacherSpoken('speech_start');
+          lastTeacherSpeechAt = Date.now();
+          // Interruption is NOT triggered here — speech_start fires on any noise.
+          return;
+        case 'speech_end':
+          teacherIsSpeaking = false;
+          lastTeacherSpeechAt = Date.now();
+          onTeacherSpeechEnd(msg.media);
+          return;
+        case 'request_reflection':
+          if (reflectionRequested) return;
+          reflectionRequested = true;
+          generateReflection(ai, topic, sessionLog, language).then(reflData => { sendJson({ type: 'reflection', data: reflData }); });
+          return;
+        case 'text_input':
+          if (typeof msg.text === 'string' && msg.text.trim()) onTextInput(msg.text.trim());
+          return;
+        case 'media_state': {
+          const parts: string[] = [];
+          if (typeof msg.camera === 'boolean')     { mediaState.camera = msg.camera;         parts.push(`[MEDIA] Camera ${msg.camera ? 'ON' : 'OFF'}`); }
+          if (typeof msg.whiteboard === 'boolean') { mediaState.whiteboard = msg.whiteboard; parts.push(`[MEDIA] Whiteboard ${msg.whiteboard ? 'ON' : 'OFF'}`); }
+          if (typeof msg.screen === 'boolean')     { mediaState.screen = msg.screen;         parts.push(`[MEDIA] Screen share ${msg.screen ? 'ON' : 'OFF'}`); }
+          if (parts.length) sendText(parts.join('. ') + '. Only claim to see content from sources that are ON.');
+          return;
+        }
+        case 'video_frame':
+        case 'diagram_frame':
+          // Relay unconditionally — gating on the diagram popup blinded the student during diagram review.
+          if (typeof msg.base64 === 'string') sendImage(msg.base64);
+          return;
+        case 'vision_screenshot':
+          if (typeof msg.base64 === 'string') {
+            sendImage(msg.base64);
+            sendText(VISION_SCREENSHOT_NOTE);
+          }
+          return;
+        case 'diagram_popup_open':
+        case 'diagram_popup_closed':
+          return; // tracked client-side only
+        case 'material_file':
+          if (msg.base64 && msg.name) {
+            const name = String(msg.name || 'file');
+            const mimeType = String(msg.mimeType || 'application/octet-stream');
+            console.log(`[Poken] Received study material: ${name} (${mimeType})`);
+            processMaterialFile(name, msg.base64, mimeType)
+              .then(message => sendText(message))
+              .catch(e => {
+                console.error('[Poken] material_file extract failed', e);
+                sendText(`[The teacher has shared a file: "${name}".]`);
+              });
+          }
+          return;
+        default:
+          return;
+      }
+    } catch (err: any) {
+      // A malformed frame must never kill a session.
+      console.error('[Poken] Message handler error (connection kept alive):', err);
+      sendDebug('error', `Server message handler error: ${err?.message ?? err}`);
+    } });
+
+    function teardown() {
+      tearingDown = true;
+      clearTimeout(handoverTimer);
+      clearInterval(pingTimer);
+      if (blackoutFlushTimer) { clearTimeout(blackoutFlushTimer); blackoutFlushTimer = null; }
+      try { session?.close(); } catch (_) {}
+    }
+
+    socket.on('close', () => {
+      console.log(`[Poken] Client disconnected${handoverStarted ? ' (after handover)' : ''}`);
+      teardown();
+    });
+
+    socket.on('error', (e) => {
+      console.error('[Poken] WebSocket error:', e);
+      teardown();
+    });
+  });
+
+  return server;
+}
+
+const server = buildServer();
+export default server;

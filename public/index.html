@@ -1,0 +1,1423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Poken</title>
+  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <!--FIREBASE_CONFIG-->
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --poken-bg: #F9FAFB;
+      --poken-surface: rgba(255, 255, 255, 0.6);
+      --poken-border: rgba(255, 255, 255, 0.3);
+      --poken-border-solid: #E5E7EB;
+      --poken-text: #1F2937;
+      --poken-text-secondary: #6B7280;
+      --poken-accent: #FF7355;
+      --poken-accent-shadow: rgba(255, 115, 85, 0.35);
+      --poken-transition: ease-in-out 0.3s;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--poken-bg);
+      color: var(--poken-text);
+      min-height: 100vh;
+    }
+
+    .glass-card {
+      background: var(--poken-surface);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--poken-border);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      border-radius: 1rem;
+    }
+
+    .fade-out { animation: fadeOut 0.3s ease-in-out forwards; }
+    .fade-in  { animation: fadeIn  0.3s ease-in-out forwards; }
+    @keyframes fadeOut { to   { opacity: 0; pointer-events: none; } }
+    @keyframes fadeIn  { from { opacity: 0; } }
+
+    /* ── LANDING ─────────────────────────────────── */
+    #landing-screen {
+      position: fixed; inset: 0; background: #fff;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 2.75rem; z-index: 100;
+    }
+    .landing-orb-wrap {
+      position: relative; width: 280px; height: 280px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .l-aura-3 { position: absolute; width: 130px; height: 130px; border-radius: 50%; background: rgba(160,160,160,0.08); opacity: 0; animation: lAuraIn 0.7s ease forwards 1.5s; }
+    .l-aura-2 { position: absolute; width: 110px; height: 110px; border-radius: 50%; background: rgba(160,160,160,0.18); opacity: 0; animation: lAuraIn 0.7s ease forwards 1.3s; }
+    .l-aura-1 { position: absolute; width: 90px; height: 90px; border-radius: 50%; background: rgba(160,160,160,0.36); opacity: 0; animation: lAuraIn 0.7s ease forwards 1.1s; }
+    @keyframes lAuraIn { to { opacity: 1; } }
+    .l-orb {
+      position: relative; z-index: 2; width: 72px; height: 72px; border-radius: 50%; background: #A0A0A0;
+      animation: lContract 1.6s cubic-bezier(0.16, 1, 0.3, 1) forwards, lBreath 4s ease-in-out 1.6s infinite;
+    }
+    @keyframes lContract { 0% { transform: scale(7); } 100% { transform: scale(1); } }
+    @keyframes lBreath { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+    .landing-copy { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+    .landing-title   { font-size: 2.25rem; font-weight: 600; color: #111827; letter-spacing: -0.05em; }
+    .landing-tagline { font-size: 0.9375rem; color: #9CA3AF; letter-spacing: -0.01em; }
+    .landing-cta {
+      margin-top: 0.75rem; padding: 0.8rem 2.25rem; background: #111827; color: #fff;
+      border: none; border-radius: 12px; font-family: inherit; font-size: 0.9375rem;
+      font-weight: 500; cursor: pointer; letter-spacing: -0.01em; transition: opacity 0.15s, transform 0.1s;
+    }
+    .landing-cta:hover  { opacity: 0.85; }
+    .landing-cta:active { transform: scale(0.98); }
+
+    /* ── SETUP (Command Center) ───────────────────── */
+    #setup-screen {
+      display: none; width: 100%; min-height: 100vh;
+      padding: 2rem 1rem; transition: opacity 0.3s ease-in-out;
+      position: relative; overflow: hidden;
+    }
+    #setup-screen.show { display: block; }
+    #ambientCanvas {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: 0;
+    }
+    .setup-container {
+      max-width: 80rem; margin: 0 auto; padding: 0 1rem;
+      display: grid; grid-template-columns: repeat(12, 1fr); gap: 1.5rem; align-items: start;
+      position: relative; z-index: 1;
+    }
+    .setup-growth { grid-column: span 3; }
+    .setup-lab { grid-column: span 6; }
+    .setup-prep { grid-column: span 3; }
+    @media (max-width: 1024px) {
+      .setup-growth { grid-column: span 12; }
+      .setup-lab { grid-column: span 12; }
+      .setup-prep { grid-column: span 12; }
+    }
+    .setup-sidebar-card {
+      padding: 1.25rem; margin-bottom: 1rem;
+    }
+    .setup-sidebar-card h3 {
+      font-size: 0.7rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--poken-text-secondary); margin-bottom: 0.75rem;
+    }
+    .recent-sessions-list { list-style: none; padding: 0; }
+    .recent-sessions-list li {
+      font-size: 0.8125rem; color: var(--poken-text); padding: 0.4rem 0;
+      border-bottom: 1px solid var(--poken-border-solid);
+    }
+    .recent-sessions-list li:last-child { border-bottom: none; }
+    .setup-empty-state {
+      text-align: center; padding: 1.5rem 0.5rem; color: var(--poken-text-secondary);
+      font-size: 0.8125rem; line-height: 1.5;
+    }
+    .setup-empty-state .empty-icon { font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.6; }
+    .setup-stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .setup-stat { padding: 0.6rem; background: rgba(255,255,255,0.5); border-radius: 0.5rem; text-align: center; }
+    .setup-stat-value { font-size: 1.1rem; font-weight: 700; color: var(--poken-accent); }
+    .setup-stat-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--poken-text-secondary); }
+    .setup-lab-inner { padding: 1.5rem; }
+    .setup-lab .logo { text-align: center; margin-bottom: 1.5rem; }
+    .setup-lab .logo h1 { font-size: 1.75rem; font-weight: 600; letter-spacing: -0.04em; color: var(--poken-text); }
+    .setup-lab .logo p { font-size: 0.8125rem; color: var(--poken-text-secondary); margin-top: 0.25rem; }
+    .setup-form { display: flex; flex-direction: column; gap: 1.25rem; }
+    .field-label { display: block; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--poken-text-secondary); margin-bottom: 0.45rem; }
+    select, input[type="text"] {
+      width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--poken-border-solid); border-radius: 0.75rem;
+      font-family: inherit; font-size: 0.9375rem; color: var(--poken-text); background: rgba(255,255,255,0.8);
+      appearance: none; outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    select:focus, input[type="text"]:focus { border-color: var(--poken-accent); box-shadow: 0 0 0 3px var(--poken-accent-shadow); }
+    textarea {
+      width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--poken-border-solid); border-radius: 0.75rem;
+      font-family: inherit; font-size: 0.9375rem; color: var(--poken-text); background: rgba(255,255,255,0.8);
+      resize: vertical; min-height: 90px; line-height: 1.5; outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    textarea:focus { border-color: var(--poken-accent); box-shadow: 0 0 0 3px var(--poken-accent-shadow); }
+
+    /* File drop zone */
+    .materials-section { display: flex; flex-direction: column; gap: 0.5rem; }
+    .file-drop-zone {
+      position: relative; width: 100%; min-height: 80px; padding: 1rem;
+      border: 2px dashed var(--poken-border-solid); border-radius: 0.75rem; background: rgba(255,255,255,0.4);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 0.4rem; cursor: pointer; transition: border-color 0.2s, background 0.2s;
+    }
+    .file-drop-zone:hover { border-color: var(--poken-accent); background: rgba(255,115,85,0.06); }
+    .file-drop-zone.drag-over { border-color: var(--poken-accent); background: rgba(255,115,85,0.1); border-style: solid; }
+    .file-drop-zone.has-files { min-height: auto; padding: 0.65rem 0.75rem; align-items: flex-start; }
+    .file-drop-icon { font-size: 1.5rem; line-height: 1; opacity: 0.5; }
+    .file-drop-label {
+      font-size: 0.78rem; color: #9CA3AF; text-align: center; line-height: 1.4;
+    }
+    .file-drop-label span { color: var(--poken-accent); font-weight: 500; }
+    .file-drop-input { display: none; }
+    .file-list { width: 100%; display: flex; flex-direction: column; gap: 0.35rem; }
+    .file-item {
+      display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.5rem;
+      background: #fff; border: 1px solid #E5E7EB; border-radius: 8px; font-size: 0.75rem;
+    }
+    .file-item-icon { font-size: 1rem; flex-shrink: 0; }
+    .file-item-name { flex: 1; color: #374151; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+    .file-item-size { color: #9CA3AF; flex-shrink: 0; }
+    .file-item-remove {
+      width: 18px; height: 18px; border: none; background: #F3F4F6; border-radius: 50%;
+      color: #9CA3AF; font-size: 0.7rem; cursor: pointer; display: flex; align-items: center;
+      justify-content: center; flex-shrink: 0; transition: background 0.15s, color 0.15s;
+    }
+    .file-item-remove:hover { background: #FEE2E2; color: #DC2626; }
+    .file-drop-add-more {
+      font-size: 0.7rem; color: #FF7355; cursor: pointer; margin-top: 0.15rem;
+      background: none; border: none; font-family: inherit; font-weight: 500; padding: 0;
+    }
+    .file-drop-add-more { color: var(--poken-accent); }
+    .file-drop-add-more:hover { text-decoration: underline; }
+    .materials-divider {
+      display: flex; align-items: center; gap: 0.5rem; font-size: 0.65rem;
+      color: var(--poken-text-secondary); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 500;
+    }
+    .materials-divider::before, .materials-divider::after {
+      content: ""; flex: 1; height: 1px; background: var(--poken-border-solid);
+    }
+
+    .persona-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 0.75rem; }
+    .persona-card {
+      border: 1px solid var(--poken-border-solid); border-radius: 1rem; padding: 1rem 0.5rem 0.875rem;
+      text-align: center; cursor: pointer; user-select: none;
+      transition: transform 0.2s, border-color 0.2s, background 0.2s, box-shadow 0.2s;
+      background: rgba(255,255,255,0.5);
+    }
+    .persona-card:hover { transform: scale(1.02); border-color: var(--poken-accent); background: rgba(255,115,85,0.06); box-shadow: 0 4px 12px var(--poken-accent-shadow); }
+    .persona-card:active { transform: scale(0.98); }
+    .persona-card.selected { border-color: var(--poken-accent); background: rgba(255,115,85,0.1); box-shadow: 0 0 0 2px var(--poken-accent-shadow); }
+    .persona-card .emoji { font-size: 1.375rem; display: block; margin-bottom: 0.35rem; }
+    .persona-card .pname { font-size: 0.75rem; font-weight: 600; color: var(--poken-text); }
+    .persona-card .pdesc { font-size: 0.65rem; color: var(--poken-text-secondary); margin-top: 0.15rem; line-height: 1.3; }
+
+    .toggle { position: relative; display: inline-block; cursor: pointer; }
+    .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .toggle-track {
+      display: block; width: 40px; height: 22px; background: #E5E7EB;
+      border-radius: 999px; transition: background 0.2s; position: relative;
+    }
+    .toggle input:checked + .toggle-track { background: var(--poken-accent); }
+    .toggle-thumb {
+      position: absolute; top: 3px; left: 3px; width: 16px; height: 16px;
+      background: #fff; border-radius: 50%; transition: transform 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+    .toggle input:checked + .toggle-track .toggle-thumb { transform: translateX(18px); }
+
+    #startBtn {
+      width: 100%; padding: 1rem 1.5rem; background: var(--poken-accent); color: #fff; border: none;
+      border-radius: 1rem; font-family: inherit; font-size: 1rem; font-weight: 600;
+      cursor: pointer; letter-spacing: -0.02em;
+      box-shadow: 0 4px 14px var(--poken-accent-shadow);
+      transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+    }
+    #startBtn:hover   { transform: translateY(-1px); box-shadow: 0 6px 20px var(--poken-accent-shadow); }
+    #startBtn:active  { transform: scale(0.98); }
+    #startBtn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+    .resume-session-btn {
+      width: 100%; margin-top: 0.6rem; padding: 0.8rem 1.25rem; background: transparent;
+      color: var(--poken-accent); border: 1.5px solid var(--poken-accent); border-radius: 1rem;
+      font-family: inherit; font-size: 0.92rem; font-weight: 600; cursor: pointer; letter-spacing: -0.02em;
+      transition: background 0.2s, transform 0.2s;
+    }
+    .resume-session-btn:hover { background: var(--poken-accent-shadow); transform: translateY(-1px); }
+    .resume-session-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .setup-prep-preview {
+      width: 100%; aspect-ratio: 1; max-height: 140px; border-radius: 1rem;
+      background: rgba(255,255,255,0.4); border: 1px solid var(--poken-border-solid);
+      display: flex; align-items: center; justify-content: center; overflow: hidden;
+    }
+    .setup-prep-preview video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+    .setup-mic-bar-wrap { height: 8px; background: var(--poken-border-solid); border-radius: 999px; overflow: hidden; margin-top: 0.5rem; }
+    .setup-mic-bar { height: 100%; width: 30%; background: var(--poken-accent); border-radius: 999px; transition: width 0.2s; animation: setupMicPulse 2s ease-in-out infinite; }
+    @keyframes setupMicPulse { 0%, 100% { width: 20%; } 50% { width: 60%; } }
+    .pro-tip-card { padding: 1rem; font-size: 0.8125rem; line-height: 1.5; color: var(--poken-text-secondary); }
+    .pro-tip-card strong { color: var(--poken-text); display: block; margin-bottom: 0.35rem; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    /* ── SESSION ──────────────────────────────────── */
+    #session-screen {
+      display: none; width: 100vw; height: 100vh;
+      flex-direction: column; background: #fff; color: #111827; overflow: hidden; position: relative;
+    }
+
+    /* Top bar */
+    .session-top-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.5rem 1.25rem; background: #fff; border-bottom: 1.5px solid #E5E7EB;
+      flex-shrink: 0; min-height: 44px;
+    }
+    .session-top-left { display: flex; align-items: center; gap: 1rem; }
+    .session-logo {
+      font-size: 0.9rem; font-weight: 600; color: #111827; letter-spacing: -0.04em;
+      border: none; background: transparent; cursor: pointer; padding: 0;
+      font-family: inherit;
+    }
+    .session-logo:hover { color: #374151; }
+    .session-topic-badge {
+      font-size: 0.75rem; color: #6B7280; background: #F3F4F6; padding: 0.2rem 0.6rem;
+      border-radius: 6px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .session-top-right { display: flex; align-items: center; gap: 1rem; }
+    .session-timer {
+      font-size: 0.8rem; font-weight: 500; color: #6B7280;
+      font-variant-numeric: tabular-nums; letter-spacing: 0.02em;
+    }
+    .session-status {
+      display: flex; align-items: center; gap: 0.4rem;
+      font-size: 0.7rem; color: #9CA3AF;
+    }
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: #D1D5DB;
+      transition: background 0.3s;
+    }
+    .status-dot.connected { background: #34D399; }
+    .status-dot.error     { background: #EF4444; }
+
+    /* Session drag-and-drop overlay (during session) */
+    #session-drop-overlay {
+      position: absolute; inset: 0; z-index: 1000;
+      background: rgba(255, 255, 255, 0.92); display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+      border: 3px dashed #E5E7EB; border-radius: 12px; margin: 8px;
+    }
+    #session-screen.drag-over-session #session-drop-overlay {
+      opacity: 1; pointer-events: auto; border-color: #FF7355; background: rgba(255, 243, 239, 0.95);
+    }
+    .session-drop-overlay-text {
+      font-size: 1rem; font-weight: 500; color: #FF7355;
+    }
+
+    /* Body — three columns with resizers */
+    .session-body { flex: 1; display: flex; overflow: hidden; position: relative; }
+
+    /* Resizer handles */
+    .panel-resizer {
+      width: 6px; flex-shrink: 0; background: transparent; cursor: col-resize;
+      position: relative; transition: background 0.15s;
+    }
+    .panel-resizer:hover { background: #E5E7EB; }
+    .panel-resizer:active { background: #FF7355; }
+    .panel-resizer::after {
+      content: ""; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 2px; height: 24px; background: #D1D5DB; border-radius: 1px;
+    }
+
+    /* Panel toggle buttons on center edges */
+    .panel-toggle {
+      position: absolute; top: 50%; transform: translateY(-50%); z-index: 20;
+      width: 24px; height: 48px; padding: 0; border: 1.5px solid #E5E7EB;
+      background: #fff; border-radius: 6px; cursor: pointer;
+      font-size: 0.75rem; color: #6B7280; display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06); transition: background 0.15s, color 0.15s;
+    }
+    .panel-toggle:hover { background: #F9FAFB; color: #111827; }
+    .panel-toggle-left  { left: 0; border-left: none; border-radius: 0 6px 6px 0; }
+    .panel-toggle-right { right: 0; border-right: none; border-radius: 6px 0 0 6px; }
+    .transcript-panel.collapsed + .panel-resizer { display: none; }
+    .coaching-panel.collapsed { display: none !important; }
+    .panel-resizer.hidden { display: none; }
+
+    /* Transcript panel (left) */
+    .transcript-panel {
+      width: 300px; min-width: 120px; flex-shrink: 0; background: #F9FAFB; border-right: 1.5px solid #E5E7EB;
+      display: flex; flex-direction: column; overflow: hidden; transition: width 0.2s, min-width 0.2s;
+    }
+    .transcript-panel.collapsed { width: 0; min-width: 0; overflow: hidden; border-right: none; }
+    .panel-header {
+      padding: 0.65rem 1rem; font-size: 0.65rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.1em; color: #9CA3AF;
+      border-bottom: 1.5px solid #E5E7EB;
+    }
+    .transcript-body {
+      flex: 1; overflow-y: auto; padding: 0.75rem; scroll-behavior: smooth;
+    }
+    .transcript-body::-webkit-scrollbar { width: 4px; }
+    .transcript-body::-webkit-scrollbar-track { background: transparent; }
+    .transcript-body::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 2px; }
+    .t-entry { margin-bottom: 0.75rem; }
+    .t-speaker { font-size: 0.65rem; font-weight: 600; margin-bottom: 0.15rem; }
+    .t-speaker.teacher { color: #3B82F6; }
+    .t-speaker.student { color: #EA580C; }
+    .t-text {
+      font-size: 0.8rem; color: #374151; line-height: 1.55;
+      transition: opacity 0.3s;
+    }
+    .t-text.cleaning { opacity: 0.5; font-style: italic; }
+
+    /* Center column (with toggle buttons) */
+    .session-center-wrap { flex: 1; display: flex; position: relative; min-width: 0; min-height: 0; }
+    .session-center {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      position: relative; min-width: 0; min-height: 0;
+      padding: 0.75rem; gap: 0.5rem; overflow-y: auto;
+    }
+    .session-center.dual-media { justify-content: flex-start; }
+    .session-center.camera-floating-host { overflow: hidden; }
+
+    /* Media container (whiteboard) */
+    .media-container {
+      position: relative; width: 100%; max-width: 960px;
+      aspect-ratio: 16/9; background: #F9FAFB; border-radius: 12px;
+      overflow: hidden; border: 1.5px solid #E5E7EB;
+    }
+    .media-container.hidden { display: none; }
+    .session-center.dual-media .media-container {
+      aspect-ratio: auto;
+      height: 45vh;
+      flex-shrink: 0;
+    }
+
+    #whiteboardCanvas {
+      display: none; width: 100%; height: 100%; cursor: crosshair;
+      touch-action: none; background: #fff;
+    }
+    #cameraFeed {
+      display: none; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);
+    }
+
+    /* Camera self-view (in center column) */
+    .camera-container {
+      display: none; width: 100%; max-width: 480px;
+      aspect-ratio: 16/9; background: #1a1a1a; border-radius: 12px;
+      overflow: hidden; border: 1.5px solid #E5E7EB;
+      position: relative;
+    }
+    .camera-container.visible { display: block; }
+    .camera-container video {
+      width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);
+    }
+    .camera-container.floating {
+      position: absolute; width: 260px; max-width: none; aspect-ratio: 16/9;
+      height: auto !important;
+      z-index: 22; border-color: rgba(255,255,255,0.38);
+      box-shadow: 0 14px 28px rgba(0,0,0,0.28);
+    }
+    .camera-container.fullscreen-floating {
+      position: fixed; z-index: 1210;
+    }
+    .camera-drag-handle {
+      position: absolute; top: 8px; left: 8px; z-index: 3;
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      padding: 0.2rem 0.45rem;
+      border-radius: 999px; border: 1px solid rgba(255,255,255,0.34);
+      color: #E5E7EB; background: rgba(17,24,39,0.62);
+      font-size: 0.62rem; font-weight: 600; letter-spacing: 0.03em;
+      cursor: grab; user-select: none;
+    }
+    .camera-container:not(.floating) .camera-drag-handle { display: none; }
+    .camera-drag-handle:active { cursor: grabbing; }
+    .session-center.dual-media .camera-container {
+      aspect-ratio: auto;
+      height: 25vh;
+      flex-shrink: 0;
+    }
+
+    /* Screen share (in center column) */
+    .screen-container {
+      display: none; width: 100%; max-width: 960px;
+      aspect-ratio: 16/9; background: #1a1a1a; border-radius: 12px;
+      overflow: hidden; border: 1.5px solid #E5E7EB;
+    }
+    .screen-container.visible { display: block; }
+    .screen-container video {
+      width: 100%; height: 100%; object-fit: contain;
+    }
+    .session-center.dual-media .screen-container {
+      aspect-ratio: auto;
+      height: 40vh;
+      flex-shrink: 0;
+    }
+    .session-center.triple-media .media-container {
+      aspect-ratio: auto;
+      height: 28vh;
+      flex-shrink: 0;
+    }
+    .session-center.triple-media .screen-container {
+      aspect-ratio: auto;
+      height: 28vh;
+      flex-shrink: 0;
+    }
+    .session-center.triple-media .camera-container {
+      aspect-ratio: auto;
+      height: 18vh;
+      flex-shrink: 0;
+    }
+
+    /* Whiteboard toolbar */
+    .wb-toolbar {
+      display: none; position: absolute; top: 10px; left: 10px; z-index: 10;
+      align-items: center; gap: 0.2rem; padding: 0.35rem 0.5rem;
+      background: rgba(255,255,255,0.95); backdrop-filter: blur(8px);
+      border-radius: 8px; border: 1.5px solid #E5E7EB;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .wb-toolbar.visible { display: flex; }
+    .wb-btn {
+      width: 30px; height: 30px; border: none; border-radius: 6px;
+      background: transparent; color: #374151; font-size: 0.8rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; transition: background 0.15s;
+    }
+    .wb-btn:hover { background: #F3F4F6; }
+    .wb-btn.active { background: #FF7355; color: #fff; }
+    .wb-sep { width: 1px; height: 20px; background: #E5E7EB; margin: 0 0.15rem; }
+    .wb-color {
+      width: 18px; height: 18px; border-radius: 50%; border: 2px solid transparent;
+      cursor: pointer; transition: border-color 0.15s;
+    }
+    .wb-color.active { border-color: #111827; }
+    .wb-color-custom {
+      width: 18px; height: 18px; border-radius: 50%; border: 2px solid transparent;
+      cursor: pointer; overflow: hidden; position: relative;
+    }
+    .wb-color-custom input[type="color"] {
+      position: absolute; inset: -4px; width: 26px; height: 26px;
+      border: none; padding: 0; cursor: pointer; opacity: 0;
+    }
+    .wb-color-custom-preview {
+      width: 100%; height: 100%; border-radius: 50%;
+      background: conic-gradient(red, yellow, lime, aqua, blue, magenta, red);
+    }
+    .wb-size-group {
+      display: none; align-items: center; gap: 0.25rem;
+    }
+    .wb-size-group.visible { display: flex; }
+    .wb-size-group input[type="range"] {
+      width: 70px; height: 4px; -webkit-appearance: none; appearance: none;
+      background: #E5E7EB; border-radius: 2px; outline: none;
+    }
+    .wb-size-group input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+      background: #FF7355; cursor: pointer; border: 2px solid #fff;
+      box-shadow: 0 0 2px rgba(0,0,0,0.2);
+    }
+    .wb-size-label { font-size: 0.6rem; color: #9CA3AF; min-width: 18px; text-align: center; }
+    .wb-tool-icon {
+      display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center;
+    }
+    .wb-tool-icon svg { width: 16px; height: 16px; }
+    .wb-fullscreen-btn {
+      width: 30px; height: 30px; border: none; border-radius: 6px;
+      background: transparent; color: #374151; font-size: 0.75rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; transition: background 0.15s;
+    }
+    .wb-view-btn {
+      width: 30px; height: 30px; border: none; border-radius: 6px;
+      background: transparent; color: #374151; font-size: 0.65rem; font-weight: 700;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s;
+    }
+    .wb-view-btn:hover { background: #F3F4F6; }
+    .wb-fullscreen-btn:hover { background: #F3F4F6; }
+    .media-container.wb-fullscreen {
+      position: fixed !important; inset: 0 !important; z-index: 1000 !important;
+      max-width: none !important; width: 100vw !important; height: 100vh !important;
+      border-radius: 0 !important; aspect-ratio: auto !important;
+      background: #000 !important;
+    }
+    .media-container.wb-fullscreen #whiteboardCanvas {
+      width: 100%; height: 100%; object-fit: contain;
+    }
+    #session-screen.wb-overlay-active .transcript-panel,
+    #session-screen.wb-overlay-active .coaching-panel {
+      position: fixed;
+      top: 68px;
+      bottom: 80px;
+      z-index: 1205;
+      display: flex !important;
+      border: 1.5px solid #E5E7EB;
+      box-shadow: 0 14px 36px rgba(0,0,0,0.22);
+      background: rgba(249,250,251,0.96);
+      backdrop-filter: blur(8px);
+    }
+    #session-screen.wb-overlay-active .transcript-panel {
+      left: 10px;
+      border-right: 1.5px solid #E5E7EB;
+      border-radius: 10px;
+    }
+    #session-screen.wb-overlay-active .coaching-panel {
+      right: 10px;
+      border-left: 1.5px solid #E5E7EB;
+      border-radius: 10px;
+    }
+    #session-screen.wb-overlay-active .transcript-panel.collapsed,
+    #session-screen.wb-overlay-active .coaching-panel.collapsed {
+      width: 0 !important;
+      min-width: 0 !important;
+      opacity: 0;
+      pointer-events: none;
+      border: none;
+      padding: 0;
+      margin: 0;
+    }
+    #session-screen.wb-overlay-active .panel-resizer { display: none !important; }
+    #session-screen.wb-overlay-active .panel-toggle {
+      position: fixed;
+      top: 84px;
+      z-index: 1212;
+      height: 34px;
+      width: 34px;
+      border-radius: 8px;
+      border: 1.5px solid #E5E7EB;
+      background: rgba(255,255,255,0.96);
+      box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+      color: #374151;
+    }
+    #session-screen.wb-overlay-active .panel-toggle-left { left: 12px; }
+    #session-screen.wb-overlay-active .panel-toggle-right { right: 12px; }
+
+    /* ── Diagram thumbnail card (in transcript) ──────────────────────────── */
+    .t-diagram-card {
+      margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.4rem 0.6rem; background: #F9FAFB;
+      border: 1px solid #E5E7EB; border-radius: 8px; width: fit-content;
+    }
+    .t-diagram-thumb {
+      width: 60px; height: 45px; object-fit: cover; border-radius: 4px; cursor: zoom-in;
+      border: 1px solid #E5E7EB;
+    }
+    .t-diagram-open-btn {
+      font-size: 0.72rem; color: #FF7355; cursor: pointer; border: none;
+      background: none; font-family: inherit; padding: 0; white-space: nowrap;
+    }
+    .t-diagram-open-btn:hover { text-decoration: underline; }
+
+    /* ── Diagram popup overlay ───────────────────────────────────────────── */
+    #diagramPopup {
+      display: none; position: fixed; z-index: 500; bottom: 80px; right: 20px;
+      width: 480px; min-width: 300px; min-height: 250px;
+      background: #fff; border-radius: 12px; border: 1.5px solid #E5E7EB;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.18); overflow: hidden;
+      flex-direction: column;
+    }
+    #diagramPopup.visible { display: flex; }
+    #diagramPopup.diagram-fullscreen {
+      position: fixed; inset: 0; width: 100vw !important;
+      height: 100vh !important; border-radius: 0; bottom: auto; right: auto;
+    }
+    .diagram-titlebar {
+      display: flex; align-items: center; padding: 0.4rem 0.6rem;
+      background: #F9FAFB; border-bottom: 1px solid #E5E7EB;
+      cursor: grab; user-select: none; gap: 0.4rem; flex-shrink: 0;
+    }
+    .diagram-titlebar:active { cursor: grabbing; }
+    .diagram-title { flex: 1; font-size: 0.72rem; font-weight: 600; color: #374151; }
+    .diagram-titlebar-btn {
+      width: 22px; height: 22px; border: none; background: none; cursor: pointer;
+      color: #6B7280; font-size: 0.75rem; border-radius: 4px; display: flex;
+      align-items: center; justify-content: center; transition: background 0.15s;
+    }
+    .diagram-titlebar-btn:hover { background: #E5E7EB; }
+    .diagram-toolbar {
+      display: flex; align-items: center; gap: 0.25rem; padding: 0.3rem 0.5rem;
+      border-bottom: 1px solid #E5E7EB; flex-wrap: wrap; flex-shrink: 0;
+      background: #FAFAFA;
+    }
+    .diag-tool-btn {
+      width: 28px; height: 28px; border: none; border-radius: 6px;
+      background: transparent; cursor: pointer; font-size: 0.8rem;
+      display: flex; align-items: center; justify-content: center;
+      color: #374151; transition: background 0.15s;
+    }
+    .diag-tool-btn:hover { background: #F3F4F6; }
+    .diag-tool-btn.active { background: #FF7355; color: #fff; }
+    .diag-color-swatch {
+      width: 20px; height: 20px; border-radius: 50%; cursor: pointer;
+      border: 2px solid transparent; transition: border-color 0.15s; flex-shrink: 0;
+    }
+    .diag-color-swatch.active { border-color: #374151; }
+    .diag-size-slider {
+      width: 55px; height: 4px; cursor: pointer; accent-color: #FF7355;
+    }
+    #diagramCanvas {
+      flex: 1; width: 100%; cursor: crosshair; touch-action: none; display: block;
+      min-height: 0;
+    }
+    .diagram-resize-handle {
+      position: absolute; bottom: 0; right: 0; width: 16px; height: 16px;
+      cursor: se-resize; z-index: 1;
+    }
+    .diagram-resize-handle::after {
+      content: ''; position: absolute; bottom: 3px; right: 3px;
+      width: 8px; height: 8px;
+      border-bottom: 2px solid #9CA3AF; border-right: 2px solid #9CA3AF;
+    }
+
+    /* ── Debug panel (setup page, after crash) ───────────────────────── */
+    #debugPanel {
+      position: fixed; z-index: 700; bottom: 20px; left: 50%; transform: translateX(-50%);
+      width: 600px; max-width: calc(100vw - 40px); max-height: 220px;
+      background: #1E1E2E; color: #CDD6F4; border-radius: 10px;
+      border: 1.5px solid #F38BA8; box-shadow: 0 8px 32px rgba(243,139,168,0.25);
+      flex-direction: column; font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+      font-size: 0.7rem; overflow: hidden;
+    }
+    .debug-header {
+      display: flex; align-items: center; padding: 0.4rem 0.6rem;
+      background: #181825; border-bottom: 1px solid #45475A; gap: 0.5rem; flex-shrink: 0;
+    }
+    .debug-header span { flex: 1; font-weight: 600; font-size: 0.72rem; color: #F38BA8; }
+    .debug-header button {
+      border: none; background: none; color: #9399B2; cursor: pointer;
+      font-size: 0.8rem; padding: 0.15rem 0.4rem; border-radius: 4px;
+    }
+    .debug-header button:hover { background: #313244; color: #CDD6F4; }
+    .debug-body {
+      flex: 1; overflow-y: auto; padding: 0.4rem 0.6rem;
+      scrollbar-width: thin; scrollbar-color: #45475A #1E1E2E;
+    }
+    .debug-body::-webkit-scrollbar { width: 6px; }
+    .debug-body::-webkit-scrollbar-track { background: #1E1E2E; }
+    .debug-body::-webkit-scrollbar-thumb { background: #45475A; border-radius: 3px; }
+    .debug-line { padding: 1px 0; word-break: break-all; line-height: 1.5; }
+    .debug-ts { color: #6C7086; margin-right: 0.4rem; }
+    .debug-error { color: #F38BA8; }
+    .debug-warn { color: #FAB387; }
+    .debug-info { color: #A6E3A1; }
+
+    /* Orb pill (shown in media container) */
+    .orb-pill {
+      display: none; position: absolute; bottom: 12px; left: 12px;
+      align-items: center; gap: 0.5rem;
+      background: rgba(255,255,255,0.9); backdrop-filter: blur(8px);
+      border-radius: 999px; padding: 0.3rem 0.7rem 0.3rem 0.4rem; z-index: 10;
+      border: 1px solid #E5E7EB; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .orb-pill.visible { display: flex; }
+    .orb-pill-dot {
+      width: 20px; height: 20px; border-radius: 50%;
+      background: var(--orb-color, #9CA3AF);
+      box-shadow: 0 0 8px 1px var(--orb-glow, rgba(156,163,175,0.4));
+      transition: background 0.55s, box-shadow 0.55s;
+      animation: orbBreath var(--orb-speed, 3.5s) ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    .orb-pill-label { font-size: 0.65rem; font-weight: 500; color: #6B7280; min-width: 2.5rem; }
+
+    /* Full orb (no media mode) */
+    .orb-area {
+      display: flex; flex-direction: column; align-items: center;
+    }
+    .orb-area.hidden { display: none; }
+
+    .orb-wrap {
+      position: relative; width: 180px; height: 180px;
+      display: flex; align-items: center; justify-content: center;
+      /* Extra margin so ripple rings (scale up to 1.55×) don't overlap text below */
+      margin-bottom: 40px;
+    }
+    .ring {
+      position: absolute; inset: 0; border-radius: 50%;
+      border: 1.5px solid var(--orb-color, #555);
+      opacity: 0; pointer-events: none; transform: scale(0.85);
+    }
+    .rings-on .ring              { animation: ripple 2s ease-out infinite; }
+    .rings-on .ring:nth-child(2) { animation-delay: 0.65s; }
+    .rings-on .ring:nth-child(3) { animation-delay: 1.3s; }
+    @keyframes ripple {
+      0%   { transform: scale(0.85); opacity: 0.5; }
+      100% { transform: scale(1.55); opacity: 0; }
+    }
+    #orb {
+      width: 120px; height: 120px; border-radius: 50%;
+      background: var(--orb-color, #555);
+      box-shadow: 0 0 40px 4px var(--orb-glow, rgba(85,85,85,0.4));
+      transition: background 0.55s ease, box-shadow 0.55s ease;
+      animation: orbBreath var(--orb-speed, 3.5s) ease-in-out infinite;
+      will-change: transform;
+    }
+    @keyframes orbBreath {
+      0%, 100% { transform: scale(1); }
+      50%       { transform: scale(1.05); }
+    }
+    #orbLabel {
+      font-size: 0.75rem; color: #9CA3AF; margin-top: 0.75rem;
+      font-weight: 400; min-height: 1.2em;
+    }
+    #speakerLabel {
+      font-size: 0.7rem; font-weight: 600; margin-top: 0.2rem;
+      min-height: 1em; transition: color 0.4s;
+    }
+
+    .session-chat button:hover { background: #E5E7EB; }
+
+    /* ── SETUP LOADING ────────────────────────────── */
+    #setup-loading {
+      display: none; position: fixed; inset: 0; z-index: 150;
+      background: #fff; flex-direction: column; align-items: center; justify-content: center;
+      gap: 1.5rem;
+    }
+    #setup-loading.visible { display: flex; }
+    .setup-loading-text { font-size: 0.9375rem; color: #6B7280; text-align: center; max-width: 280px; }
+
+    /* ── REFLECTION LOADING ───────────────────────── */
+    #reflection-loading-screen {
+      display: none; position: fixed; inset: 0; z-index: 200;
+      background: linear-gradient(135deg, #f0f4f8 0%, #e8eef5 40%, #f5f0fa 70%, #fef9f4 100%);
+      flex-direction: column; align-items: center; justify-content: center;
+      gap: 1.5rem;
+    }
+    #reflection-loading-screen.visible { display: flex; }
+    .reflection-loading-orb-wrap {
+      position: relative; width: 160px; height: 160px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .reflection-loading-orb {
+      width: 72px; height: 72px; border-radius: 50%;
+      background: #FF7355;
+      box-shadow: 0 0 40px 8px rgba(255, 115, 85, 0.4);
+      animation: reflectionOrbPulse 1.8s ease-in-out infinite;
+    }
+    @keyframes reflectionOrbPulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.08); opacity: 0.85; }
+    }
+    .reflection-loading-text {
+      font-size: 0.9375rem; color: #6B7280; text-align: center; max-width: 280px;
+    }
+
+    /* ── REFLECTION (Glassmorphism) ─────────────────── */
+    #reflection-screen {
+      display: none; width: 100%; min-height: 100vh;
+      padding: 3rem 1.5rem; transition: opacity 0.3s ease-in-out;
+      background: linear-gradient(135deg, #f0f4f8 0%, #e8eef5 40%, #f5f0fa 70%, #fef9f4 100%);
+    }
+    #reflection-screen.show { display: block; }
+    .reflection-inner { max-width: 68rem; margin: 0 auto; }
+    .reflection-title {
+      font-size: 2.25rem; font-weight: 900; letter-spacing: -0.02em;
+      color: #0f172a; margin-bottom: 0.5rem;
+    }
+    .reflection-summary {
+      color: #64748b; font-size: 1.1rem; line-height: 1.7; font-weight: 400;
+      margin-bottom: 2.5rem; max-width: 48rem;
+    }
+    /* Topic card — frosted teal glass */
+    .reflection-topic-card {
+      display: flex; align-items: center; justify-content: space-between;
+      background: rgba(224, 242, 241, 0.4);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      border-radius: 1rem; padding: 2rem 2.5rem;
+      border: 1px solid rgba(178, 223, 219, 0.5);
+      box-shadow: 0 2px 16px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255,255,255,0.5);
+      margin-bottom: 2.5rem; gap: 1.5rem; flex-wrap: wrap;
+    }
+    .reflection-topic-label {
+      font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: #00796b; margin-bottom: 0.25rem; display: block;
+    }
+    .reflection-topic-name { font-size: 1.875rem; font-weight: 800; color: #0f172a; margin: 0; }
+    .reflection-topic-meta { font-size: 0.95rem; color: #475569; margin-top: 0.5rem; font-weight: 500; }
+    .reflection-download-btn {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.7rem 1.5rem; border-radius: 0.75rem;
+      background: rgba(255, 255, 255, 0.55);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(178, 223, 219, 0.5); color: #00796b;
+      font-family: inherit; font-size: 0.875rem; font-weight: 600;
+      cursor: pointer; transition: all 0.2s; white-space: nowrap;
+    }
+    .reflection-download-btn:hover { background: #00796b; color: #fff; border-color: #00796b; }
+    .reflection-download-icon { font-size: 1rem; }
+    /* Bento grid */
+    .reflection-bento { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+    .reflection-bento .bento-row1 { grid-column: span 1; }
+    .reflection-bento .bento-full { grid-column: 1 / -1; }
+    @media (max-width: 768px) {
+      .reflection-bento { grid-template-columns: 1fr; }
+      .reflection-bento .bento-row1, .reflection-bento .bento-full { grid-column: span 1; }
+      .reflection-topic-card { flex-direction: column; align-items: flex-start; }
+    }
+    /* Cards — frosted glass */
+    .reflection-card {
+      padding: 1.5rem; border-radius: 1rem;
+      background: rgba(255, 255, 255, 0.5);
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.6);
+      box-shadow: 0 2px 16px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255,255,255,0.6);
+      transition: box-shadow 0.25s, transform 0.25s;
+    }
+    .reflection-card:hover {
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255,255,255,0.7);
+      transform: translateY(-1px);
+    }
+    .reflection-card h3 {
+      font-size: 1.15rem; font-weight: 700; color: #0f172a;
+      margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;
+    }
+    .rcard-icon { font-size: 1.1rem; }
+    .rcard-icon-strength { color: #0d9488; }
+    .rcard-icon-gap { color: #f472b6; }
+    /* Card item rows */
+    .rcard-items { display: flex; flex-direction: column; gap: 0.5rem; }
+    .rcard-item {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.85rem 1rem; border-radius: 0.75rem;
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      font-size: 0.9375rem; font-weight: 600; color: #334155;
+    }
+    .rcard-item-icon { font-size: 1rem; flex-shrink: 0; }
+    .card-strength .rcard-item { background: rgba(224,242,241,0.35); }
+    .card-strength .rcard-item-icon { color: #0d9488; }
+    .card-strength .reflection-highlight { font-weight: 700; color: #0d9488; }
+    .card-gap .rcard-item { background: rgba(252,231,243,0.3); }
+    .card-gap .rcard-item-icon { color: #f472b6; }
+    .card-gap .reflection-highlight { font-weight: 700; color: #e11d48; }
+    /* Vocabulary tags */
+    .rcard-vocab-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .rcard-vocab-tag {
+      padding: 0.5rem 1rem; background: rgba(224, 242, 241, 0.25); color: #0d9488;
+      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(13, 148, 136, 0.2); border-radius: 999px;
+      font-size: 0.8125rem; font-weight: 700;
+    }
+    /* Next steps */
+    .rcard-next-steps { list-style: disc; padding-left: 1.25rem; margin: 0; }
+    .rcard-next-steps li {
+      font-size: 0.9375rem; font-weight: 500; color: #334155;
+      padding: 0.35rem 0; line-height: 1.6;
+    }
+    .card-improvement .reflection-highlight { font-weight: 700; color: #0d9488; }
+    /* Questions */
+    .rcard-questions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    @media (max-width: 600px) { .rcard-questions-grid { grid-template-columns: 1fr; } }
+    .rcard-question {
+      padding: 1rem 1.25rem; background: rgba(255,243,224,0.35);
+      border-radius: 0.75rem; border-left: 4px solid #ffcc80;
+      font-size: 0.9375rem; font-weight: 500; font-style: italic; color: #334155;
+    }
+    /* Presentation feedback */
+    .rcard-feedback-box {
+      padding: 1.25rem 1.5rem; background: rgba(224,242,241,0.25);
+      border-radius: 0.75rem; border: 1px solid rgba(255, 255, 255, 0.4);
+    }
+    .rcard-feedback-box .reflection-skill-text {
+      font-size: 0.9375rem; color: #334155; line-height: 1.7;
+    }
+    /* Mechanics grid */
+    .rcard-mechanics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
+    @media (max-width: 600px) { .rcard-mechanics-grid { grid-template-columns: repeat(2, 1fr); } }
+    .rcard-mechanic {
+      display: flex; flex-direction: column; align-items: center;
+      padding: 1.25rem 0.75rem; background: rgba(224, 242, 241, 0.15);
+      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      border-radius: 0.75rem; border: 1px solid rgba(13, 148, 136, 0.15); text-align: center;
+    }
+    .rcard-mechanic-icon { font-size: 1.5rem; margin-bottom: 0.4rem; color: rgba(13, 148, 136, 0.55); }
+    .rcard-mechanic-label { font-size: 0.8125rem; font-weight: 800; color: #0f172a; }
+    .rcard-mechanic-value { font-size: 0.75rem; font-weight: 700; color: #64748b; }
+    .reflection-empty-msg { font-size: 0.95rem; color: #94a3b8; font-style: italic; padding: 0.5rem 0; }
+    /* Actions — glass buttons */
+    .reflection-actions { display: flex; gap: 0.75rem; justify-content: center; margin-top: 3rem; flex-wrap: wrap; }
+    .reflection-btn {
+      padding: 1rem 2.5rem; border-radius: 0.75rem;
+      background: rgba(255, 255, 255, 0.55);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255,255,255,0.5);
+      font-family: inherit; font-size: 1.05rem; font-weight: 500;
+      color: #334155; cursor: pointer; transition: all 0.25s;
+    }
+    .reflection-btn:hover {
+      background: rgba(255, 255, 255, 0.7);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255,255,255,0.6);
+      transform: translateY(-1px);
+    }
+    .reflection-btn.primary {
+      background: rgba(255, 115, 85, 0.35);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      color: #c2410c; border: 1px solid rgba(255, 115, 85, 0.3);
+      font-weight: 800; font-size: 1.15rem; padding: 1rem 3rem;
+      box-shadow: 0 4px 20px rgba(255, 115, 85, 0.12), inset 0 1px 0 rgba(255,255,255,0.4);
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .reflection-btn.primary:hover {
+      background: rgba(255, 115, 85, 0.5);
+      box-shadow: 0 6px 24px rgba(255, 115, 85, 0.2), inset 0 1px 0 rgba(255,255,255,0.5);
+      transform: translateY(-1px);
+    }
+
+    /* ── Responsive ──────────────────────────────── */
+    @media (max-width: 1100px) {
+      .transcript-panel { width: 220px; min-width: 120px; }
+      .coaching-panel { width: 220px; min-width: 120px; }
+      #session-screen.wb-overlay-active .coaching-panel {
+        display: flex !important;
+        width: min(38vw, 340px);
+      }
+    }
+    @media (max-width: 800px) {
+      .transcript-panel { width: 180px; min-width: 100px; }
+      .coaching-panel { width: 180px; min-width: 100px; }
+      .reflection-grid { grid-template-columns: 1fr; }
+      #session-screen.wb-overlay-active .transcript-panel,
+      #session-screen.wb-overlay-active .coaching-panel {
+        top: 62px;
+        bottom: 74px;
+        width: min(44vw, 300px);
+      }
+      .camera-container.floating {
+        width: min(44vw, 210px);
+      }
+    }
+    @media (max-width: 600px) {
+      .session-toolbar { flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- LANDING -->
+  <div id="landing-screen">
+    <div class="landing-orb-wrap">
+      <div class="l-aura-3"></div><div class="l-aura-2"></div><div class="l-aura-1"></div>
+      <div class="l-orb"></div>
+    </div>
+    <div class="landing-copy">
+      <h1 class="landing-title">Poken</h1>
+      <p class="landing-tagline">Teach it. Understand it.</p>
+      <button class="landing-cta" id="getStartedBtn">Get started</button>
+    </div>
+  </div>
+
+  <!-- SETUP (Command Center) -->
+  <div id="setup-screen">
+    <canvas id="ambientCanvas"></canvas>
+    <div class="setup-container">
+      <!-- Left: Growth Column -->
+      <aside class="setup-growth">
+        <div class="glass-card setup-sidebar-card">
+          <h3>Recent sessions</h3>
+          <ul class="recent-sessions-list" id="recentSessionsList"></ul>
+          <div class="setup-empty-state" id="recentSessionsEmpty">
+            <span class="empty-icon" aria-hidden="true">&#x1F4DA;</span>
+            <p>Your teaching journey starts here.</p>
+          </div>
+        </div>
+        <div class="glass-card setup-sidebar-card">
+          <h3>Teaching stats</h3>
+          <div class="setup-stats-grid">
+            <div class="setup-stat" style="grid-column: 1 / -1;">
+              <div class="setup-stat-value" id="statTotalHours">0h</div>
+              <div class="setup-stat-label">Total hours</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center: The Lab -->
+      <main class="setup-lab">
+        <div class="glass-card setup-lab-inner">
+          <div class="logo">
+            <img src="/logo.svg" alt="Poken" width="48" height="48" style="margin-bottom:0.5rem;" />
+            <h1>Poken</h1>
+            <p>Learn by teaching &mdash; your AI student is listening.</p>
+          </div>
+          <div class="setup-form">
+            <div>
+              <label class="field-label" for="customTopic">What are you teaching?</label>
+              <input type="text" id="customTopic" placeholder="e.g. How vaccines work" />
+            </div>
+            <div>
+              <label class="field-label" for="sessionLanguage">Session language</label>
+              <select id="sessionLanguage">
+                <option value="English" selected>English</option>
+                <option value="Spanish">Spanish</option>
+                <option value="French">French</option>
+                <option value="German">German</option>
+                <option value="Portuguese">Portuguese</option>
+                <option value="Hindi">Hindi</option>
+                <option value="Arabic">Arabic</option>
+                <option value="Simplified Chinese">Simplified Chinese</option>
+              </select>
+            </div>
+            <div class="materials-section">
+              <label class="field-label">Study materials <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--poken-text-secondary)">(optional)</span></label>
+              <div class="file-drop-zone" id="fileDropZone">
+                <input type="file" class="file-drop-input" id="fileInput" multiple accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.txt,.md,.csv,.doc,.docx" />
+                <div class="file-drop-icon">&#x1F4CE;</div>
+                <div class="file-drop-label">Drop files here or <span>browse</span><br>PDF, images, text files</div>
+              </div>
+              <div class="materials-divider">or paste notes</div>
+              <textarea id="materials" placeholder="Paste notes or a reading you'd expect your students to have studied&hellip;"></textarea>
+            </div>
+            <div id="soloSection">
+              <label class="field-label">Choose your student</label>
+              <div class="persona-grid">
+                <div class="persona-card selected" data-persona="eager">
+                  <span class="emoji">&#x1F64B;</span><div class="pname">Eager</div><div class="pdesc">Lots of questions</div>
+                </div>
+                <div class="persona-card" data-persona="skeptic">
+                  <span class="emoji">&#x1F928;</span><div class="pname">Skeptic</div><div class="pdesc">Needs convincing</div>
+                </div>
+                <div class="persona-card" data-persona="confused">
+                  <span class="emoji">&#x1F615;</span><div class="pname">Confused</div><div class="pdesc">Needs examples</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Camera/Whiteboard toggles removed — available in-session toolbar -->
+            <input type="checkbox" id="useCamera" style="display:none" />
+            <input type="checkbox" id="useWhiteboard" style="display:none" />
+
+            <button id="startBtn" type="button">Start teaching</button>
+            <button id="resumeSessionBtn" type="button" class="resume-session-btn" style="display:none">Resume last session</button>
+          </div>
+        </div>
+      </main>
+
+      <!-- Right: Prep Column -->
+      <aside class="setup-prep">
+        <div class="glass-card setup-sidebar-card">
+          <h3>Hardware check</h3>
+          <div class="setup-prep-preview" id="setupPreviewVideo">
+            <span style="font-size:0.75rem;color:var(--poken-text-secondary);">Camera preview</span>
+          </div>
+        </div>
+        <div class="glass-card setup-sidebar-card">
+          <h3>Mic level</h3>
+          <div class="setup-mic-bar-wrap"><div class="setup-mic-bar" id="setupMicBar"></div></div>
+        </div>
+        <div class="glass-card setup-sidebar-card pro-tip-card">
+          <strong>Pro tip</strong>
+          <p id="setupProTip">Start with one concept and check for understanding before moving on.</p>
+        </div>
+      </aside>
+    </div>
+    <!-- Debug panel: appears after crash/disconnect with full event log -->
+    <div id="debugPanel" style="display:none">
+      <div class="debug-header">
+        <span>Session Debug Log</span>
+        <button onclick="clearDebugPanel()" title="Dismiss">&#x2715;</button>
+      </div>
+      <div class="debug-body" id="debugPanelBody"></div>
+    </div>
+  </div>
+
+  <!-- SESSION -->
+  <div id="session-screen">
+    <!-- Drag-and-drop overlay (visible when dragging file over session) -->
+    <div id="session-drop-overlay" aria-hidden="true">
+      <span class="session-drop-overlay-text">Drop file to share with class</span>
+    </div>
+    <!-- Top bar -->
+    <div class="session-top-bar">
+      <div class="session-top-left">
+        <button class="session-logo" id="sessionHomeBtn" type="button" title="Back to home">Poken</button>
+        <span class="session-topic-badge" id="sessionTopicLabel"></span>
+      </div>
+      <div class="session-top-right">
+        <span class="session-timer" id="sessionTimer">00:00</span>
+        <div class="session-status">
+          <div class="status-dot" id="statusDot"></div>
+          <span id="statusText">Connecting</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Body: transcript | resizer | center wrap | resizer | coaching -->
+    <div class="session-body">
+      <!-- Transcript panel -->
+      <div class="transcript-panel" id="transcriptPanel">
+        <div class="panel-header">Transcript</div>
+        <div class="transcript-body" id="transcriptBody"></div>
+      </div>
+      <div class="panel-resizer" id="resizerLeft" title="Resize transcript panel"></div>
+
+      <!-- Center (with toggle buttons) -->
+      <div class="session-center-wrap">
+        <button type="button" class="panel-toggle panel-toggle-left" id="toggleTranscriptBtn" title="Show/hide transcript">[&lt;]</button>
+        <div class="session-center" id="sessionCenter">
+        <!-- Media container -->
+        <div class="media-container hidden" id="mediaContainer">
+          <canvas id="whiteboardCanvas" width="2400" height="1400"></canvas>
+          <video id="cameraFeed" autoplay muted playsinline></video>
+
+          <!-- Whiteboard toolbar -->
+          <div class="wb-toolbar" id="wbToolbar">
+            <button class="wb-btn active" data-tool="pen" title="Pen">&#x270F;&#xFE0F;</button>
+            <button class="wb-btn" data-tool="eraser" title="Eraser">
+              <span class="wb-tool-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M6.1 14.3 13.9 6.4a2.1 2.1 0 0 1 3 0l2.7 2.7a2.1 2.1 0 0 1 0 3l-5.8 5.8a2.7 2.7 0 0 1-1.9.8H8.7l-2.6-2.6a1.3 1.3 0 0 1 0-1.8Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M4 20h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                </svg>
+              </span>
+            </button>
+            <button class="wb-btn" data-tool="text" title="Text">T</button>
+            <button class="wb-btn" data-tool="pan" title="Pan / Move">&#x1F590;</button>
+            <button class="wb-btn" data-tool="clear" title="Clear">&#x1F5D1;&#xFE0F;</button>
+            <div class="wb-sep"></div>
+            <div class="wb-color active" data-color="#000000" style="background:#222" title="Black"></div>
+            <div class="wb-color" data-color="#FFFFFF" style="background:#fff; border-color:#ccc" title="White"></div>
+            <div class="wb-color" data-color="#EF4444" style="background:#EF4444" title="Red"></div>
+            <div class="wb-color" data-color="#F97316" style="background:#F97316" title="Orange"></div>
+            <div class="wb-color" data-color="#EAB308" style="background:#EAB308" title="Yellow"></div>
+            <div class="wb-color" data-color="#10B981" style="background:#10B981" title="Green"></div>
+            <div class="wb-color" data-color="#3B82F6" style="background:#3B82F6" title="Blue"></div>
+            <div class="wb-color" data-color="#06B6D4" style="background:#06B6D4" title="Cyan"></div>
+            <div class="wb-color" data-color="#6366F1" style="background:#6366F1" title="Indigo"></div>
+            <div class="wb-color" data-color="#8B5CF6" style="background:#8B5CF6" title="Purple"></div>
+            <div class="wb-color" data-color="#EC4899" style="background:#EC4899" title="Pink"></div>
+            <div class="wb-color" data-color="#F43F5E" style="background:#F43F5E" title="Rose"></div>
+            <div class="wb-color" data-color="#78716C" style="background:#78716C" title="Brown"></div>
+            <div class="wb-color" data-color="#111827" style="background:#111827" title="Slate"></div>
+            <div class="wb-color-custom" title="Custom color">
+              <div class="wb-color-custom-preview"></div>
+              <input type="color" id="wbColorPicker" value="#FF7355">
+            </div>
+            <div class="wb-sep" id="wbSizeSep"></div>
+            <div class="wb-size-group visible" id="wbPenSizeWrap">
+              <span class="wb-size-label" id="wbPenSizeLabel">3</span>
+              <input type="range" id="wbPenSize" min="1" max="20" value="3">
+            </div>
+            <div class="wb-size-group" id="wbEraserSizeWrap">
+              <span class="wb-size-label" id="wbEraserSizeLabel">30</span>
+              <input type="range" id="wbEraserSize" min="10" max="60" value="30">
+            </div>
+            <div class="wb-sep"></div>
+            <button class="wb-view-btn" id="wbResetViewBtn" title="Reset zoom and pan">1:1</button>
+            <button class="wb-fullscreen-btn" id="wbFullscreenBtn" title="Fullscreen">&#x26F6;</button>
+          </div>
+
+          <!-- Orb pill (student state indicator) -->
+          <div class="orb-pill" id="orbPill">
+            <div class="orb-pill-dot" id="orbPillDot"></div>
+            <span class="orb-pill-label" id="orbPillLabel"></span>
+          </div>
+        </div>
+
+        <!-- Screen share -->
+        <div class="screen-container" id="screenContainer">
+          <video id="screenFeed" autoplay muted playsinline></video>
+        </div>
+
+        <!-- Camera feed (self-view) -->
+        <div class="camera-container" id="cameraContainer">
+          <div class="camera-drag-handle" id="cameraDragHandle">&#x2630; Drag</div>
+          <video id="cameraPipFeed" autoplay muted playsinline></video>
+        </div>
+
+        <!-- Full orb (when no media) -->
+        <div class="orb-area" id="orbArea">
+          <div class="orb-wrap" id="orbWrap">
+            <div class="ring"></div><div class="ring"></div><div class="ring"></div>
+            <div id="orb"></div>
+          </div>
+          <div id="orbLabel"></div>
+          <div id="speakerLabel"></div>
+        </div>
+
+        <!-- Mic indicator -->
+        <div class="mic-row">
+          <div id="micDot"></div>
+          <span id="micLabel">mic off</span>
+        </div>
+        </div>
+        <button type="button" class="panel-toggle panel-toggle-right" id="toggleCoachingBtn" title="Show/hide coaching">[&gt;]</button>
+      </div>
+      <div class="panel-resizer" id="resizerRight" title="Resize coaching panel"></div>
+
+      <!-- Coaching panel -->
+      <div class="coaching-panel" id="coachingPanel">
+        <div class="panel-header">Live Coaching</div>
+        <div class="coaching-body" id="coachingBody">
+          <div class="coaching-empty">Tips will appear as you teach&hellip;</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom bar -->
+    <div class="session-bottom">
+      <div class="session-toolbar">
+        <button class="toolbar-btn" id="muteBtn" type="button"><span class="icon">&#x1F3A4;</span> Mute</button>
+        <button class="toolbar-btn" id="camToggleBtn" type="button"><span class="icon">&#x1F4F7;</span> Camera</button>
+        <button class="toolbar-btn" id="wbToggleBtn" type="button"><span class="icon">&#x270F;&#xFE0F;</span> Board</button>
+        <button class="toolbar-btn" id="screenToggleBtn" type="button"><span class="icon">&#x1F5A5;</span> Share</button>
+        <button class="toolbar-btn" id="uploadMaterialBtn" type="button"><span class="icon">&#x1F4CE;</span> Upload Material</button>
+        <span class="toolbar-note" id="uploadMaterialHint" title="Allowed: PDF, JPG/JPEG, PNG, GIF, WEBP, TXT, MD, CSV. You can also paste a URL in chat and the student will read it.">
+          PDF/JPG/PNG/TXT/MD/CSV • links via chat supported
+        </span>
+        <div class="toolbar-spacer"></div>
+        <button class="toolbar-btn danger" id="stopBtn" type="button"><span class="icon">&#x23F9;&#xFE0F;</span> End session</button>
+      </div>
+      <div class="session-chat">
+        <input type="text" id="chatInput" placeholder="Type a message&hellip;" />
+        <button id="chatSendBtn" type="button">Send</button>
+      </div>
+      <input type="file" id="sessionFileInput" class="file-drop-input" multiple accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.txt,.md,.csv,.doc,.docx" style="display:none;" />
+    </div>
+    <div class="session-toast" id="sessionToast" role="status" aria-live="polite"></div>
+
+  </div>
+
+  <!-- Idle timeout modal -->
+  <div id="timeoutModal" aria-live="polite" role="dialog" aria-labelledby="timeoutModalTitle">
+    <div class="timeout-modal-inner">
+      <h3 id="timeoutModalTitle">Are you still there?</h3>
+      <p>Session closing in <span id="timeoutCountdown">30</span> seconds.</p>
+      <button type="button" id="timeoutStayBtn">I'm here</button>
+    </div>
+  </div>
+
+  <!-- Pre-session loading (shown while analyzing materials + opening the Live session) -->
+  <div id="setup-loading" aria-live="polite">
+    <div class="reflection-loading-orb-wrap">
+      <div class="reflection-loading-orb"></div>
+    </div>
+    <p class="setup-loading-text" id="setupLoadingText">Preparing your session…</p>
+  </div>
+
+  <!-- REFLECTION LOADING -->
+  <div id="reflection-loading-screen" aria-live="polite">
+    <div class="reflection-loading-orb-wrap">
+      <div class="reflection-loading-orb"></div>
+    </div>
+    <p class="reflection-loading-text">Your student is writing up their reflection…</p>
+  </div>
+
+  <!-- REFLECTION (Bento) -->
+  <div id="reflection-screen">
+    <div class="reflection-inner">
+      <!-- Header -->
+      <h2 class="reflection-title">Session Reflection</h2>
+      <p class="reflection-summary" id="reflectionSummary"></p>
+
+      <!-- Topic card with download button -->
+      <div class="reflection-topic-card" id="reflectionRecap">
+        <div class="reflection-topic-left">
+          <span class="reflection-topic-label">Topic of Discussion</span>
+          <h3 class="reflection-topic-name" id="reflectionRecapTopic"></h3>
+          <p class="reflection-topic-meta">
+            <span id="reflectionRecapMode"></span> &bull;
+            <span id="reflectionRecapDuration"></span> Session
+          </p>
+        </div>
+        <button class="reflection-download-btn" id="downloadSummaryBtn" type="button" title="Download PDF summary">
+          <span class="reflection-download-icon">&#x1F4E5;</span> Download Summary
+        </button>
+      </div>
+
+      <!-- Two-column grid -->
+      <div class="reflection-bento">
+        <!-- What Went Well -->
+        <div class="reflection-card card-strength bento-row1" id="reflectionCardStrength">
+          <h3><span class="rcard-icon rcard-icon-strength">&#x2714;</span> What Went Well</h3>
+          <div class="rcard-items" id="reflectionStrengths"></div>
+        </div>
+        <!-- Concepts to Revisit -->
+        <div class="reflection-card card-gap bento-row1" id="reflectionCardGap">
+          <h3><span class="rcard-icon rcard-icon-gap">&#x26A0;</span> Concepts to Revisit</h3>
+          <div class="rcard-items" id="reflectionGaps"></div>
+          <p class="reflection-empty-msg" id="reflectionGapsEmpty" style="display:none;">Mastery achieved! You explained every point clearly.</p>
+        </div>
+        <!-- Key Vocabulary -->
+        <div class="reflection-card card-vocab bento-row1" id="reflectionCardVocab">
+          <h3>Key Vocabulary</h3>
+          <div class="rcard-vocab-tags" id="reflectionVocabulary"></div>
+        </div>
+        <!-- Next Steps -->
+        <div class="reflection-card card-improvement bento-row1" id="reflectionCardImprovement">
+          <h3>Next Steps</h3>
+          <ul class="rcard-next-steps" id="reflectionImprovementsChecklist"></ul>
+        </div>
+        <!-- Student Questions -->
+        <div class="reflection-card card-questions bento-full" id="reflectionCardQuestions">
+          <h3>Student Questions</h3>
+          <div class="rcard-questions-grid" id="reflectionQuestions"></div>
+        </div>
+        <!-- Presentation Skills Feedback -->
+        <div class="reflection-card card-presentation bento-full" id="reflectionCardPresentation">
+          <h3>Presentation Skills Feedback</h3>
+          <div class="rcard-feedback-box">
+            <div class="reflection-skill-text" id="reflectionVisualsGestures">—</div>
+          </div>
+          <p class="reflection-empty-msg" id="reflectionVisualsEmpty" style="display:none;"></p>
+        </div>
+        <!-- Presentation & Mechanics -->
+        <div class="reflection-card card-mechanics bento-full" id="reflectionCardMechanics">
+          <h3>Presentation &amp; Mechanics</h3>
+          <div class="rcard-mechanics-grid" id="reflectionMechanicsGrid">
+            <div class="rcard-mechanic">
+              <span class="rcard-mechanic-icon">&#x1F50A;</span>
+              <span class="rcard-mechanic-label">Clarity</span>
+              <span class="rcard-mechanic-value" id="mechClarity">—</span>
+            </div>
+            <div class="rcard-mechanic">
+              <span class="rcard-mechanic-icon">&#x1F441;</span>
+              <span class="rcard-mechanic-label">Visuals</span>
+              <span class="rcard-mechanic-value" id="mechVisuals">—</span>
+            </div>
+            <div class="rcard-mechanic">
+              <span class="rcard-mechanic-icon">&#x23F1;</span>
+              <span class="rcard-mechanic-label">Pacing</span>
+              <span class="rcard-mechanic-value" id="mechPacing">—</span>
+            </div>
+            <div class="rcard-mechanic">
+              <span class="rcard-mechanic-icon">&#x1F6E0;</span>
+              <span class="rcard-mechanic-label">Tools</span>
+              <span class="rcard-mechanic-value" id="mechTools">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="reflection-actions">
+        <button class="reflection-btn primary" id="teachAgainBtn" type="button">&#x1F393; Teach Again</button>
+        <button class="reflection-btn" id="changeTopicBtn" type="button">Change topic</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
+  <!-- Firebase SDK (loads only if configured) -->
+  <script>
+    if (window.__FIREBASE_CONFIG && window.__FIREBASE_CONFIG.apiKey) {
+      ['firebase-app-compat.js','firebase-firestore-compat.js','firebase-auth-compat.js'].forEach(f => {
+        const s = document.createElement('script');
+        s.src = 'https://www.gstatic.com/firebasejs/10.7.0/' + f;
+        document.head.appendChild(s);
+      });
+    }
+  </script>
+  <!-- ── Diagram popup overlay ──────────────────────────────────────────── -->
+  <div id="diagramPopup">
+    <div class="diagram-titlebar" id="diagramTitlebar">
+      <span class="diagram-title">&#128396;&#65039; Student Sketch</span>
+      <button class="diagram-titlebar-btn" id="diagramFullscreenBtn" title="Fullscreen">&#x26F6;</button>
+      <button class="diagram-titlebar-btn" id="diagramCloseBtn" title="Close">&#x2715;</button>
+    </div>
+    <div class="diagram-toolbar" id="diagramToolbar">
+      <button class="diag-tool-btn active" id="diagPenBtn" title="Pen">&#9998;</button>
+      <button class="diag-tool-btn" id="diagEraserBtn" title="Eraser">&#9645;</button>
+      <button class="diag-tool-btn" id="diagTextBtn" title="Text">T</button>
+      <span style="width:1px;height:20px;background:#E5E7EB;margin:0 2px;flex-shrink:0;"></span>
+      <div class="diag-color-swatch active" data-color="#000000" style="background:#000000;"></div>
+      <div class="diag-color-swatch" data-color="#EF4444" style="background:#EF4444;"></div>
+      <div class="diag-color-swatch" data-color="#3B82F6" style="background:#3B82F6;"></div>
+      <div class="diag-color-swatch" data-color="#22C55E" style="background:#22C55E;"></div>
+      <div class="diag-color-swatch" data-color="#F59E0B" style="background:#F59E0B;"></div>
+      <span style="width:1px;height:20px;background:#E5E7EB;margin:0 2px;flex-shrink:0;"></span>
+      <input type="range" class="diag-size-slider" id="diagSizeSlider" min="1" max="20" value="3" title="Pen size" />
+      <span style="margin-left:auto;"></span>
+      <button class="diag-tool-btn" id="diagClearBtn" title="Clear annotations">&#x21BA;</button>
+    </div>
+    <canvas id="diagramCanvas"></canvas>
+    <div class="diagram-resize-handle" id="diagramResizeHandle"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
