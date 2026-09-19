@@ -23,7 +23,7 @@ steps:
       - --set-env-vars=SESSION_TIMEOUT_S=3600
       # WebSockets need every request of a connection on the same instance.
       - --session-affinity
-      - --set-secrets=GEMINI_API_KEY=gemini-api-key:latest
+      - --set-secrets=GEMINI_API_KEY=gemini-api-key:latest,ELEVENLABS_API_KEY=elevenlabs-api-key:latest
 
 images:
   - 'gcr.io/$PROJECT_ID/poken:$BUILD_ID'
