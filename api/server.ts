@@ -7,6 +7,7 @@ import { cors } from 'hono/cors';
 import { GoogleGenAI, Modality } from '@google/genai';
 import * as types from '@google/genai';
 import { WebSocketServer, WebSocket } from 'ws';
+import { Converter } from 'opencc-js';
 import { extractFromBuffer } from '../server/materials-extract.js';
 import {
   analyzePdfWithVision,
@@ -143,7 +144,10 @@ function isAllowedCharForLanguage(ch: string, language: string): boolean {
   return /\p{Script=Latin}/u.test(ch);
 }
 
-function enforceTranscriptLanguage(text: string, language: string): string {
+// Gemini's input transcription emits Traditional characters even in a Simplified session.
+const toSimplified = Converter({ from: 'tw', to: 'cn' });
+
+export function enforceTranscriptLanguage(text: string, language: string): string {
   if (!text) return text;
   let out = '';
   for (const ch of text) {
@@ -153,6 +157,8 @@ function enforceTranscriptLanguage(text: string, language: string): string {
     .replace(/\u200B|\u200C|\u200D|\uFEFF/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+
+  if (language === 'Simplified Chinese') out = toSimplified(out);
 
   return out;
 }

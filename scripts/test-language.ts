@@ -1,7 +1,7 @@
 // Runnable check for the language-switch and cleanup-guard helpers:
 //   npx tsx --env-file=.env scripts/test-language.ts   (server.ts needs the key at import)
 import assert from 'node:assert/strict';
-import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk } from '../api/server.js';
+import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage } from '../api/server.js';
 
 // explicit requests, including Gemini's fragmented ASR and CJK phrasing
 assert.equal(detectLanguageSwitchRequest('Can we switch to Chinese now?'), 'Simplified Chinese');
@@ -28,4 +28,13 @@ assert.equal(joinChunk('光合', '作用'), '光合作用');
 assert.equal(joinChunk('the water', 'cycle'), 'the water cycle');
 assert.equal(joinChunk('', '光'), '光');
 assert.equal(joinChunk('hello,', ' world'), 'hello, world');
+// transcript enforcement: Traditional characters become Simplified in a Simplified Chinese session
+assert.equal(enforceTranscriptLanguage('光合作用需要陽光', 'Simplified Chinese'), '光合作用需要阳光');
+assert.equal(enforceTranscriptLanguage('葉綠素吸收陽光', 'Simplified Chinese'), '叶绿素吸收阳光');
+assert.equal(enforceTranscriptLanguage('光合作用需要阳光', 'Simplified Chinese'), '光合作用需要阳光');
+assert.equal(enforceTranscriptLanguage('葉綠素 absorbs 陽光', 'Simplified Chinese'), '叶绿素 阳光');
+// other languages are untouched by the converter
+assert.equal(enforceTranscriptLanguage('the water cycle', 'English'), 'the water cycle');
+assert.equal(enforceTranscriptLanguage('photosynthesis needs 陽光', 'English'), 'photosynthesis needs');
+assert.equal(enforceTranscriptLanguage('', 'Simplified Chinese'), '');
 console.log('language + cleanup checks OK');
