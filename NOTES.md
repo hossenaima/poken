@@ -228,6 +228,8 @@ no code change, and it passed the same language-switch probe here.
 
 ## Known limitations / next steps
 
-- `/api/logs` is unauthenticated and its ring is per-instance (with `--session-affinity` a
+- `/api/logs` is open unless `LOGS_KEY` is set in the environment; when it is, requests need
+  `?key=<LOGS_KEY>` (else 401). Production does not set it yet — the secret has to be created
+  and wired into `cloudbuild.yaml` first. Its ring is per-instance (with `--session-affinity` a
   browser sticks to one instance, so it usually shows the right one); Cloud Logging is authoritative.
 - The `[RESUME]` digest fallback loses the model's own memory; handles are the normal path.

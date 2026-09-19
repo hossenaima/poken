@@ -2134,7 +2134,7 @@ function showReflection(data) {
   const recapMode = document.getElementById("reflectionRecapMode");
   const recapDuration = document.getElementById("reflectionRecapDuration");
   if (recapTopic) recapTopic.textContent = sessionTopic || "—";
-  if (recapMode) recapMode.textContent = "Solo";
+  if (recapMode) recapMode.textContent = sessionRecapLabel();
   if (recapDuration) recapDuration.textContent = formatTime(sessionDuration) || "0:00";
 
   function wrapBold(s) {
@@ -2859,6 +2859,12 @@ changeTopicBtn.addEventListener("click", () => {
   disconnect();  // clean up ws, mic, playback before returning to setup
 });
 
+function sessionRecapLabel() {
+  const persona = String(selectedPersona || "").trim();
+  const personaLabel = persona ? persona.charAt(0).toUpperCase() + persona.slice(1) + " student" : "Student";
+  return personaLabel + "  \u2022  " + (sessionLanguage || "English");
+}
+
 // ── PDF Download ─────────────────────────────────────────────────────────────
 const downloadSummaryBtn = document.getElementById("downloadSummaryBtn");
 if (downloadSummaryBtn) {
@@ -2901,7 +2907,7 @@ if (downloadSummaryBtn) {
     y += 4;
     // Topic block
     addText("Topic: " + (sessionTopic || "—"), 14, "bold", [0, 121, 107]);
-    addText("Solo  \u2022  " + (formatTime(sessionDuration) || "0:00") + " Session", 10, "normal", [71, 85, 105]);
+    addText(sessionRecapLabel() + "  \u2022  " + (formatTime(sessionDuration) || "0:00") + " Session", 10, "normal", [71, 85, 105]);
     y += 2;
 
     // Sections

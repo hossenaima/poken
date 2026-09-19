@@ -74,6 +74,7 @@ const SCRIBE_COMMIT_WAIT_MS        = 1200;   // wait this long after speech_end 
 // Must equal the Cloud Run --timeout (cloudbuild.yaml sets both to 3600). Override locally, e.g.
 // SESSION_TIMEOUT_S=120, to rehearse a client handover in two minutes.
 const SESSION_TIMEOUT_MS           = (Number(process.env.SESSION_TIMEOUT_S) || 3600) * 1000;
+const LOGS_KEY                     = process.env.LOGS_KEY || '';
 
 const VISION_SCREENSHOT_NOTE = '[Fresh screenshot attached. Answer the teacher\'s question briefly — just confirm what you can see in 1-2 short sentences. Do NOT describe the whole image. Do NOT repeat yourself if you already answered a similar question.]';
 
@@ -872,6 +873,9 @@ function buildServer(): http.Server {
   });
 
   app.get('/api/logs', (c) => {
+    if (LOGS_KEY && c.req.query('key') !== LOGS_KEY) {
+      return c.json({ error: 'unauthorized' }, 401);
+    }
     const since = Number(c.req.query('since')) || 0;
     const filtered = since ? logRing.filter(l => l.ts > since) : logRing.slice();
     return c.json({ logs: filtered });
