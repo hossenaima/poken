@@ -25,14 +25,12 @@ const prompt = 'Raw speech-to-text (may have missing spaces). Task: produce a tr
 assert.equal(cleanupLooksBroken('Change language.', prompt), true);
 assert.equal(cleanupLooksBroken('thewater cycle', 'the water cycle'), false);
 assert.equal(cleanupLooksBroken('hi', 'x'.repeat(200)), true);
-// chunk joining: Latin words get a space, CJK characters do not
+// chunk joining: verbatim concatenation — Gemini streams sub-word fragments and adds its own leading spaces
 assert.equal(joinChunk('光合', '作用'), '光合作用');
-assert.equal(joinChunk('the water', 'cycle'), 'the water cycle');
+assert.equal(joinChunk('photosynthesis', 'turns'), 'photosynthesisturns');
+assert.equal(joinChunk('the', ' water'), 'the water');
 assert.equal(joinChunk('', '光'), '光');
 assert.equal(joinChunk('hello,', ' world'), 'hello, world');
-// relayed delta of the joined buffer carries the inserted space (Latin) or nothing (CJK)
-assert.equal(joinChunk('photosynthesis', 'turns').slice('photosynthesis'.length), ' turns');
-assert.equal(joinChunk('光合', '作用').slice(2), '作用');
 // transcript enforcement: Traditional characters become Simplified in a Simplified Chinese session
 assert.equal(enforceTranscriptLanguage('光合作用需要陽光', 'Simplified Chinese'), '光合作用需要阳光');
 assert.equal(enforceTranscriptLanguage('葉綠素吸收陽光', 'Simplified Chinese'), '叶绿素吸收阳光');
