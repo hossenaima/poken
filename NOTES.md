@@ -75,7 +75,46 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
   client sends it pre-session, before `ready_to_start`; frames arrive in order, so it is in
   place when materials are assembled. Anything user-authored goes over the socket.
 
+## Mid-session language switching
+
+`language` is live state on the connection, not a constant. It changes two ways:
+
+- **Explicit request** — `detectLanguageSwitchRequest()` on every finished teacher utterance and
+  typed message: a switch cue ("switch to", "can you speak in", "say that in", 用/说/换成…)
+  plus a language name or alias (`chinese`, `中文`, `español`, …), with a spaceless fallback for
+  Gemini's fragmented ASR ("swi tch to chi nese"). A language merely *mentioned* ("the word
+  for water in Spanish") does not switch.
+- **Auto-detection** — `dominantScript()` on each *raw* teacher transcript chunk, before
+  `enforceTranscriptLanguage` (which would otherwise strip the new script entirely). Han,
+  Devanagari or Arabic at ≥70% switches immediately; Latin needs 3 chunks in a row (one
+  romanized word is not a switch) and lands on English — Spanish/French/German/Portuguese
+  cannot be told apart by script, so they need an explicit request.
+
+`switchLanguage()` sends the model a `[SYSTEM]` note (the system instruction also carries
+`LANGUAGE_SWITCH_RULE` so it never refuses), emits `language_changed` to the client (which
+updates `sessionLanguage` for cleanup calls, the resume token and the select), and pushes a
+fresh resume token so a handover keeps the new language. `npx tsx --env-file=.env
+scripts/test-language.ts` checks the detectors; `node scripts/switch-probe.mjs` runs the
+English → Chinese flow against a local server.
+
+## Live-model flakiness (known Google bug)
+
+`gemini-2.5-flash-native-audio` intermittently closes the session mid-reply with
+`1007 The audio content type (CONTENT_TYPE_AUDIO) is not supported for this model configuration`
+— no audio from us involved; seen 2 of 5 local runs on 2026-09-19, and reported on Google's
+forum (Aug 2026) with no root cause. Handling: **every** Gemini close is recovered in place by
+`reopenGemini()` (a session that died young drops its handle and rebuilds from the digest),
+bounded to 3 reopens per minute before a visible error. Google staff suggest
+`gemini-3.1-flash-live-preview`; `AUDIO_MODEL=gemini-3.1-flash-live-preview` switches to it with
+no code change, and it passed the same language-switch probe here.
+
 ## Bugs already fixed (don't reintroduce)
+
+- `/api/cleanup-transcript` (Gemini Flash) occasionally echoed its *entire prompt* back as the
+  "cleaned" text for very short inputs ("Change language." → a paragraph of instructions in the
+  teacher's bubble). The transcript is now delimited with `<<< >>>`, `cleanupLooksBroken()`
+  rejects outputs containing prompt fingerprints or longer than 3× the input (+80), and the
+  client applies the same length guard.
 
 - `media.camera = …` referenced an undeclared variable; the ReferenceError was swallowed and
   `[MEDIA]` cues never reached the model. Now `mediaState` is declared in connection scope.

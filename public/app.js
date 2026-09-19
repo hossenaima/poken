@@ -930,6 +930,7 @@ async function refineLiveTranscript(entry) {
     });
     const { cleaned } = await res.json();
     if (!cleaned || !cleaned.trim()) return;
+    if (cleaned.length > Math.max(sourceText.length * 3, sourceText.length + 80)) return; // runaway/prompt echo
     // If newer chunks arrived, preserve the newer suffix while applying corrected prefix.
     if (entry.rawText !== sourceText) {
       const latest = entry.rawText;
@@ -971,7 +972,8 @@ async function cleanupEntry(entry, showCleaningState = true) {
       }),
     });
     const { cleaned } = await res.json();
-    const text = (cleaned && cleaned.trim()) ? cleaned : entry.rawText;
+    const sane = cleaned && cleaned.trim() && cleaned.length <= Math.max(entry.rawText.length * 3, entry.rawText.length + 80);
+    const text = sane ? cleaned : entry.rawText;
     entry.rawText = text;
     entry.textEl.textContent = text;
     rememberTranscriptContext(entry.speaker, text);
@@ -2501,6 +2503,15 @@ async function connect(opts = {}) {
             }
           })();
         }
+      }
+
+      // Mid-session language switch (requested or auto-detected): cleanup, resume and the UI follow.
+      if (msg.type === "language_changed" && msg.language) {
+        sessionLanguage = msg.language;
+        if (sessionLanguageEl) sessionLanguageEl.value = msg.language;
+        showSessionToast(msg.source === "request" ? `Switched to ${msg.language}` : `Detected ${msg.language} — switched`, "success");
+        setTimeout(() => hideSessionToast(), 3000);
+        storeSessionForResume();
       }
 
       // Handover / resume bookkeeping

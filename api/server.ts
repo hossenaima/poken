@@ -49,8 +49,10 @@ if (!GOOGLE_API_KEY) {
   throw new Error('Missing GEMINI_API_KEY');
 }
 
-const AUDIO_MODEL    = 'gemini-2.5-flash-native-audio-latest';
-const VIDEO_MODEL    = 'gemini-2.5-flash-native-audio-latest';
+// Live model (env override lets you trial e.g. gemini-3.1-flash-live-preview, Google's suggested
+// workaround for the intermittent 1007 CONTENT_TYPE_AUDIO closes on the 2.5 native-audio model).
+const AUDIO_MODEL    = process.env.AUDIO_MODEL || 'gemini-2.5-flash-native-audio-latest';
+const VIDEO_MODEL    = AUDIO_MODEL;  // same model; the video flag only picks prompts
 const FAST_MODEL     = 'gemini-2.5-flash';
 // Heavier model for transcript cleanup only (accuracy over latency).
 const CLEANUP_MODEL  = process.env.CLEANUP_MODEL || 'gemini-2.5-pro';
@@ -155,16 +157,78 @@ function enforceTranscriptLanguage(text: string, language: string): string {
   return out;
 }
 
+const LANGUAGE_SWITCH_RULE = `If the teacher asks to switch to another language, or clearly starts speaking another language, switch immediately and stay in it until asked again. Never refuse a language switch. You will also receive a [SYSTEM] note confirming the new language.`;
+
+// ── Mid-session language switching ──────────────────────────────────────────
+const LANGUAGE_ALIASES: [string, string][] = [
+  ['simplified chinese', 'Simplified Chinese'], ['chinese', 'Simplified Chinese'], ['mandarin', 'Simplified Chinese'],
+  ['中文', 'Simplified Chinese'], ['汉语', 'Simplified Chinese'], ['普通话', 'Simplified Chinese'], ['chino', 'Simplified Chinese'], ['chinois', 'Simplified Chinese'], ['chinesisch', 'Simplified Chinese'],
+  ['english', 'English'], ['inglés', 'English'], ['ingles', 'English'], ['英语', 'English'], ['英文', 'English'], ['anglais', 'English'], ['englisch', 'English'],
+  ['spanish', 'Spanish'], ['español', 'Spanish'], ['espanol', 'Spanish'], ['西班牙语', 'Spanish'],
+  ['french', 'French'], ['français', 'French'], ['francais', 'French'], ['法语', 'French'],
+  ['german', 'German'], ['deutsch', 'German'], ['德语', 'German'],
+  ['portuguese', 'Portuguese'], ['português', 'Portuguese'], ['portugues', 'Portuguese'], ['葡萄牙语', 'Portuguese'],
+  ['hindi', 'Hindi'], ['हिंदी', 'Hindi'], ['हिन्दी', 'Hindi'], ['印地语', 'Hindi'],
+  ['arabic', 'Arabic'], ['العربية', 'Arabic'], ['عربي', 'Arabic'], ['阿拉伯语', 'Arabic'],
+];
+// "switch to", "can you speak in", "say that in", "let's continue in" … followed by a language name.
+const SWITCH_CUE = /\b(switch|change|speak|talk|say|continue|go on|carry on|respond|reply|answer|explain|teach|do (this|it)|let'?s (try|do|go|continue))\b[^.?!]{0,40}?\b(in|to|into|using)\b/i;
+const SWITCH_CUE_CJK = /(用|说|讲|换成|改用|切换到|改成|换到)/;
+const SWITCH_CUE_SPACELESS = /(switch|change|speak|talk|say|continue|explain|teach|doit|dothis|try)(the)?(language)?(to|in|into)?$/;
+
+/** The language the teacher asked to switch to, or null. Survives Gemini's fragmented ASR ("swi tch to chi nese"). */
+export function detectLanguageSwitchRequest(text: string): string | null {
+  const lower = text.toLowerCase();
+  const stripped = lower.replace(/\s+/g, '');
+  for (const [alias, lang] of LANGUAGE_ALIASES) {
+    const a = alias.replace(/\s+/g, '');
+    const idx = stripped.indexOf(a);
+    if (idx < 0) continue;
+    if (SWITCH_CUE.test(text) || SWITCH_CUE_CJK.test(text)) return lang;
+    if (SWITCH_CUE_SPACELESS.test(stripped.slice(Math.max(0, idx - 24), idx))) return lang;
+  }
+  return null;
+}
+
+type Script = 'Han' | 'Devanagari' | 'Arabic' | 'Latin';
+const SCRIPT_LANGUAGE: Record<Script, string> = { Han: 'Simplified Chinese', Devanagari: 'Hindi', Arabic: 'Arabic', Latin: 'English' };
+function scriptOfLanguage(language: string): Script {
+  return language === 'Simplified Chinese' ? 'Han' : language === 'Hindi' ? 'Devanagari' : language === 'Arabic' ? 'Arabic' : 'Latin';
+}
+/** Script making up ≥70% of the letters (min 4 letters), else null. */
+export function dominantScript(text: string): Script | null {
+  const counts: Record<Script, number> = { Han: 0, Devanagari: 0, Arabic: 0, Latin: 0 };
+  for (const ch of text) {
+    if (/\p{Script=Han}/u.test(ch)) counts.Han++;
+    else if (/\p{Script=Devanagari}/u.test(ch)) counts.Devanagari++;
+    else if (/\p{Script=Arabic}/u.test(ch)) counts.Arabic++;
+    else if (/\p{Script=Latin}/u.test(ch)) counts.Latin++;
+  }
+  const total = counts.Han + counts.Devanagari + counts.Arabic + counts.Latin;
+  if (total < 4) return null;
+  const [script, n] = (Object.entries(counts) as [Script, number][]).sort((a, b) => b[1] - a[1])[0];
+  return n / total >= 0.7 ? script : null;
+}
+
+/** A "cleaned" transcript that is a prompt echo or a runaway expansion. */
+export function cleanupLooksBroken(input: string, output: string): boolean {
+  if (!output) return true;
+  if (/raw speech-to-text|prior conversation|transcription to correct|<<<|>>>|do not output/i.test(output)) return true;
+  return output.length > Math.max(input.length * 3, input.length + 80);
+}
+
 function languageInstruction(language: string): string {
   if (language === 'Simplified Chinese') {
     return `## Language
 Use Simplified Chinese (简体中文) for your spoken responses in this session.
 You MUST use simplified Chinese characters exclusively — never use traditional Chinese characters (繁體字).
-Keep terminology natural for Simplified Chinese.`;
+Keep terminology natural for Simplified Chinese.
+${LANGUAGE_SWITCH_RULE}`;
   }
   return `## Language
 Use ${language} for your spoken responses in this session.
-Keep terminology natural for ${language}.`;
+Keep terminology natural for ${language}.
+${LANGUAGE_SWITCH_RULE}`;
 }
 
 const MISTAKE_INSTRUCTION = `\n\n**Confident mistakes:** About 30% of your summary statements should contain a real error — wrong cause/effect, reversed relationship, missed condition, or confused concepts. State errors confidently; never hedge. When corrected, push back once naturally ("wait, but I thought that meant…") before conceding. Do NOT make a mistake every turn — vary: some turns genuine questions, some correct summaries, ~30% have a real error. Self-correction safety net: if you stated something wrong and the teacher has NOT corrected it after 1-2 exchanges (they accepted it, moved on, or built on it), surface it yourself: "Wait, actually I think I got that wrong earlier — didn't you say it was actually…?"`;
@@ -243,7 +307,7 @@ ${video ? GESTURE_INSTRUCTION.trim() : GESTURE_INSTRUCTION_VOICE_ONLY.trim()}
 ${languageInstruction(language)}
 
 ## Transcription language lock
-Assume the teacher is speaking ${language}. If a phrase is ambiguous, prefer the ${language} interpretation over other languages.${language === 'Simplified Chinese' ? '\nAll Chinese text MUST use simplified characters (简体字). Never output traditional Chinese characters.' : ''}
+Assume the teacher is speaking ${language} unless they switch. If a phrase is ambiguous, prefer the ${language} interpretation over other languages.${language === 'Simplified Chinese' ? '\nAll Chinese text MUST use simplified characters (简体字). Never output traditional Chinese characters.' : ''}
 
 ## Starting the session
 Your very first response must be a short spoken greeting (e.g. "Hi, ready when you are"). Do not say you cannot see or hear the teacher—greet them and indicate you're ready to listen.`;
@@ -890,9 +954,9 @@ function buildServer(): http.Server {
         (mode === 'live'
           ? `- This is a live partial stream. Make spacing and grammar readable immediately, but preserve unfinished wording.\n`
           : `- This is a final transcript. Use complete punctuation and capitalization.\n`) +
-        `- Output plain text only, no quotes or markdown.\n\n` +
-        (context ? `Prior conversation:\n${context}\n\n` : '') +
-        `Transcription:\n${text}`;
+        `- Output ONLY the corrected transcription — never the instructions, the prior conversation, or any commentary. If nothing needs fixing, output the transcription unchanged.\n\n` +
+        (context ? `Prior conversation (for context only, do not output):\n${context}\n\n` : '') +
+        `Transcription to correct (between the markers):\n<<<\n${text}\n>>>`;
       const chosenModel = mode === 'live' ? FAST_MODEL : CLEANUP_MODEL;
       let result;
       try {
@@ -910,7 +974,12 @@ function buildServer(): http.Server {
           throw new Error('Cleanup failed');
         }
       }
-      const cleanedRaw = (result.text?.trim() || text).replace(/\s+/g, ' ').trim();
+      const cleanedRaw = (result.text?.trim() || text).replace(/^<<<\s*|\s*>>>$/g, '').replace(/\s+/g, ' ').trim();
+      // Flash occasionally echoes the whole prompt back for very short inputs; never let that reach a bubble.
+      if (cleanupLooksBroken(text, cleanedRaw)) {
+        console.warn(`[Poken] cleanup rejected (${cleanedRaw.length} chars for ${text.length} in): "${cleanedRaw.slice(0, 80)}"`);
+        return c.json({ cleaned: text });
+      }
       const cleaned = enforceTranscriptLanguage(cleanedRaw, language);
       return c.json({ cleaned: cleaned || text });
     } catch {
@@ -940,8 +1009,9 @@ function buildServer(): http.Server {
 
     const topic      = url.searchParams.get('topic')     || 'the topic the teacher will explain';
     const persona    = url.searchParams.get('persona')   || 'eager';
-    const language   = normalizeSessionLanguage(url.searchParams.get('language'));
-    const video     = url.searchParams.get('video')     === '1';
+    let language     = normalizeSessionLanguage(url.searchParams.get('language'));
+    let latinStreak  = 0;   // consecutive Latin-script transcript chunks while in a non-Latin session
+    const video      = url.searchParams.get('video')     === '1';
     const model      = video ? VIDEO_MODEL : AUDIO_MODEL;
     const connectedAt = Date.now();
 
@@ -1124,23 +1194,27 @@ function buildServer(): http.Server {
         `Continue exactly as before: stay silent and wait for the teacher to speak next.`;
     }
 
-    /** Called from the live session's onclose. Decides between a real error and an in-place reopen. */
+    const reopenTimes: number[] = [];
+    /**
+     * Called from the live session's onclose. Gemini closes sessions for its own reasons
+     * (goAway, and an intermittent 1007 "audio content type not supported" that lands mid-reply
+     * with no audio from us) — every close is recovered in place, bounded to 3 per minute so a
+     * persistently rejected session still ends with a visible error instead of a loop.
+     */
     function onGeminiClosed(id: string, code: number, reason: string) {
       if (tearingDown) return;
-      const openedAt = sessionOpenedAt.get(id) ?? Date.now();
-      const age = Date.now() - openedAt;
       if (!sessionReady) return; // startup failure is reported by the connect catch
-      if (age < 10_000) {
-        if ((resumeInfo || rejoining) && resumeHandles.has(id)) {
-          // The resumption handle was rejected — rebuild once from the digest instead.
-          resumeHandles.delete(id);
-          reopenGemini(`resume handle rejected (code ${code})`);
-        } else {
-          fatal(`Live session ended (code ${code}${reason ? ': ' + reason : ''})`);
-        }
+      const now = Date.now();
+      const age = now - (sessionOpenedAt.get(id) ?? now);
+      while (reopenTimes.length && now - reopenTimes[0] > 60_000) reopenTimes.shift();
+      if (reopenTimes.length >= 3) {
+        fatal(`Live session ended (code ${code}${reason ? ': ' + reason : ''})`);
         return;
       }
-      reopenGemini(`Gemini session closed (code ${code}${reason ? ': ' + reason : ''})`);
+      reopenTimes.push(now);
+      // A session that died young was probably rejected as resumed; rebuild it from the digest.
+      if (age < 10_000 && (resumeInfo || rejoining)) resumeHandles.delete(id);
+      reopenGemini(`Gemini session closed after ${Math.round(age / 1000)}s (code ${code}${reason ? ': ' + reason.slice(0, 80) : ''})`);
     }
 
     let reopenInFlight = false;
@@ -1188,6 +1262,36 @@ function buildServer(): http.Server {
       for (const p of flush) ingestTeacherTranscript(p.text);
     }
 
+    /** Switch the live session language: model instruction, transcript filters, client, resume token. */
+    function switchLanguage(next: string, source: 'request' | 'detected') {
+      if (!ALLOWED_SESSION_LANGUAGES.has(next) || next === language) return;
+      const prev = language;
+      language = next;
+      latinStreak = 0;
+      console.log(`[Poken] Language ${prev} → ${next} (${source})`);
+      sendDebug('info', `Session language switched to ${next} (${source})`);
+      const chars = next === 'Simplified Chinese' ? ' using simplified characters (简体字) exclusively' : '';
+      sendText(source === 'request'
+        ? `[SYSTEM] The teacher asked to switch languages. The session language is now ${next}. Reply with one short sentence in ${next}${chars} confirming, then continue the lesson entirely in ${next}.`
+        : `[SYSTEM] The teacher is now speaking ${next}. The session language is now ${next}. From this point on speak ONLY ${next}${chars}. Do not comment on the change — just continue naturally.`);
+      sendJson({ type: 'language_changed', language: next, source });
+      pushSessionState();
+    }
+
+    /** Script-level auto-detection from the raw (unfiltered) transcript chunk. */
+    function autoDetectLanguage(rawChunk: string) {
+      const script = dominantScript(rawChunk);
+      if (!script) return;
+      const current = scriptOfLanguage(language);
+      if (script === current) { latinStreak = 0; return; }
+      if (script === 'Latin') {
+        // One romanized word is not a switch; three chunks in a row is.
+        if (++latinStreak >= 3) switchLanguage('English', 'detected');
+        return;
+      }
+      switchLanguage(SCRIPT_LANGUAGE[script], 'detected');
+    }
+
     /** Teacher ASR chunk: language-enforced, logged, relayed. */
     function ingestTeacherTranscript(rawChunk: string) {
       if (!teacherHasSpoken) {
@@ -1195,6 +1299,7 @@ function buildServer(): http.Server {
         if (pendingTeacherTranscript.length > 20) pendingTeacherTranscript.shift();
         return;
       }
+      autoDetectLanguage(rawChunk); // before enforcement, which would strip a new script entirely
       const chunk = enforceTranscriptLanguage(rawChunk, language);
       if (!chunk) return;
       teacherTranscriptBuf += ' ' + chunk;
@@ -1251,6 +1356,8 @@ function buildServer(): http.Server {
       sessionLog.push({ role: 'teacher', name: 'Teacher', text, time: Date.now() });
       lastExchangeAt = Date.now();
       teacherTurns++;
+      const requested = detectLanguageSwitchRequest(text);
+      if (requested) switchLanguage(requested, 'request');
       if (teacherTurns % 10 === 0) refreshDigestSummary().catch(() => {});
       pushSessionState();
 
@@ -1288,6 +1395,8 @@ function buildServer(): http.Server {
     /** Typed teacher input. */
     function onTextInput(userText: string) {
       markTeacherSpoken('text input');
+      const requested = detectLanguageSwitchRequest(userText);
+      if (requested) switchLanguage(requested, 'request');
       sendText(userText);
       sessionLog.push({ role: 'teacher', name: 'Teacher', text: userText, time: Date.now() });
       lastExchangeAt = Date.now();
