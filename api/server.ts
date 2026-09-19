@@ -1524,11 +1524,11 @@ function buildServer(): http.Server {
      */
     function afterOpen(getSess: () => LiveSession | null, id: string, greeting: string) {
       sessionOpenedAt.set(id, Date.now());
-      // A handle issued before the last turn resumes a model that is missing that turn — the
-      // digest (recent turns verbatim) fills the gap. A fresh handle needs nothing.
-      const freshHandle = resumeHandles.has(id) && handleIssuedAt >= lastExchangeAt;
-      const text = (resumeInfo || rejoining) ? (freshHandle ? null : resumeBlock()) : greeting;
-      if (!text) return;
+      // Always send the digest on a resume, even with a handle: Gemini's resumption handle lags
+      // its own state by a few seconds, so a handle issued right after an exchange can resume a
+      // model that is missing that exchange (seen: the student forgot a word taught 4s earlier).
+      // A redundant reminder to a model that does remember is harmless; a lost turn is not.
+      const text = (resumeInfo || rejoining) ? resumeBlock() : greeting;
       setTimeout(() => { try { getSess()?.sendRealtimeInput({ text }); } catch (_) {} }, GREETING_KICK_DELAY_MS);
     }
 

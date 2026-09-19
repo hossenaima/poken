@@ -66,7 +66,7 @@ fresh session primed with a `[RESUME]` digest). The same path recovers any mid-l
 close. Exercise it on demand with the `debug_reopen` WebSocket message (ignored when
 `NODE_ENV=production`); the smoke script does this.
 
-The resume token carries the handle, a digest of the lesson, the last 60 log entries, settings
+The `[RESUME]` digest block is sent on **every** resume/reopen, handle or not — a handle issued seconds after an exchange can lag Gemini's state and resume a model missing that exchange (the smoke test's secret word was forgotten twice); the redundant reminder costs nothing. The resume token carries the handle, a digest of the lesson, the last 60 log entries, settings
 and elapsed time; `session_state` (a fresh token) is pushed after every teacher turn and whenever
 Gemini issues a new handle, and mirrored to `sessionStorage` — so unexpected socket closes
 reconnect with backoff (1s→30s, 3 attempts) and a reloaded tab gets **Resume last session**.
