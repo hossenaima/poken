@@ -282,7 +282,7 @@
   // ── Nodes ────────────────────────────────────────────────────────────────
   const NODE_COLUMNS = [
     "id", "topic_id", "parent_id", "kind", "label", "question",
-    "after_block", "body", "extras", "image_path", "created_at",
+    "after_block", "body", "extras", "image_path", "mastery", "created_at",
   ];
 
   async function saveNode(row) {
