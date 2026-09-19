@@ -1,6 +1,6 @@
 -- Learn Mode RLS (issue #15). Run with `supabase test db`.
 begin;
-select plan(31);
+select plan(35);
 
 -- Two users. auth.uid() reads request.jwt.claims ->> 'sub'.
 insert into auth.users (id, instance_id, aud, role, email, is_anonymous)
@@ -169,6 +169,28 @@ select throws_ok(
 select throws_ok(
   $$ insert into public.learn_topics (title) values ('') $$,
   '23514', null, 'empty title is rejected');
+
+select throws_ok(
+  $$ insert into public.learn_nodes (id, topic_id, kind, body)
+     values ('20000000-0000-4000-8000-000000000007', '10000000-0000-4000-8000-000000000002',
+             'root', repeat('x', 20001)) $$,
+  '23514', null, 'body over 20000 chars is rejected');
+
+select throws_ok(
+  $$ insert into public.learn_nodes (id, topic_id, kind, extras)
+     values ('20000000-0000-4000-8000-000000000008', '10000000-0000-4000-8000-000000000002',
+             'root', jsonb_build_object('suggestions', array[repeat('y', 20000)])) $$,
+  '23514', null, 'extras over 16 KiB is rejected');
+
+select throws_ok(
+  $$ insert into public.learn_nodes (id, topic_id, kind, question)
+     values ('20000000-0000-4000-8000-000000000009', '10000000-0000-4000-8000-000000000002',
+             'root', repeat('q', 1001)) $$,
+  '23514', null, 'question over 1000 chars is rejected');
+
+select throws_ok(
+  $$ insert into public.learn_topics (title, language) values ('T', repeat('l', 41)) $$,
+  '23514', null, 'language over 40 chars is rejected');
 
 -- 9. Storage: learn-diagrams ------------------------------------------------------------------
 

@@ -6,7 +6,7 @@ create table public.learn_topics (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null default auth.uid() references auth.users (id) on delete cascade,
   title       text not null check (char_length(title) between 1 and 200),
-  language    text not null default 'English',
+  language    text not null default 'English' check (char_length(language) <= 40),
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
@@ -18,10 +18,10 @@ create table public.learn_nodes (
   parent_id   uuid references public.learn_nodes (id) on delete cascade,
   kind        text not null check (kind in ('root', 'deeper', 'ask', 'simplify', 'visual')),
   label       text not null default '' check (char_length(label) <= 400),
-  question    text not null default '',
+  question    text not null default '' check (char_length(question) <= 1000),
   after_block int,
-  body        text not null default '',
-  extras      jsonb,
+  body        text not null default '' check (char_length(body) <= 20000),
+  extras      jsonb check (octet_length(extras::text) <= 16384),
   image_path  text,
   mastery     text not null default 'read'
               check (mastery in ('unseen', 'read', 'taught', 'shaky', 'solid')),
