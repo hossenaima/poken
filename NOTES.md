@@ -92,6 +92,11 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
 - **`pdf-parse` is imported lazily.** Its `pdfjs-dist` can throw `DOMMatrix is not defined` at
   import time when the optional native `@napi-rs/canvas` is absent; it is only the PDF *text
   fallback* (Gemini vision is the primary PDF path), so it must never take the process down.
+- **Deleting a CSS/markup range by start/end anchors once took ~100 unrelated lines with it**
+  (the toolbar, coaching panel, mic row and timeout-modal styles — shipped unstyled). When
+  cutting between anchors, list the selectors in the removed range first and eyeball them;
+  in the browser, check a computed style (`getComputedStyle(muteBtn).borderRadius`), not
+  just that the page loads.
 - A `session_state` token pushed only on teacher turns carried a Gemini handle from *before*
   the model's reply; it is now also pushed whenever Gemini issues a newer handle.
 - `preview_start`/the in-app browser can't grant mic/camera; drive the session with
