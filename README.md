@@ -48,6 +48,8 @@ team's review are all on the PR.
 | Remove the ElevenLabs Scribe integration (Gemini transcription only) | [#27](https://github.com/poken-app/poken/issues/27) | [#28](https://github.com/poken-app/poken/pull/28) (merged) | [0f39c396](https://app.devin.ai/sessions/0f39c396a9114c3fab286bcae8dbca52) |
 | Detect more diagram-request phrasings; student never refuses to draw | [#29](https://github.com/poken-app/poken/issues/29) | [#30](https://github.com/poken-app/poken/pull/30) (merged) | — |
 | On-demand diagrams drawn from the student's explanation, not the request | [#31](https://github.com/poken-app/poken/issues/31) | [#32](https://github.com/poken-app/poken/pull/32) (merged) | — |
+| Gemini transcription: trailing silence + settle so utterance tails aren't dropped | [#33](https://github.com/poken-app/poken/issues/33) | [#34](https://github.com/poken-app/poken/pull/34) (merged) | — |
+| Transcript chunks concatenated verbatim (approach corrected in review) | [#35](https://github.com/poken-app/poken/issues/35) | [#36](https://github.com/poken-app/poken/pull/36) (merged) | — |
 
 ## Layout
 
