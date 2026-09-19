@@ -1137,6 +1137,26 @@
     .learn-ask { display: flex; gap: 0.25rem; align-items: center; }
     /* A display rule beats the hidden attribute — without this both were always shown. */
     .learn-toolbar [hidden] { display: none; }
+    .learn-term {
+      border-bottom: 1.5px dotted var(--poken-accent); cursor: help; position: relative;
+    }
+    .learn-term:hover::after, .learn-term:focus::after {
+      content: attr(data-gloss); position: absolute; left: 0; top: calc(100% + 6px); z-index: 40;
+      width: max-content; max-width: 18rem; white-space: normal; pointer-events: none;
+      background: #111827; color: #fff; font-size: 0.75rem; font-weight: 400; line-height: 1.45;
+      padding: 0.4rem 0.6rem; border-radius: 7px; box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+    }
+    .learn-term:focus { outline: none; }
+    .learn-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.25rem 0 1rem; }
+    .learn-suggest-label { font-size: 0.75rem; color: var(--poken-text-secondary); margin-right: 0.15rem; }
+    .learn-suggest button {
+      font-family: inherit; font-size: 0.8125rem; color: var(--poken-text); background: #fff; cursor: pointer;
+      border: 1px solid var(--poken-border-solid); border-radius: 999px; padding: 0.3rem 0.75rem;
+    }
+    .learn-suggest button:hover { border-color: var(--poken-accent); color: var(--poken-accent); }
+    .learn-figure { margin: 0.25rem 0 1rem; }
+    .learn-figure img { display: block; max-width: 100%; border-radius: 10px; border: 1px solid var(--poken-border-solid); }
+    .learn-figure figcaption { font-size: 0.75rem; color: var(--poken-text-secondary); margin-top: 0.35rem; }
     .learn-ask input {
       font-family: inherit; font-size: 0.8125rem; width: min(20rem, 70vw); padding: 0.4rem 0.6rem;
       border: none; border-radius: 7px; background: rgba(255,255,255,0.12); color: #fff;
@@ -1206,6 +1226,8 @@
       <div class="learn-toolbar-actions" id="learnToolbarActions">
         <button type="button" id="learnDeeperBtn">Go deeper</button>
         <button type="button" id="learnAskBtn">Ask a question</button>
+        <button type="button" id="learnSimplifyBtn">Simplify</button>
+        <button type="button" id="learnVisualBtn">Show me</button>
       </div>
       <form class="learn-ask" id="learnAskForm" hidden>
         <input type="text" id="learnAskInput" placeholder="Ask about the highlighted text…" autocomplete="off" maxlength="600" />

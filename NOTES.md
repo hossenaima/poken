@@ -92,6 +92,16 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
   length-capped (URL-encoded non-Latin text grows ~9×, so the session would fail to open). The
   client sends it pre-session, before `ready_to_start`; frames arrive in order, so it is in
   place when materials are assembled. Anything user-authored goes over the socket.
+- **Learn Mode's web sources are Wikipedia, not Gemini's Google Search grounding.** The
+  grounding terms (ai.google.dev/gemini-api/terms) forbid modifying or interspersing content
+  with grounded results, storing them beyond the user's own chat history, "learning from" them
+  or using them for another purpose, and tracking interactions with a specific result — Learn
+  Mode nests deep-dives inside explanations, hands them to the AI student, and will persist and
+  score them. Don't add `googleSearch` to a Learn Mode call. Wikipedia is **backend-only**: the
+  learner never sees citations or links, so the prompt's "explain in your own words, never
+  copy" rule is what keeps this within CC BY-SA — don't weaken it without adding visible
+  credit. Wikipedia requests must send the `User-Agent` in `server/learn.ts` (Wikimedia
+  blocks clients without contact info). Details: `docs/LEARN_MODE_PLAN.md`, Phase 3.
 
 ## Mid-session language switching
 

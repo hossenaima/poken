@@ -317,8 +317,12 @@ The selection mechanic:
    call.
 6. Each block shows its sources as citation chips (favicon + domain) that link out.
 
-Edge cases: a selection spanning several blocks gets clamped to the first block. Selecting
-inside an existing child is fine, since trees nest to any depth.
+Edge cases: a selection may span several paragraphs of one explanation; the branch attaches
+under the last selected paragraph and all selected paragraphs go to the model as context
+(long selections get a shortened breadcrumb and search Wikipedia by topic instead). A
+selection that runs on into a nested explanation is clamped to the one it started in.
+Boundaries that split a word are widened to the whole word (not for Han script, which has no
+spaces). Selecting inside an existing child is fine, since trees nest to any depth.
 
 ### Nudges (decided: learner's call, nudged)
 
@@ -366,6 +370,39 @@ its topic** — Teach this, Teach Again and a setup-screen start on the same top
 (case-insensitive) all carry it; a different topic gets nothing. A toast tells the teacher
 the student has read their notes. Verified: the student cited "my notes" and made its
 deliberate mistake against them ("chlorophyll absorbs green light the strongest").
+
+**Phase 3 status (2026-09-19).** *Built:* **Simplify** and **Show me** in the selection
+toolbar (same nesting as Go deeper; Show me uses `gemini-3.1-flash-image`, picked over
+2.5-flash-image after a side-by-side where 2.5 garbled diagram labels), **key-term glosses**
+(dotted underline, definition on hover/focus) and **suggested rabbit holes** (chips under each
+explanation) via `POST /api/learn/extras` with `responseSchema`. Image nodes carry no text, so
+they stay out of the teaching notes.
+
+*Blocked — web sources.* The Gemini API terms for Grounding with Google Search
+(ai.google.dev/gemini-api/terms, read 2026-09-19) forbid modifying or interspersing content
+with Grounded Results, caching/analyzing/learning from them or using them "for another
+purpose", storing them beyond the end user's own chat history, and tracking interactions with
+a specific Grounded Result; Search Suggestions must always be shown with them. Poken nests
+deep-dives inside explanations, feeds the tree to the AI student (Phase 2), persists it
+(Phase 4) and tracks mastery per block (Phase 5) — each conflicts. The two-pass design below
+(rewriting grounded prose into blocks) is itself a modification. Options: a separate,
+read-only "On the web" box per explanation that shows Google's grounded result unmodified with
+its Search Suggestions and is never nested into, stored, or sent to the student; or a
+third-party search API whose results feed Gemini as ordinary context, so the explanation cites
+real URLs and stays usable everywhere.
+
+*Decided and built: Wikipedia.* Free, no signup, CC BY-SA (usable anywhere with attribution),
+and a curated source fits a learning app better than the open web. Each explanation fetches up
+to 3 article intros (exact-title lookup + search in parallel, redirects followed,
+disambiguation pages skipped, 4s timeout, in the session language's Wikipedia; `zh` uses
+`variant=zh-cn`) and passes them to Gemini as background reference. **Backend only (product
+decision): the learner sees no citations, links or mention of Wikipedia**; nothing about
+sources goes over the wire, and the client strips any stray `[n]` marker. Simplify skips the
+lookup. Because there is no visible credit, the prompt's "own words, never copy" rule is what
+keeps this within CC BY-SA (attribution is owed for reused wording, not for facts informing
+original prose) — measured against the intros, the longest verbatim run was 0–6 words.
+Tavily/Brave/Exa can slot in behind `wikipediaSources()` later if Wikipedia-only proves too
+narrow.
 
 **Phase 3 — Web sources and the rest of the aids.** Two-pass grounding with citation chips,
 plus Simplify, Get images, key terms and suggested rabbit holes. Matches Learn About.

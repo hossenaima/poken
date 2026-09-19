@@ -1,21 +1,99 @@
 /**
  * Learn Mode — plain-HTTP, stateless text generation (no Gemini Live, no WebSocket).
- * See docs/LEARN_MODE_PLAN.md. Phase 1: `start` and `deeper`, streamed as SSE.
+ * See docs/LEARN_MODE_PLAN.md. Explanations stream as SSE; Wikipedia intros inform them
+ * in the background (never shown); /visual draws diagrams; /extras adds key terms and
+ * suggested rabbit holes.
  *
  * Blocks are paragraphs: the model writes prose separated by blank lines and the
- * client splits on them. The typed-block structuring pass arrives with web sources
- * (Phase 3); until then paragraphs are addressable enough for drag-select.
+ * client splits on them — addressable enough for drag-select, so no structuring pass.
  */
 import type { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
+import { Modality, Type } from '@google/genai';
 import type { GoogleGenAI } from '@google/genai';
 
 const LEARN_MODEL = 'gemini-2.5-flash';
-const MAX_SELECTION_CHARS = 600;
+// Nano Banana 2. Compared on the same Calvin-cycle prompt (2026-09-19): 2.5-flash-image garbled
+// labels ("ATP = + H+"); this one got every label and count right in ~9s; 3.1-flash-lite-image
+// was ~3s but misplaced arrows. Diagrams teach, so accuracy wins.
+const IMAGE_MODEL = 'gemini-3.1-flash-image';
+const MAX_SELECTION_CHARS = 2_000;   // a highlight can span a few paragraphs
+const MAX_LABEL_CHARS = 300;         // breadcrumb entries and questions
 const MAX_CHAIN = 12;
 const MAX_CONTEXT_CHARS = 6_000;
 
 type ChainLink = { selection: string };
+type Source = { title: string; extract: string };
+
+// ── Wikipedia sources (backend only) ──────────────────────────────────────────
+// Not Google Search grounding: its terms forbid modifying, storing, nesting into or
+// "learning from" grounded results, and Poken does all four (plan §Phase 3). Wikipedia
+// intros go to the model as background; nothing about them reaches the browser.
+const WIKI_LANG: Record<string, string> = {
+  English: 'en', Spanish: 'es', French: 'fr', German: 'de', Portuguese: 'pt',
+  Hindi: 'hi', Arabic: 'ar', 'Simplified Chinese': 'zh',
+};
+// Wikimedia blocks clients without an informative User-Agent with contact info.
+const WIKI_UA = 'Poken/1.0 (https://github.com/poken-app/poken)';
+const MAX_SOURCES = 3;
+
+async function wikiPages(lang: string, params: Record<string, string>): Promise<any[]> {
+  const qs = new URLSearchParams({
+    action: 'query', format: 'json', formatversion: '2', redirects: '1',
+    prop: 'extracts|info|pageprops', ppprop: 'disambiguation', inprop: 'url',
+    exintro: '1', explaintext: '1', exchars: '1500',
+    ...(lang === 'zh' ? { variant: 'zh-cn' } : {}),
+    ...params,
+  });
+  const res = await fetch(`https://${lang}.wikipedia.org/w/api.php?${qs}`, {
+    headers: { 'User-Agent': WIKI_UA },
+    signal: AbortSignal.timeout(4_000),
+  });
+  if (!res.ok) return [];
+  const data: any = await res.json();
+  return Array.isArray(data?.query?.pages) ? data.query.pages : [];
+}
+
+/** Up to 3 article intros for `query`: an exact title match first, then search results. Never throws. */
+export async function wikipediaSources(query: string, language: string): Promise<Source[]> {
+  const lang = WIKI_LANG[language] || 'en';
+  const usable = (p: any) => !p.missing && !(p.pageprops && 'disambiguation' in p.pageprops) && p.extract?.trim() && p.fullurl;
+  try {
+    const [exact, search] = await Promise.allSettled([
+      wikiPages(lang, { titles: query }),
+      wikiPages(lang, { generator: 'search', gsrsearch: query, gsrlimit: '5' }),
+    ]);
+    const ranked = [
+      ...(exact.status === 'fulfilled' ? exact.value : []),
+      ...(search.status === 'fulfilled' ? search.value.sort((a, b) => (a.index ?? 99) - (b.index ?? 99)) : []),
+    ];
+    const seen = new Set<number>();
+    const out: Source[] = [];
+    for (const p of ranked) {
+      if (!usable(p) || seen.has(p.pageid)) continue;
+      seen.add(p.pageid);
+      out.push({ title: p.title, extract: p.extract.trim() });
+      if (out.length === MAX_SOURCES) break;
+    }
+    return out;
+  } catch (err: any) {
+    console.warn('[Poken][Learn] Wikipedia lookup failed:', err?.message ?? err);
+    return [];   // explanations still work without sources
+  }
+}
+
+// Background only: the learner never sees sources or links (product decision). That makes
+// "own words" load-bearing — CC BY-SA needs attribution when its wording is reused, not when
+// its facts inform original prose. Don't loosen the no-copying rule without adding credit.
+function sourcesBlock(sources: Source[]): string {
+  if (!sources.length) return '';
+  return `
+
+Background reference (for accuracy only):
+${sources.map(s => `${s.title}: ${s.extract}`).join('\n\n')}
+
+Use this only to keep your facts accurate. Explain entirely in your own words at the learner's level — never copy sentences or distinctive phrases from it. Ignore anything off-topic. Do not cite, number, link or mention it, and never say "Wikipedia", "sources" or "reference".`;
+}
 
 // Pedagogy after LearnLM's principles — but Learn Mode explains; Teach Mode tests.
 // A Learn Mode that withholds answers would fight the teaching phase for the same job.
@@ -35,14 +113,14 @@ Format (strict):
 - No preamble and no closing summary line.`;
 }
 
-function userPrompt(topic: string, chain: ChainLink[], selection: string, parentText: string, question: string): string {
+function userPrompt(topic: string, chain: ChainLink[], selection: string, parentText: string, question: string, simplify: boolean): string {
   if (!chain.length) {
     return `Explain "${topic}" so that someone could teach it to a curious student.`;
   }
   const trail = [topic, ...chain.map(c => c.selection)].join(' → ');
   const context = `The learner is studying "${topic}". They have gone deeper along this trail: ${trail}.
 
-The paragraph they were reading (for context — do not restate it):
+The text they were reading (for context — do not restate it):
 """
 ${parentText}
 """
@@ -61,6 +139,11 @@ ${question}
 
 Answer their question directly: the first sentence is the answer, then explain why, grounded in the highlighted span. Keep it to what the question needs (2–4 paragraphs). Do not re-summarize the parent paragraph or the broader topic. Never refer to "the highlighted text", "the selection" or "the passage" — just answer as if they asked you in conversation.`;
   }
+  if (simplify) {
+    return `${context}
+
+They found that span hard to follow. Re-explain what it means in much simpler words, as if to a curious 12-year-old: no jargon (or define it in plain words), one concrete everyday analogy, short sentences. 1–3 short paragraphs. Keep it accurate — simpler, not wrong. Never refer to "the highlighted text" or "the passage".`;
+  }
   return `${context}
 
 They want to go deeper on exactly that span. Explain the selected idea in depth: its mechanism, why it is the case, and where it breaks or is commonly misunderstood. Do not re-summarize the parent paragraph or the broader topic. Assume everything on the trail is already understood.`;
@@ -71,8 +154,9 @@ function clean(s: unknown, max: number): string {
 }
 
 export function registerLearnRoutes(app: Hono, ai: GoogleGenAI, normalizeLanguage: (raw: string | null) => string): void {
-  // POST { topic, language, chain?: [{selection}], selection?, parentText?, question? }
+  // POST { topic, language, chain?: [{selection}], selection?, parentText?, question?, mode? }
   // question: "Ask" on a highlight — answers it instead of a generic deep-dive.
+  // mode: 'simplify' re-explains the highlight in plain words.
   // → SSE: data: {"text": "..."} chunks, then data: {"done": true}
   app.post('/api/learn/explain', async (c) => {
     let body: any;
@@ -83,19 +167,31 @@ export function registerLearnRoutes(app: Hono, ai: GoogleGenAI, normalizeLanguag
     const language = normalizeLanguage(body?.language ?? null);
     const chain: ChainLink[] = (Array.isArray(body?.chain) ? body.chain : [])
       .slice(-MAX_CHAIN)
-      .map((l: any) => ({ selection: clean(l?.selection, MAX_SELECTION_CHARS) }))
+      .map((l: any) => ({ selection: clean(l?.selection, MAX_LABEL_CHARS) }))
       .filter((l: ChainLink) => l.selection);
     const selection = clean(body?.selection, MAX_SELECTION_CHARS);
     const parentText = typeof body?.parentText === 'string' ? body.parentText.trim().slice(0, MAX_CONTEXT_CHARS) : '';
-    const question = clean(body?.question, MAX_SELECTION_CHARS);
+    const question = clean(body?.question, MAX_LABEL_CHARS * 2);
+    const simplify = body?.mode === 'simplify';
     if (chain.length && !selection) return c.json({ error: 'selection required when chain is non-empty' }, 400);
-    if (question && !chain.length) return c.json({ error: 'question requires a selection' }, 400);
+    if ((question || simplify) && !chain.length) return c.json({ error: 'question/simplify require a selection' }, 400);
 
     return streamSSE(c, async (stream) => {
       try {
+        // Sources: the topic for a root explanation, the highlighted span for a branch (a question
+        // is usually a poor search query; the span it's about is a good one). Simplify re-words
+        // what's already on screen, so it skips the lookup.
+        let sources: Source[] = [];
+        if (!simplify) {
+          // A multi-paragraph highlight is a poor search query (and Wikipedia rejects >300 chars).
+          const query = chain.length && selection.length <= 120 ? selection : topic;
+          sources = await wikipediaSources(query, language);
+          if (!sources.length && chain.length) sources = await wikipediaSources(topic, language);
+        }
+
         const result = await ai.models.generateContentStream({
           model: LEARN_MODEL,
-          contents: [{ role: 'user', parts: [{ text: userPrompt(topic, chain, selection, parentText, question) }] }],
+          contents: [{ role: 'user', parts: [{ text: userPrompt(topic, chain, selection, parentText, question, simplify) + sourcesBlock(sources) }] }],
           config: { systemInstruction: systemInstruction(language) },
         });
         for await (const chunk of result) {
@@ -108,5 +204,82 @@ export function registerLearnRoutes(app: Hono, ai: GoogleGenAI, normalizeLanguag
         await stream.writeSSE({ data: JSON.stringify({ error: 'Explanation failed. Try again.' }) });
       }
     });
+  });
+
+  // "Get images": POST { topic, selection, parentText } → { base64, mimeType }
+  app.post('/api/learn/visual', async (c) => {
+    let body: any;
+    try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+    const topic = clean(body?.topic, 200);
+    const selection = clean(body?.selection, 600);   // an image prompt needs the idea, not paragraphs
+    const parentText = typeof body?.parentText === 'string' ? body.parentText.trim().slice(0, 2_000) : '';
+    if (!topic || !selection) return c.json({ error: 'topic and selection required' }, 400);
+    const prompt = `Draw a clear, accurate educational diagram that explains "${selection}" (topic: ${topic}).
+Context it appeared in: ${parentText}
+Style: clean flat-vector textbook illustration on a white background, simple shapes, arrows showing flow or cause and effect, a few short legible labels in English. No title banner, no decorative clutter, no photorealism.`;
+    try {
+      const result = await ai.models.generateContent({
+        model: IMAGE_MODEL,
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+      });
+      const part = result.candidates?.[0]?.content?.parts?.find(p => p.inlineData?.data);
+      if (!part?.inlineData?.data) return c.json({ error: 'No image came back. Try a different phrase.' }, 502);
+      return c.json({ base64: part.inlineData.data, mimeType: part.inlineData.mimeType || 'image/png' });
+    } catch (err: any) {
+      console.error('[Poken][Learn] visual failed:', err?.message ?? err);
+      return c.json({ error: 'Image generation failed. Try again.' }, 502);
+    }
+  });
+
+  // Key terms (hover glosses) + suggested rabbit holes for a finished explanation.
+  // POST { topic, text, language } → { keyTerms: [{term, gloss}], suggestions: [string] }
+  app.post('/api/learn/extras', async (c) => {
+    let body: any;
+    try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+    const topic = clean(body?.topic, 200);
+    const text = typeof body?.text === 'string' ? body.text.trim().slice(0, MAX_CONTEXT_CHARS) : '';
+    const language = normalizeLanguage(body?.language ?? null);
+    if (!topic || !text) return c.json({ error: 'topic and text required' }, 400);
+    try {
+      const result = await ai.models.generateContent({
+        model: LEARN_MODEL,
+        contents: [{ role: 'user', parts: [{ text: `A learner studying "${topic}" just read this explanation:
+"""
+${text}
+"""
+
+1. keyTerms: the 3–6 technical terms in it a learner would most need defined. Each "term" must be copied EXACTLY as it appears in the explanation (same spelling and case). Each "gloss" is a plain-language definition of at most 15 words, written in ${language}.
+2. suggestions: 3 short (2–6 word) follow-up topics worth going deeper on next, that the explanation mentions or implies but does not fully explain. Written in ${language}.` }] }],
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              keyTerms: {
+                type: Type.ARRAY,
+                items: { type: Type.OBJECT, properties: { term: { type: Type.STRING }, gloss: { type: Type.STRING } }, required: ['term', 'gloss'] },
+              },
+              suggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
+            },
+            required: ['keyTerms', 'suggestions'],
+          },
+        },
+      });
+      const parsed = JSON.parse(result.text || '{}');
+      // Only terms that really occur in the text can be highlighted.
+      const keyTerms = (Array.isArray(parsed.keyTerms) ? parsed.keyTerms : [])
+        .filter((k: any) => typeof k?.term === 'string' && typeof k?.gloss === 'string' && text.toLowerCase().includes(k.term.toLowerCase()))
+        .slice(0, 6)
+        .map((k: any) => ({ term: k.term.slice(0, 80), gloss: k.gloss.slice(0, 200) }));
+      const suggestions = (Array.isArray(parsed.suggestions) ? parsed.suggestions : [])
+        .filter((s: any) => typeof s === 'string' && s.trim())
+        .slice(0, 3)
+        .map((s: string) => s.trim().slice(0, 80));
+      return c.json({ keyTerms, suggestions });
+    } catch (err: any) {
+      console.error('[Poken][Learn] extras failed:', err?.message ?? err);
+      return c.json({ keyTerms: [], suggestions: [] });   // extras are optional; never break the page
+    }
   });
 }
