@@ -1153,6 +1153,50 @@
       border: 1px solid var(--poken-border-solid); border-radius: 999px; padding: 0.3rem 0.75rem;
     }
     .learn-suggest button:hover { border-color: var(--poken-accent); color: var(--poken-accent); }
+    .learn-account { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+    .learn-account + .learn-teach { margin-left: 0; }
+    .learn-google {
+      display: inline-flex; align-items: center; gap: 0.45rem; font-family: inherit; font-size: 0.8125rem;
+      font-weight: 500; color: var(--poken-text); background: #fff; cursor: pointer; white-space: nowrap;
+      border: 1px solid var(--poken-border-solid); border-radius: 10px; padding: 0.5rem 0.8rem;
+    }
+    .learn-google:hover { border-color: #9CA3AF; }
+    .learn-google::before {
+      content: "G"; font-weight: 700; font-size: 0.875rem; line-height: 1;
+      background: conic-gradient(from -45deg, #EA4335 0 25%, #FBBC05 0 50%, #34A853 0 75%, #4285F4 0);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .learn-user { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8125rem; color: var(--poken-text-secondary); }
+    .learn-user img { width: 26px; height: 26px; border-radius: 50%; }
+    .learn-user button {
+      background: none; border: none; font-family: inherit; font-size: 0.75rem; color: #9CA3AF; cursor: pointer; padding: 0;
+    }
+    .learn-user button:hover { color: var(--poken-text); text-decoration: underline; }
+    .learn-save-banner {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem 0.75rem; margin-top: 1rem;
+      padding: 0.6rem 0.75rem; border-radius: 10px; font-size: 0.8125rem; color: #92400E;
+      background: #FFFBEB; border: 1px solid #FDE68A;
+    }
+    .learn-save-banner[hidden] { display: none; }
+    .learn-banner-close { margin-left: auto; background: none; border: none; font-size: 1.1rem; color: #B45309; cursor: pointer; }
+    .learn-topics { margin-top: 1.25rem; }
+    .learn-topics-title {
+      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--poken-text-secondary); margin-bottom: 0.5rem;
+    }
+    .learn-topic { display: flex; align-items: stretch; border-bottom: 1px solid var(--poken-border-solid); }
+    .learn-topic-open {
+      flex: 1; display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+      background: none; border: none; padding: 0.7rem 0.25rem; cursor: pointer; text-align: left;
+      font-family: inherit; font-size: 0.9375rem; color: var(--poken-text);
+    }
+    .learn-topic-open small { font-size: 0.75rem; color: #9CA3AF; white-space: nowrap; }
+    .learn-topic-open:hover span { color: var(--poken-accent); }
+    .learn-topic-delete {
+      background: none; border: none; cursor: pointer; font-size: 1.1rem; line-height: 1;
+      color: #9CA3AF; padding: 0 0.6rem;
+    }
+    .learn-topic-delete:hover { color: #B91C1C; }
     .learn-figure { margin: 0.25rem 0 1rem; }
     .learn-figure img { display: block; max-width: 100%; border-radius: 10px; border: 1px solid var(--poken-border-solid); }
     .learn-figure figcaption { font-size: 0.75rem; color: var(--poken-text-secondary); margin-top: 0.35rem; }
@@ -1202,6 +1246,7 @@
     <div class="learn-shell">
       <header class="learn-top">
         <button class="learn-back" id="learnBackBtn" type="button">&larr; Back</button>
+        <button class="learn-back" id="learnTopicsBtn" type="button">My topics</button>
         <form class="learn-form" id="learnForm">
           <input type="text" id="learnTopic" placeholder="What do you want to learn?" autocomplete="off" />
           <select id="learnLanguage" aria-label="Language">
@@ -1216,9 +1261,16 @@
           </select>
           <button type="submit" id="learnGoBtn">Learn</button>
         </form>
+        <div class="learn-account" id="learnAccount"></div>
         <button class="learn-teach" id="learnTeachBtn" type="button" disabled>Teach this &rarr;</button>
       </header>
+      <div class="learn-save-banner" id="learnSaveBanner" role="status" hidden>
+        <span>This topic isn't saved — it's gone if you close the tab.</span>
+        <button type="button" class="learn-google" id="learnBannerSignIn">Sign in with Google to keep it</button>
+        <button type="button" class="learn-banner-close" id="learnBannerClose" aria-label="Dismiss">&times;</button>
+      </div>
       <p class="learn-hint" id="learnHint">Select any words in the explanation to go deeper on exactly that.</p>
+      <div class="learn-topics" id="learnTopics"></div>
       <div id="learnTree"></div>
     </div>
     <div class="learn-toolbar" id="learnToolbar" hidden>
