@@ -192,6 +192,15 @@ export function detectLanguageSwitchRequest(text: string): string | null {
 
 type Script = 'Han' | 'Devanagari' | 'Arabic' | 'Latin';
 const SCRIPT_LANGUAGE: Record<Script, string> = { Han: 'Simplified Chinese', Devanagari: 'Hindi', Arabic: 'Arabic', Latin: 'English' };
+/** Append a transcript chunk: a space between Latin words, none around CJK. Gemini streams CJK one character at a time. */
+export function joinChunk(buf: string, chunk: string): string {
+  if (!buf) return chunk;
+  if (!chunk) return buf;
+  const a = buf[buf.length - 1], b = chunk[0];
+  if (/\s/.test(a) || /\s/.test(b) || /\p{Script=Han}/u.test(a) || /\p{Script=Han}/u.test(b)) return buf + chunk;
+  return buf + ' ' + chunk;
+}
+
 function scriptOfLanguage(language: string): Script {
   return language === 'Simplified Chinese' ? 'Han' : language === 'Hindi' ? 'Devanagari' : language === 'Arabic' ? 'Arabic' : 'Latin';
 }
@@ -1010,7 +1019,8 @@ function buildServer(): http.Server {
     const topic      = url.searchParams.get('topic')     || 'the topic the teacher will explain';
     const persona    = url.searchParams.get('persona')   || 'eager';
     let language     = normalizeSessionLanguage(url.searchParams.get('language'));
-    let latinStreak  = 0;   // consecutive Latin-script transcript chunks while in a non-Latin session
+    let rawTeacherWindow = '';   // last ~80 raw transcript chars: script detection across Gemini's one-character chunks
+    let droppedRaw = '';         // raw text the language filter stripped this utterance; recovered if the language switches
     const video      = url.searchParams.get('video')     === '1';
     const model      = video ? VIDEO_MODEL : AUDIO_MODEL;
     const connectedAt = Date.now();
@@ -1267,7 +1277,7 @@ function buildServer(): http.Server {
       if (!ALLOWED_SESSION_LANGUAGES.has(next) || next === language) return;
       const prev = language;
       language = next;
-      latinStreak = 0;
+      rawTeacherWindow = '';
       console.log(`[Poken] Language ${prev} → ${next} (${source})`);
       sendDebug('info', `Session language switched to ${next} (${source})`);
       const chars = next === 'Simplified Chinese' ? ' using simplified characters (简体字) exclusively' : '';
@@ -1276,19 +1286,22 @@ function buildServer(): http.Server {
         : `[SYSTEM] The teacher is now speaking ${next}. The session language is now ${next}. From this point on speak ONLY ${next}${chars}. Do not comment on the change — just continue naturally.`);
       sendJson({ type: 'language_changed', language: next, source });
       pushSessionState();
+      // Characters stripped before the switch was recognised belong to the teacher's sentence — put them back.
+      const recovered = enforceTranscriptLanguage(droppedRaw, next);
+      droppedRaw = '';
+      if (recovered) {
+        teacherTranscriptBuf = joinChunk(teacherTranscriptBuf, recovered);
+        sendJson({ type: 'teacher_transcript', text: recovered });
+      }
     }
 
-    /** Script-level auto-detection from the raw (unfiltered) transcript chunk. */
+    /** Script-level auto-detection over a rolling window of raw (unfiltered) transcript text. */
     function autoDetectLanguage(rawChunk: string) {
-      const script = dominantScript(rawChunk);
-      if (!script) return;
-      const current = scriptOfLanguage(language);
-      if (script === current) { latinStreak = 0; return; }
-      if (script === 'Latin') {
-        // One romanized word is not a switch; three chunks in a row is.
-        if (++latinStreak >= 3) switchLanguage('English', 'detected');
-        return;
-      }
+      rawTeacherWindow = (rawTeacherWindow + rawChunk).slice(-80);
+      const script = dominantScript(rawTeacherWindow);
+      if (!script || script === scriptOfLanguage(language)) return;
+      // A romanized word or two inside a CJK/Arabic/Hindi session is not a switch; a dozen Latin letters is.
+      if (script === 'Latin' && (rawTeacherWindow.match(/\p{Script=Latin}/gu) || []).length < 12) return;
       switchLanguage(SCRIPT_LANGUAGE[script], 'detected');
     }
 
@@ -1301,8 +1314,8 @@ function buildServer(): http.Server {
       }
       autoDetectLanguage(rawChunk); // before enforcement, which would strip a new script entirely
       const chunk = enforceTranscriptLanguage(rawChunk, language);
-      if (!chunk) return;
-      teacherTranscriptBuf += ' ' + chunk;
+      if (!chunk) { if (rawChunk.trim()) droppedRaw += rawChunk; return; }
+      teacherTranscriptBuf = joinChunk(teacherTranscriptBuf, chunk);
       sendJson({ type: 'teacher_transcript', text: chunk });
 
     }
@@ -1349,6 +1362,7 @@ function buildServer(): http.Server {
     async function onTeacherSpeechEnd(media?: { camera?: boolean; whiteboard?: boolean; screen?: boolean }) {
       const text = teacherTranscriptBuf.trim();
       teacherTranscriptBuf = '';
+      droppedRaw = '';
       if (!text) return;
       console.log(`[Poken][SpeechEnd] Teacher said: "${text.slice(0, 200)}"`);
       console.log(`[Poken][Tokens] est≈${estimatedTokens()} (audio ${tokenEstimate.audioSec.toFixed(1)}s, text ${tokenEstimate.textChars} chars, frames ${tokenEstimate.frames}) | handles=${resumeHandles.size}`);
@@ -1508,7 +1522,7 @@ function buildServer(): http.Server {
             if (message.serverContent?.outputTranscription?.text) {
               const chunk = enforceTranscriptLanguage(message.serverContent.outputTranscription.text, language);
               if (chunk) {
-                studentTranscriptBuf += ' ' + chunk;
+                studentTranscriptBuf = joinChunk(studentTranscriptBuf, chunk);
                 sendJson({ type: 'transcript', text: chunk });
               }
             }

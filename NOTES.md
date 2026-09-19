@@ -93,11 +93,22 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
   plus a language name or alias (`chinese`, `中文`, `español`, …), with a spaceless fallback for
   Gemini's fragmented ASR ("swi tch to chi nese"). A language merely *mentioned* ("the word
   for water in Spanish") does not switch.
-- **Auto-detection** — `dominantScript()` on each *raw* teacher transcript chunk, before
-  `enforceTranscriptLanguage` (which would otherwise strip the new script entirely). Han,
-  Devanagari or Arabic at ≥70% switches immediately; Latin needs 3 chunks in a row (one
-  romanized word is not a switch) and lands on English — Spanish/French/German/Portuguese
-  cannot be told apart by script, so they need an explicit request.
+- **Auto-detection** — `dominantScript()` over a rolling 80-char window of *raw* teacher
+  transcript text, before `enforceTranscriptLanguage` (which would otherwise strip the new
+  script entirely). The window matters: Gemini streams CJK **one character per chunk**, so
+  per-chunk detection never reaches the 4-letter minimum and the whole utterance was being
+  filtered down to punctuation (`",,"`). Han/Devanagari/Arabic at ≥70% switches immediately;
+  Latin needs ≥12 letters in the window (a romanized word is not a switch) and lands on
+  English — Spanish/French/German/Portuguese cannot be told apart by script, so they need an
+  explicit request. Characters stripped before the switch fired are recovered (`droppedRaw`)
+  and relayed, so the teacher's sentence is whole.
+- Transcript buffers use `joinChunk()`: a space between Latin words, none around CJK.
+- Gemini's input transcription emits **Traditional** characters (陽光, 葉綠素) even in a
+  Simplified session; the cleanup pass converts them, so the sidebar settles on Simplified a
+  moment later. A server-side converter (e.g. `opencc-js`) would make it instant.
+- `node scripts/audio-probe.mjs <16k-pcm.wav> [ws-base] [language]` streams real speech
+  through the mic path — synthesize test audio with
+  `say -v Tingting "…" -o zh.aiff && afconvert -f WAVE -d LEI16@16000 -c 1 zh.aiff zh.wav`.
 
 `switchLanguage()` sends the model a `[SYSTEM]` note (the system instruction also carries
 `LANGUAGE_SWITCH_RULE` so it never refuses), emits `language_changed` to the client (which
