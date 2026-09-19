@@ -183,9 +183,9 @@ let currentOrbState  = "idle";
 let awaitingReflection = false;
 
 // ── Session handover / resume ────────────────────────────────────────────────
-// Vercel closes the WebSocket at the function deadline (300s on Hobby). The
-// server issues a resume token after every teacher turn; on handover or any
-// unexpected close we reconnect with it and the students pick the lesson back
+// Cloud Run closes the WebSocket at the request timeout (3600s). The server
+// issues a resume token after every teacher turn; on handover or any
+// unexpected close we reconnect with it and the student picks the lesson back
 // up. Outgoing frames are queued while the replacement socket connects.
 let resumeToken        = null;
 let materialsContext   = "";   // server-analyzed materials, handed back on resume so vision never re-runs
@@ -2383,7 +2383,6 @@ async function connect(opts = {}) {
     + `&persona=${encodeURIComponent(selectedPersona)}`
     + `&language=${encodeURIComponent(sessionLanguage)}`
     + `&video=${useVideo ? "1" : "0"}`
-    + (sessionMaterials ? `&materials=${encodeURIComponent(sessionMaterials)}` : "")
     + (resuming ? "&resume=1" : "");
 
   const sock = new WebSocket(url);
@@ -2399,6 +2398,8 @@ async function connect(opts = {}) {
         // The analyzed materials ride along so the new invocation never re-runs vision.
         sock.send(JSON.stringify({ type: "resume", token: resumeToken, materialsContext }));
       } else {
+        // Pasted notes go over the socket, not the URL (URLs are logged and length-capped)
+        if (sessionMaterials) sock.send(JSON.stringify({ type: "materials_text", text: sessionMaterials }));
         // Send uploaded study material files first so the server can merge them into the system instruction before the session starts
         for (const file of uploadedFiles) {
           try {

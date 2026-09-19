@@ -66,9 +66,14 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
 - **No server-side file store.** Files travel over the WebSocket as `material_file` frames and
   the handover carries the analyzed context, so nothing needs disk or a bucket. Add storage
   only if a feature actually needs files to outlive a session.
-- **Not on Vercel.** Its 300s function cap (Hobby) forced a full client handover every ~4
-  minutes; Cloud Run's 60-minute request timeout plus in-place Gemini reopens make handovers
-  hourly. The code has no Vercel dependency left.
+- **Cloud Run, not a serverless-function host.** A 5-minute function cap forces a full client
+  handover every ~4 minutes; Cloud Run's 60-minute request timeout plus in-place Gemini
+  reopens make handovers hourly. Don't move to a host that caps request duration below that.
+- **Pasted notes travel as a `materials_text` frame, never in the WebSocket URL.** URLs are
+  written to Cloud Run request logs (so the notes would sit in Cloud Logging) and are
+  length-capped (URL-encoded non-Latin text grows ~9×, so the session would fail to open). The
+  client sends it pre-session, before `ready_to_start`; frames arrive in order, so it is in
+  place when materials are assembled. Anything user-authored goes over the socket.
 
 ## Bugs already fixed (don't reintroduce)
 
@@ -79,7 +84,8 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
   chunks are now held (3s window) and flushed when speech is confirmed.
 - Typed `text_input` never reached the session log (so reflections/resume tokens ignored
   typed-only sessions). It does now.
-- `process.exit(1)` on a missing key would kill the whole Fluid instance; it throws instead.
+- `process.exit(1)` on a missing key would kill the whole process (and every session on the
+  instance); it throws instead.
 
 ## Mistakes already made (so you don't repeat them)
 
@@ -107,9 +113,6 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
 - Local + production: landing → setup → session; Gemini Live opens; greeting arrives;
   typed teacher message → spoken student reply with transcript; live transcript cleanup;
   resume token with a Gemini handle issued; reflection renders after a handover.
-- Local: deadline handover with `DEV_MAX_DURATION_S=150` — reconnect, `Resuming session
-  (1 Gemini handle)`, `Gemini Live session opened (solo, resumed)`, no re-greeting.
-- Production: WebSocket over the `/ws/live` rewrite (also reachable at `/api/server`).
 - Cloud Run (2026-09-19, project `poken-app-260919`): `/`, `/app.js`, `/api/topics` 200;
   WebSocket session opens through the Cloud Run proxy, greeting + typed exchange + spoken reply
   + `session_state` tokens; service shows timeout 3600, session affinity on, secret bound.

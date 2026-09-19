@@ -2,9 +2,9 @@
  * Extract plain text from PDF, PPTX, text files; optional image OCR via Gemini.
  */
 import JSZip from 'jszip';
-// pdf-parse is imported lazily: its pdfjs-dist dependency throws at import time on
-// Vercel's runtime (no DOMMatrix / @napi-rs/canvas). Gemini vision is the primary PDF
-// path; this text extraction is only the fallback, so it must never take the function down.
+// pdf-parse is imported lazily: its pdfjs-dist dependency throws at import time when
+// the optional native @napi-rs/canvas is absent (no DOMMatrix). Gemini vision is the primary
+// PDF path; this text extraction is only the fallback, so it must never take the process down.
 
 const MAX_FILE_BYTES = 12 * 1024 * 1024; // 12 MB
 const MAX_EXTRACT_CHARS = 120_000; // keep URL param safe

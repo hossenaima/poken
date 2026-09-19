@@ -8,12 +8,13 @@ import WebSocket from 'ws';
 const BASE = process.env.BASE || 'wss://poken-7skula3n3a-uc.a.run.app';
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
-function connect(query, { resume } = {}) {
+function connect(query, { resume, notes } = {}) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`${BASE}/ws/live?${query}${resume ? '&resume=1' : ''}`);
     const state = { ws, ready: false, token: null, handover: null, materialsContext: '', transcript: [], audioChunks: 0, closed: null, debug: [] };
     ws.on('open', () => {
       if (resume) ws.send(JSON.stringify({ type: 'resume', token: resume.token, materialsContext: resume.materialsContext }));
+      if (notes) ws.send(JSON.stringify({ type: 'materials_text', text: notes }));
       ws.send(JSON.stringify({ type: 'ready_to_start' }));
     });
     ws.on('message', (d) => {
@@ -36,8 +37,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ── Solo handover ─────────────────────────────────────────────────────────────
 const t1 = Date.now();
-const s1 = await connect('topic=The%20water%20cycle&persona=eager&language=English&video=1');
+// Pasted notes must arrive over the socket (materials_text), never the URL — see NOTES.md.
+const NOTES_CANARY = 'Notes canary: 水循环 — transpiration counts too.';
+const s1 = await connect('topic=The%20water%20cycle&persona=eager&language=English&video=1', { notes: NOTES_CANARY });
 log('solo ready in', Date.now() - t1, 'ms');
+if (!s1.materialsContext.includes(NOTES_CANARY)) { log('FAIL: pasted notes missing from session_context'); process.exit(1); }
+log('pasted notes reached the session via materials_text');
 await sleep(3000);
 s1.ws.send(JSON.stringify({ type: 'text_input', text: 'Water evaporates from oceans, rises, condenses into clouds, and falls back as rain or snow. Remember the secret word: PINEAPPLE.' }));
 await sleep(12000);
@@ -54,7 +59,7 @@ if (process.env.SKIP_REOPEN !== '1') {
   log('reply after reopen:', JSON.stringify(s1.transcript.slice(before).join(' ').slice(0, 160)));
 }
 
-// Wait for the deadline handover (Hobby: 300s - 45s lead ≈ 255s after connect).
+// Wait for the deadline handover (SESSION_TIMEOUT_S - 45s lead; with 150 that is ≈ 105s after connect).
 const deadlineWait = 300_000;
 const start = Date.now();
 while (!s1.handover && Date.now() - start < deadlineWait) {

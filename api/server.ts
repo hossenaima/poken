@@ -19,8 +19,8 @@ import {
   isVideoMime,
 } from '../server/materials-video.js';
 
-// ── Crash prevention: an unhandled throw would take down the whole Fluid instance
-//    and every session sharing it. Log, never rethrow. ──
+// ── Crash prevention: an unhandled throw would take down the whole process
+//    and every session on the instance. Log, never rethrow. ──
 process.on('uncaughtException', (err) => {
   console.error('[Poken] UNCAUGHT EXCEPTION (process kept alive):', err);
 });
@@ -45,7 +45,7 @@ console.warn = (...args: any[]) => { origWarn(...args); pushLog('warn', ...args)
 
 const GOOGLE_API_KEY = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
 if (!GOOGLE_API_KEY) {
-  // Throw, never process.exit() — exiting kills the shared Fluid instance.
+  // Throw, never process.exit() — exiting kills every session on the instance.
   throw new Error('Missing GEMINI_API_KEY');
 }
 
@@ -941,8 +941,7 @@ function buildServer(): http.Server {
     const topic      = url.searchParams.get('topic')     || 'the topic the teacher will explain';
     const persona    = url.searchParams.get('persona')   || 'eager';
     const language   = normalizeSessionLanguage(url.searchParams.get('language'));
-    const materials  = url.searchParams.get('materials') || '';
-    const video      = url.searchParams.get('video')     === '1';
+    const video     = url.searchParams.get('video')     === '1';
     const model      = video ? VIDEO_MODEL : AUDIO_MODEL;
     const connectedAt = Date.now();
 
@@ -969,6 +968,9 @@ function buildServer(): http.Server {
     const pendingMaterialFiles: { name: string; base64: string; mimeType: string }[] = [];
     const MAX_MATERIALS_CHARS = 30_000;
     let materialsContext = '';  // final assembled context, handed to the client for resume
+    // Pasted notes arrive as a pre-session `materials_text` frame, never in the URL
+    // (URLs land in Cloud Run request logs and have a length cap).
+    let materials = '';
 
     // Resume state (set by a `resume` frame before ready_to_start)
     let resumeInfo: ResumeToken | null = null;
@@ -1438,11 +1440,15 @@ function buildServer(): http.Server {
 
     // ── Message handler ────────────────────────────────────────────────────
     socket.on('message', (data: Buffer, isBinary: boolean) => { try {
-      // Pre-session: only material_file / resume / ready_to_start; everything else (binary included) is dropped.
+      // Pre-session: only materials_text / material_file / resume / ready_to_start; everything else (binary included) is dropped.
       if (!sessionReady) {
         if (isBinary) return;
         let parsed: any;
         try { parsed = JSON.parse(data.toString()); } catch (_) { return; }
+        if (parsed.type === 'materials_text' && typeof parsed.text === 'string') {
+          materials = parsed.text.slice(0, MAX_MATERIALS_CHARS * 2);
+          return;
+        }
         if (parsed.type === 'material_file' && parsed.base64 && parsed.name) {
           pendingMaterialFiles.push({ name: parsed.name, base64: parsed.base64, mimeType: parsed.mimeType || 'application/octet-stream' });
           return;

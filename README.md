@@ -1,12 +1,12 @@
 # Poken
 
-Learn by teaching. You explain a topic out loud; an AI student listens, watch your camera,
-whiteboard or screen, ask questions — and are deliberately wrong about 30% of the time so
+Learn by teaching. You explain a topic out loud; an AI student listens, watches your camera,
+whiteboard or screen, asks questions — and is deliberately wrong about 30% of the time so
 you have to catch it. You pick your student's persona — eager, skeptic, or confused.
 
 Built on Gemini Live (native audio), Hono + `ws`, and a single vanilla-JS page. Hosted on
-Vercel. Handoff notes — architecture, the session-handover design, and known pitfalls — are in
-[`NOTES.md`](NOTES.md).
+Google Cloud Run. Handoff notes — architecture, the session-handover design, and known
+pitfalls — are in [`NOTES.md`](NOTES.md).
 
 ## Run it
 
