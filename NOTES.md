@@ -82,6 +82,9 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
 
 ## Design decisions (deliberate)
 
+- **Teacher transcription is Gemini Live's `inputTranscription`**; an ElevenLabs Scribe
+  integration was tried and removed (2026-09-19) — its punctuation and segment timing caused
+  more transcript bugs than it fixed.
 - **No classroom mode.** Multi-student sessions (mic arbitration, N Live sessions,
   addressed-student locks) were the buggiest subsystem by far; the product is one student. Gone: `classroom`/`students` query params, the `student_speaking` /
   `student_turn_complete` / `student_interrupted` / `teacher_turn` / `classroom_audio` messages,
@@ -134,30 +137,6 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
   sessions, so every consumer — transcript relays, cleanup fallback, session log, resume
   digest — sees Simplified immediately, before the Gemini cleanup pass. Conversion happens
   *after* `dominantScript`/`autoDetectLanguage`, which still see the raw chunk.
-- **ElevenLabs Scribe v2 Realtime** (`server/scribe.ts`) transcribes the teacher whenever
-  `ELEVENLABS_API_KEY` is set, and reports its own `language_code` — that is what auto-detects
-  Spanish/French/German/Portuguese, which script detection cannot separate. Gemini's
-  `inputTranscription` is used only while Scribe is not active (no key, or it gave up), and the
-  fallback is logged once at `warn`. Protocol details the docs do not spell out, learned against
-  the live API: **there is no `commit` message type** — a commit is
-  `{"message_type":"input_audio_chunk","audio_base_64":"","commit":true,"sample_rate":16000}`
-  (empty audio is fine; the flag also rides on a real chunk), and sending `{"message_type":
-  "commit"}` comes back as `input_error`. Under `commit_strategy=manual` the server emits
-  *nothing but* `partial_transcript` until a commit lands, then
-  `committed_transcript_with_timestamps` (with `language_code`) **before** `committed_transcript`.
-  Commit **once per utterance**, at the browser's `speech_end`: a timed mid-utterance commit makes
-  the API throttle (close code 1000 `commit_throttled`) and splits words ("sunlight-Mm-hmm",
-  "叶绿-叶绿素"), whereas one commit per utterance returns the whole sentence, punctuated.
-- **Scribe transcript wire format.** While the teacher speaks, Scribe's `partial_transcript`
-  frames go to the client as `{type:'teacher_preview', text}` (the whole in-progress utterance;
-  the client *replaces* the bubble text, never appends, and never cleans it). At `speech_end`
-  the server commits and the committed segment goes out as
-  `{type:'teacher_transcript', text, replace:true, clean:true}` — the client replaces the preview,
-  skips both Gemini cleanup passes (Scribe text is already clean), and if the final never
-  arrives (Scribe fell back mid-utterance) it cleans the preview after 3s. Gemini's own
-  `inputTranscription` chunks (no key / fallback) still arrive as plain `teacher_transcript`
-  and append + clean as before. Previews also feed `autoDetectLanguage`, so a spoken language
-  switch fires mid-sentence instead of at commit.
 - `node scripts/audio-probe.mjs <16k-pcm.wav> [ws-base] [language]` streams real speech
   through the mic path — synthesize test audio with
   `say -v Tingting "…" -o zh.aiff && afconvert -f WAVE -d LEI16@16000 -c 1 zh.aiff zh.wav`.
