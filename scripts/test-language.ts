@@ -3,7 +3,7 @@
 // (server.ts throws at import unless GEMINI_API_KEY is non-empty; no network calls are made,
 //  so any placeholder value in .env is enough to run these.)
 import assert from 'node:assert/strict';
-import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage, isDiagramRequest, buildDiagramBrief, silencePcmBase64 } from '../api/server.js';
+import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage, transcriptChunk, isDiagramRequest, buildDiagramBrief, silencePcmBase64 } from '../api/server.js';
 
 // explicit requests, including Gemini's fragmented ASR and CJK phrasing
 assert.equal(detectLanguageSwitchRequest('Can we switch to Chinese now?'), 'Simplified Chinese');
@@ -40,6 +40,10 @@ assert.equal(enforceTranscriptLanguage('葉綠素 absorbs 陽光', 'Simplified C
 assert.equal(enforceTranscriptLanguage('the water cycle', 'English'), 'the water cycle');
 assert.equal(enforceTranscriptLanguage('photosynthesis needs 陽光', 'English'), 'photosynthesis needs');
 assert.equal(enforceTranscriptLanguage('', 'Simplified Chinese'), '');
+assert.equal(transcriptChunk(' water', 'English'), ' water');
+assert.equal(transcriptChunk(' 光', 'Simplified Chinese'), '光');
+assert.equal(transcriptChunk(',', 'English'), ',');
+assert.equal(transcriptChunk(' 陽光', 'English'), '');
 // Diagram request detection: explicit asks (clean or fragmented ASR) vs incidental visual words
 assert.equal(isDiagramRequest('Can you produce a diagram that shows this?'), true);
 assert.equal(isDiagramRequest('give me a sketch of that'), true);
@@ -77,3 +81,8 @@ assert.equal(silence.length, 16000 * 2 * 0.8);
 assert.ok(silence.every(b => b === 0));
 assert.equal(Buffer.from(silencePcmBase64(0), 'base64').length, 0);
 console.log('language + cleanup checks OK');
+
+// Gemini returns Chinese spaced out ("光 合 作 用"); the transcript must not inherit that.
+assert.equal(transcriptChunk('光 合 作 用 需 要 阳 光 , 水 。', 'Simplified Chinese'), '光合作用需要阳光,水。');
+assert.equal(transcriptChunk('叶 绿 素 absorbs 光', 'Simplified Chinese'), '叶绿素光'); // Latin stripped, Han joined
+assert.equal(transcriptChunk(' water and carbon dioxide', 'English'), ' water and carbon dioxide');

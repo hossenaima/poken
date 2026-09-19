@@ -51,9 +51,9 @@ if (!GOOGLE_API_KEY) {
   throw new Error('Missing GEMINI_API_KEY');
 }
 
-// Live model (env override lets you trial e.g. gemini-3.1-flash-live-preview, Google's suggested
-// workaround for the intermittent 1007 CONTENT_TYPE_AUDIO closes on the 2.5 native-audio model).
-const AUDIO_MODEL    = process.env.AUDIO_MODEL || 'gemini-2.5-flash-native-audio-latest';
+// Live model. Default is gemini-3.1-flash-live-preview: ~2.4x faster first audio than 2.5 native audio
+// and Google's suggested workaround for its intermittent 1007 CONTENT_TYPE_AUDIO closes. Env override to trial others.
+const AUDIO_MODEL    = process.env.AUDIO_MODEL || 'gemini-3.1-flash-live-preview';
 const VIDEO_MODEL    = AUDIO_MODEL;  // same model; the video flag only picks prompts
 const FAST_MODEL     = 'gemini-2.5-flash';
 // Heavier model for transcript cleanup only (accuracy over latency).
@@ -153,6 +153,19 @@ function isAllowedCharForLanguage(ch: string, language: string): boolean {
 
 // Gemini's input transcription emits Traditional characters even in a Simplified session.
 const toSimplified = Converter({ from: 'tw', to: 'cn' });
+
+/**
+ * Turns one raw ASR chunk into display text.
+ * Two things Gemini does that the transcript must not inherit:
+ *  - the word break arrives as a leading space on the chunk, which enforceTranscriptLanguage trims;
+ *  - Chinese comes back spaced out ("光 合 作 用"), which is not how the script is written.
+ */
+export function transcriptChunk(raw: string, language: string): string {
+  const body = enforceTranscriptLanguage(raw, language)
+    .replace(/(?<=[\p{Script=Han}\p{P}])\s+(?=[\p{Script=Han}\p{P}])/gu, '');
+  if (!body) return '';
+  return /^\s/.test(raw) && !/^[\p{Script=Han}\p{P}]/u.test(body) ? ' ' + body : body;
+}
 
 export function enforceTranscriptLanguage(text: string, language: string): string {
   if (!text) return text;
@@ -924,7 +937,7 @@ function triggerOnDemandDiagram(
 
     // Send the diagram image to the Live session so the student can "see" its own diagram
     try {
-      liveSession.sendRealtimeInput({ media: { data: result.base64, mimeType: result.mimeType } });
+      liveSession.sendRealtimeInput({ video: { data: result.base64, mimeType: result.mimeType } });
       liveSession.sendRealtimeInput({ text: '[You just drew this diagram on the whiteboard. The teacher can see it and may draw on it or point at parts of it.]' });
     } catch (_) {}
   }).catch(err => {
@@ -1269,7 +1282,7 @@ function buildServer(): http.Server {
     }
     function sendImage(base64: string) {
       tokenEstimate.frames += 1;
-      sendToSession({ media: { data: base64, mimeType: 'image/jpeg' } });
+      sendToSession({ video: { data: base64, mimeType: 'image/jpeg' } });
     }
     function sendAudio(base64: string) {
       if (!session) {
@@ -1279,7 +1292,7 @@ function buildServer(): http.Server {
         return;
       }
       tokenEstimate.audioSec += (base64.length * 0.75) / 32000; // PCM16 mono @16k = 32000 bytes/s
-      sendToSession({ media: { data: base64, mimeType: 'audio/pcm;rate=16000' } });
+      sendToSession({ audio: { data: base64, mimeType: 'audio/pcm;rate=16000' } });
     }
 
     // Keep the connection alive through HTTP/1.1 proxies that drop idle sockets.
@@ -1450,7 +1463,7 @@ function buildServer(): http.Server {
       sendJson({ type: 'language_changed', language: next, source });
       pushSessionState();
       // Characters stripped before the switch was recognised belong to the teacher's sentence — put them back.
-      const recovered = enforceTranscriptLanguage(droppedRaw, next);
+      const recovered = transcriptChunk(droppedRaw, next).trimStart();
       droppedRaw = '';
       if (recovered) {
         teacherTranscriptBuf = joinChunk(teacherTranscriptBuf, recovered);
@@ -1476,7 +1489,7 @@ function buildServer(): http.Server {
         return;
       }
       autoDetectLanguage(rawChunk); // before enforcement, which would strip a new script entirely
-      const chunk = enforceTranscriptLanguage(rawChunk, language);
+      const chunk = transcriptChunk(rawChunk, language);
       if (!chunk) { if (rawChunk.trim()) droppedRaw += rawChunk; return; }
       teacherTranscriptBuf = joinChunk(teacherTranscriptBuf, chunk);
       sendJson({ type: 'teacher_transcript', text: chunk });
@@ -1688,7 +1701,7 @@ function buildServer(): http.Server {
               ingestTeacherTranscript(message.serverContent.inputTranscription.text);
             }
             if (message.serverContent?.outputTranscription?.text) {
-              const chunk = enforceTranscriptLanguage(message.serverContent.outputTranscription.text, language);
+              const chunk = transcriptChunk(message.serverContent.outputTranscription.text, language);
               if (chunk) {
                 studentTranscriptBuf = joinChunk(studentTranscriptBuf, chunk);
                 sendJson({ type: 'transcript', text: chunk });
@@ -1791,6 +1804,8 @@ function buildServer(): http.Server {
         case 'speech_end': {
           // Goes through onTeacherAudio so a session still in its blackout queues the silence like any audio.
           onTeacherAudio(Buffer.from(silencePcmBase64(AUDIO_TAIL_SILENCE_MS), 'base64'));
+          // gemini-3.1-flash-live-preview only closes the teacher's turn on an explicit stream end; 2.5 tolerates it.
+          sendToSession({ audioStreamEnd: true });
           if (speechEndSettleTimer) clearTimeout(speechEndSettleTimer);
           const media = msg.media;
           speechEndSettleTimer = setTimeout(() => {

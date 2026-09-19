@@ -166,8 +166,25 @@ English → Chinese flow against a local server.
 forum (Aug 2026) with no root cause. Handling: **every** Gemini close is recovered in place by
 `reopenGemini()` (a session that died young drops its handle and rebuilds from the digest),
 bounded to 3 reopens per minute before a visible error. Google staff suggest
-`gemini-3.1-flash-live-preview`; `AUDIO_MODEL=gemini-3.1-flash-live-preview` switches to it with
-no code change, and it passed the same language-switch probe here.
+`gemini-3.1-flash-live-preview`, which is now the default (first audio ~0.9 s vs ~2.3 s; passed the
+same language-switch and audio probes). `AUDIO_MODEL=gemini-2.5-flash-native-audio-latest` switches back.
+
+### What the 3.1 live model needs that 2.5 did not
+
+Three differences, all found by probe and all handled in `api/server.ts` — check them first if a
+future model swap goes quiet:
+
+1. **`audio:` / `video:`, never `media:`.** The SDK still maps `media:` onto the deprecated
+   `mediaChunks` field; 3.1 rejects it and closes with
+   `1007 realtime_input.media_chunks is deprecated`. Audio goes in `audio:`, camera and whiteboard
+   frames in `video:`.
+2. **The teacher's turn needs an explicit end.** 2.5 ends a turn on its own VAD; 3.1 waits for
+   `sendRealtimeInput({ audioStreamEnd: true })`. Without it the student hears the teacher but
+   never replies, and the transcript stays empty. Sent from `speech_end` alongside the trailing
+   silence.
+3. **Chinese arrives spaced out** ("光 合 作 用"). `transcriptChunk()` collapses whitespace between
+   Han/punctuation pairs and is the single place both the teacher and student transcripts go
+   through — fix spacing there, not at the call sites.
 
 ## Bugs already fixed (don't reintroduce)
 
