@@ -59,7 +59,7 @@ const VIDEO_MODEL    = AUDIO_MODEL;  // same model; the video flag only picks pr
 const FAST_MODEL     = 'gemini-2.5-flash';
 // Heavier model for transcript cleanup only (accuracy over latency).
 const CLEANUP_MODEL  = process.env.CLEANUP_MODEL || 'gemini-2.5-pro';
-const IMAGE_MODEL    = 'gemini-2.5-flash-image';
+const IMAGE_MODEL    = 'gemini-3.1-flash-image';
 // ElevenLabs Scribe transcribes the teacher when this is set; without it Gemini's own input
 // transcription is used, exactly as before.
 const ELEVENLABS_API_KEY = (process.env.ELEVENLABS_API_KEY || '').trim();
