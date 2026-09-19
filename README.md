@@ -45,6 +45,9 @@ team's review are all on the PR.
 | Dead-code removal (Firebase remnants, unused CDN script, unused route, dead state) | [#7](https://github.com/poken-app/poken/issues/7) | [#8](https://github.com/poken-app/poken/pull/8) (merged) | [f8431d3f](https://app.devin.ai/sessions/f8431d3f32d74aeda6db191e4053ced1) |
 | Coaching tips for typed teacher messages | [#9](https://github.com/poken-app/poken/issues/9) | [#13](https://github.com/poken-app/poken/pull/13) (merged; cooldown fix added in review) | [03a071b6](https://app.devin.ai/sessions/03a071b636564376b841392ef0c77215) |
 | Demo hardening: pinned jsPDF, persona/language recap, protected `/api/logs` | [#10](https://github.com/poken-app/poken/issues/10) | [#14](https://github.com/poken-app/poken/pull/14) (merged) | [c957bb8a](https://app.devin.ai/sessions/c957bb8a588c42a882c84dbea7600102) |
+| Remove the ElevenLabs Scribe integration (Gemini transcription only) | [#27](https://github.com/poken-app/poken/issues/27) | [#28](https://github.com/poken-app/poken/pull/28) (merged) | [0f39c396](https://app.devin.ai/sessions/0f39c396a9114c3fab286bcae8dbca52) |
+| Detect more diagram-request phrasings; student never refuses to draw | [#29](https://github.com/poken-app/poken/issues/29) | [#30](https://github.com/poken-app/poken/pull/30) (merged) | — |
+| On-demand diagrams drawn from the student's explanation, not the request | [#31](https://github.com/poken-app/poken/issues/31) | [#32](https://github.com/poken-app/poken/pull/32) (merged) | — |
 
 ## Layout
 

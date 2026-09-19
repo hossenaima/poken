@@ -20,7 +20,6 @@ import {
   formatVideoForContext,
   isVideoMime,
 } from '../server/materials-video.js';
-import { ScribeTranscriber } from '../server/scribe.js';
 
 // ── Crash prevention: an unhandled throw would take down the whole process
 //    and every session on the instance. Log, never rethrow. ──
@@ -60,9 +59,6 @@ const FAST_MODEL     = 'gemini-2.5-flash';
 // Heavier model for transcript cleanup only (accuracy over latency).
 const CLEANUP_MODEL  = process.env.CLEANUP_MODEL || 'gemini-2.5-pro';
 const IMAGE_MODEL    = 'gemini-3.1-flash-image';
-// ElevenLabs Scribe transcribes the teacher when this is set; without it Gemini's own input
-// transcription is used, exactly as before.
-const ELEVENLABS_API_KEY = (process.env.ELEVENLABS_API_KEY || '').trim();
 
 // ── Session timing constants — tuned empirically against real hardware; do not round ──
 const AUDIO_BLACKOUT_MS            = 1500;   // buffer teacher audio this long after Gemini onopen, then flush
@@ -70,7 +66,6 @@ const COACHING_COOLDOWN_MS         = 10_000;
 const GREETING_KICK_DELAY_MS       = 400;
 const ERROR_FLUSH_DELAY_MS         = 500;    // let a fatal {type:'error'} reach the browser before closing
 const HANDOVER_LEAD_MS             = 45_000; // hand the client over this long before the request timeout
-const SCRIBE_COMMIT_WAIT_MS        = 1200;   // wait this long after speech_end for Scribe's committed segment
 // Must equal the Cloud Run --timeout (cloudbuild.yaml sets both to 3600). Override locally, e.g.
 // SESSION_TIMEOUT_S=120, to rehearse a client handover in two minutes.
 const SESSION_TIMEOUT_MS           = (Number(process.env.SESSION_TIMEOUT_S) || 3600) * 1000;
@@ -337,6 +332,7 @@ You are NOT a blank slate. You come in with partial knowledge, possible misconce
 - If the teacher asks you a question back, redirect naturally: "I mean, I have a guess, but I'd rather hear you explain it properly."
 - Don't be sycophantic. "Great explanation!" is not something a real student says — they just nod and ask the next question.
 - Stay on topic. If you drift, the teacher will redirect you.
+- You have a whiteboard. If the teacher asks for a diagram, sketch, drawing or picture, say you'll sketch it (e.g. "Sure, let me sketch that") — never say you can't draw.
 
 
 ${video ? GESTURE_INSTRUCTION.trim() : GESTURE_INSTRUCTION_VOICE_ONLY.trim()}
@@ -542,14 +538,34 @@ function extractImageFromResult(result: any): { base64: string; mimeType: string
   return null;
 }
 
+/** What an on-demand diagram should depict: the student's latest utterance(s) and the
+ *  teacher's explanatory turns before the request (the request itself is excluded). */
+export function buildDiagramBrief(sessionLog: SessionEntry[], topic: string): string {
+  const MAX = 400;
+  const lastStudent = sessionLog.map(e => e.role).lastIndexOf('student');
+  const student: string[] = [];
+  for (let i = lastStudent; i >= 0 && sessionLog[i].role === 'student'; i--) student.unshift(sessionLog[i].text);
+  const teacher: string[] = [];
+  for (let i = (lastStudent >= 0 ? lastStudent : sessionLog.length) - 1; i >= 0 && teacher.length < 2; i--) {
+    if (sessionLog[i].role === 'teacher') teacher.unshift(sessionLog[i].text);
+  }
+  const studentText = student.join(' ').trim().slice(0, MAX);
+  const teacherText = teacher.join(' ').trim().slice(0, MAX);
+  const parts: string[] = [];
+  if (studentText) parts.push(`Draw the concept the student just described: "${studentText}".`);
+  if (teacherText) parts.push(`The teacher explained: "${teacherText}".`);
+  parts.push(`Topic: ${topic}.`);
+  return parts.join(' ');
+}
+
 async function generateStudentDiagram(
   ai: GoogleGenAI,
   topic: string,
-  studentText: string,
+  content: string,
   studentName: string,
   onDemand: boolean = false,
 ): Promise<{ base64: string; mimeType: string; hasMistake: boolean } | null> {
-  const wordCount = studentText.trim().split(/\s+/).length;
+  const wordCount = content.trim().split(/\s+/).length;
   console.log(`[Poken][DiagramGen] generateStudentDiagram | student=${studentName} | onDemand=${onDemand} | words=${wordCount}`);
   if (!onDemand && wordCount < 15) {
     console.log(`[Poken][DiagramGen] Skipped: word count ${wordCount} < 15 and not on-demand`);
@@ -563,8 +579,11 @@ async function generateStudentDiagram(
     : '';
 
   const contextText = onDemand
-    ? `The teacher asked: "${studentText.slice(0, 400)}"`
-    : `Student said: "${studentText.slice(0, 400)}"`;
+    ? content
+    : `Student said: "${content.slice(0, 400)}"`;
+  const labelRule = onDemand
+    ? `\n- Labels must name the concepts above. Do NOT write the request, the words 'teacher' or 'student', or any sentence`
+    : '';
 
   const prompt =
     `Generate an image: a quick, messy whiteboard doodle (black marker on white) about "${topic}".\n\n` +
@@ -576,6 +595,7 @@ async function generateStudentDiagram(
     `- Hand-drawn, imperfect, slightly crooked lines\n` +
     `- NO paragraphs, NO bullet points, NO detailed text\n` +
     `- Think: what a student scribbles in 15 seconds on a whiteboard` +
+    labelRule +
     mistakeClause;
 
   let timeoutHandle: ReturnType<typeof setTimeout>;
@@ -626,9 +646,11 @@ async function generateStudentDiagram(
 // words like "draw a conclusion" or "illustrate my point". Requires a clear
 // action verb + visual noun directed at the student.
 const DIAGRAM_REQUEST_PATTERNS = [
-  /\b(draw|sketch|make|create|generate)\s+(me\s+)?(a\s+)?(diagram|picture|image|drawing|sketch|chart|graph|flowchart|figure|illustration)\b/i,
-  /\bshow\s+(me\s+)?(a\s+)?(diagram|picture|sketch|drawing|chart|graph|flowchart|figure|illustration)\b/i,
-  /\bcan\s+you\s+(draw|sketch|make|create|generate)\b/i,
+  /\b(draw|sketch|make|create|generate|produce|build|put\s+together|give\s+(me|us))\s+(me\s+|us\s+)?(a\s+)?(diagram|picture|image|drawing|sketch|chart|graph|flowchart|figure|illustration)\b/i,
+  /\bshow\s+(me\s+|us\s+)?(a\s+)?(diagram|picture|sketch|drawing|chart|graph|flowchart|figure|illustration)\b/i,
+  /\b(can|could)\s+you\s+(please\s+)?(draw|sketch|make|create|generate|produce|build|put\s+together|give|show)\b/i,
+  /\b(can|could)\s+you\s+(please\s+)?(\w+\s+){1,4}?a\s+diagram\b/i,
+  /\bdiagram\s+(this|that)\b/i,
   /\b(put|write|draw)\s+(it|that|this)\s+(on|on the)\s+(the\s+)?(board|whiteboard)\b/i,
   /\bshow\s+(me\s+|us\s+)?(your\s+)?work\b/i,
   /\bvisuali[sz]e\s+(it|this|that)\b/i,
@@ -641,7 +663,7 @@ const DIAGRAM_REQUEST_PATTERNS = [
 const DIAGRAM_SPACELESS_PHRASES = [
   // verb + (me +) (a +) noun — all lowercased, no spaces
   ...[
-    'draw', 'sketch', 'make', 'create', 'generate',
+    'draw', 'sketch', 'make', 'create', 'generate', 'produce', 'build', 'puttogether', 'give',
   ].flatMap(verb => [
     'diagram', 'picture', 'image', 'drawing', 'sketch', 'chart',
     'graph', 'flowchart', 'figure', 'illustration',
@@ -650,14 +672,20 @@ const DIAGRAM_SPACELESS_PHRASES = [
     `${verb}a${noun}`,      // "drawadiagram"
     `${verb}me${noun}`,     // "drawmediagram"
     `${verb}mea${noun}`,    // "drawmeadiagram"
+    `${verb}us${noun}`,     // "giveusdiagram"
+    `${verb}usa${noun}`,    // "giveusadiagram"
   ])),
-  // "show me a ..."
+  // "show me/us a ..."
   ...[
     'diagram', 'picture', 'sketch', 'drawing', 'chart',
     'graph', 'flowchart', 'figure', 'illustration',
-  ].flatMap(noun => [`show${noun}`, `showme${noun}`, `showmea${noun}`]),
-  // "can you ..."
-  'canyoudraw', 'canyousketch', 'canyoumake', 'canyoucreate', 'canyougenerate',
+  ].flatMap(noun => [`show${noun}`, `showme${noun}`, `showmea${noun}`, `showus${noun}`, `showusa${noun}`]),
+  // "can/could you (please) ..."
+  ...['canyou', 'couldyou', 'canyouplease', 'couldyouplease'].flatMap(lead => [
+    'draw', 'sketch', 'make', 'create', 'generate', 'produce', 'build', 'puttogether', 'give', 'show',
+  ].map(verb => `${lead}${verb}`)),
+  // "diagram this/that"
+  'diagramthis', 'diagramthat',
   // whiteboard
   'putitontheboard', 'putitonthewhiteboard', 'putthisontheboard',
   'putthatontheboard', 'drawitontheboard', 'drawitonthewhiteboard',
@@ -668,7 +696,7 @@ const DIAGRAM_SPACELESS_PHRASES = [
   'visualizethis', 'visualisethat',
 ];
 
-function isDiagramRequest(text: string): boolean {
+export function isDiagramRequest(text: string): boolean {
   // Primary: regex on original text (works when transcription is clean)
   const regexMatch = DIAGRAM_REQUEST_PATTERNS.some(p => p.test(text));
   if (regexMatch) {
@@ -706,13 +734,13 @@ function isVisionRefreshRequest(text: string): boolean {
 function triggerOnDemandDiagram(
   ai: GoogleGenAI,
   topic: string,
-  teacherText: string,
+  content: string,
   studentName: string,
   liveSession: any,
   socket: WebSocket,
   sendJson: (data: object) => void,
 ) {
-  console.log(`[Poken][DiagramGen] triggerOnDemandDiagram called | student=${studentName} | topic="${topic}" | text="${teacherText.slice(0, 100)}"`);
+  console.log(`[Poken][DiagramGen] triggerOnDemandDiagram called | student=${studentName} | topic="${topic}" | content="${content.slice(0, 100)}"`);
 
   // Tell the student to acknowledge the request verbally.
   // IMPORTANT: The native-audio model doesn't know it can generate images (a separate
@@ -729,7 +757,7 @@ function triggerOnDemandDiagram(
 
   // Fire-and-forget diagram generation (on-demand = true to bypass word count check)
   console.log(`[Poken][DiagramGen] Starting image generation with model=${IMAGE_MODEL}...`);
-  generateStudentDiagram(ai, topic, teacherText, studentName, true).then(result => {
+  generateStudentDiagram(ai, topic, content, studentName, true).then(result => {
     if (!result) {
       console.warn(`[Poken][DiagramGen] generateStudentDiagram returned null for ${studentName}`);
       return;
@@ -903,7 +931,8 @@ function buildServer(): http.Server {
       const topic = body?.topic || 'Photosynthesis';
       const text = body?.text || 'So the plant takes in sunlight and carbon dioxide through its leaves, and then through chloroplasts it converts that energy into glucose and oxygen. The chlorophyll in the leaves is what makes them green and captures the light energy.';
       console.log(`[Poken] /api/diagram/test: starting generation for topic="${topic}"`);
-      const result = await generateStudentDiagram(ai, topic, text, 'Test');
+      const content = buildDiagramBrief([{ role: 'student', name: 'Test', text, time: Date.now() }], topic);
+      const result = await generateStudentDiagram(ai, topic, content, 'Test', true);
       if (!result) return c.json({ error: 'No image generated — check server logs for details' }, 500);
       return c.json({ ok: true, mimeType: result.mimeType, base64Length: result.base64.length, hasMistake: result.hasMistake, base64: result.base64 });
     } catch (e) {
@@ -1053,13 +1082,6 @@ function buildServer(): http.Server {
     const tokenEstimate = { audioSec: 0, textChars: 0, frames: 0 };
     function estimatedTokens(): number {
       return Math.round(tokenEstimate.audioSec * 32 + tokenEstimate.textChars / 4 + tokenEstimate.frames * 258);
-    }
-
-    // Teacher transcription: Scribe when the key is set, Gemini's inputTranscription otherwise —
-    // and again as soon as Scribe gives up.
-    let scribe: ScribeTranscriber | null = null;
-    function scribeOwnsTranscription(): boolean {
-      return !!scribe?.active;
     }
 
     // Session ref
@@ -1291,7 +1313,7 @@ function buildServer(): http.Server {
     }
 
     /** Teacher ASR chunk: language-enforced, logged, relayed. */
-    function ingestTeacherTranscript(rawChunk: string, opts: { final?: boolean } = {}) {
+    function ingestTeacherTranscript(rawChunk: string) {
       if (!teacherHasSpoken) {
         pendingTeacherTranscript.push({ text: rawChunk, ts: Date.now() });
         if (pendingTeacherTranscript.length > 20) pendingTeacherTranscript.shift();
@@ -1301,10 +1323,7 @@ function buildServer(): http.Server {
       const chunk = enforceTranscriptLanguage(rawChunk, language);
       if (!chunk) { if (rawChunk.trim()) droppedRaw += rawChunk; return; }
       teacherTranscriptBuf = joinChunk(teacherTranscriptBuf, chunk);
-      // A Scribe segment is the whole utterance, already clean: the client replaces its preview
-      // and skips the Gemini cleanup pass. Gemini's own chunks still append and get cleaned.
-      sendJson(opts.final ? { type: 'teacher_transcript', text: chunk, replace: true, clean: true } : { type: 'teacher_transcript', text: chunk });
-
+      sendJson({ type: 'teacher_transcript', text: chunk });
     }
 
     function flushBlackout() {
@@ -1318,9 +1337,6 @@ function buildServer(): http.Server {
     function onTeacherAudio(data: Buffer) {
       markTeacherSpoken('first audio');
       const b64 = data.toString('base64');
-      // Fork: Scribe hears every VAD-gated frame as it arrives, Gemini keeps its own blackout
-      // buffering below (the student must still hear the teacher).
-      scribe?.sendAudio(b64);
       const sinceOpen = Date.now() - sessionStartedAt;
       if (sinceOpen < AUDIO_BLACKOUT_MS) {
         blackoutBuffer.push(b64);
@@ -1347,15 +1363,6 @@ function buildServer(): http.Server {
       }
     }
 
-    /** The tail of an utterance rides in on Scribe's committed segment — let it land before the turn closes. */
-    async function endTeacherTurn(media?: { camera?: boolean; whiteboard?: boolean; screen?: boolean }) {
-      if (scribeOwnsTranscription()) {
-        scribe!.commit();
-        await scribe!.waitForCommit(SCRIBE_COMMIT_WAIT_MS);
-      }
-      await onTeacherSpeechEnd(media);
-    }
-
     async function onTeacherSpeechEnd(media?: { camera?: boolean; whiteboard?: boolean; screen?: boolean }) {
       const text = teacherTranscriptBuf.trim();
       teacherTranscriptBuf = '';
@@ -1374,7 +1381,7 @@ function buildServer(): http.Server {
 
       if (isDiagramRequest(text)) {
         console.log('[Poken] On-demand diagram requested via speech:', text.slice(0, 80));
-        triggerDiagramFromTeacher(text);
+        triggerDiagramFromTeacher();
       }
 
       if (isVisionRefreshRequest(text)) {
@@ -1396,8 +1403,10 @@ function buildServer(): http.Server {
       });
     }
 
-    function triggerDiagramFromTeacher(text: string) {
-      if (session) triggerOnDemandDiagram(ai, topic, text, 'Student', session, socket, sendJson);
+    function triggerDiagramFromTeacher() {
+      // The request sentence is the last log entry; the brief is built from what preceded it.
+      const content = buildDiagramBrief(sessionLog.slice(0, -1), topic);
+      if (session) triggerOnDemandDiagram(ai, topic, content, 'Student', session, socket, sendJson);
     }
 
     async function onStudentSpeech(name: string, text: string) {
@@ -1419,7 +1428,7 @@ function buildServer(): http.Server {
       pushSessionState();
       if (isDiagramRequest(userText)) {
         console.log('[Poken] On-demand diagram requested via text_input');
-        triggerDiagramFromTeacher(userText);
+        triggerDiagramFromTeacher();
       }
       if (isVisionRefreshRequest(userText)) {
         console.log('[Poken] Vision refresh requested via text_input');
@@ -1500,29 +1509,7 @@ function buildServer(): http.Server {
       setTimeout(() => { try { getSess()?.sendRealtimeInput({ text }); } catch (_) {} }, GREETING_KICK_DELAY_MS);
     }
 
-    /** Open (or re-open) the Scribe socket. Idempotent: called on session start and every Gemini reopen. */
-    function ensureScribe() {
-      if (!ELEVENLABS_API_KEY || tearingDown) return;
-      if (!scribe) {
-        scribe = new ScribeTranscriber(ELEVENLABS_API_KEY, {
-          onTranscript: (text) => ingestTeacherTranscript(text, { final: true }),
-          onPartial: (text) => {
-            autoDetectLanguage(text);   // switch as soon as the script is visible, not only at commit
-            sendJson({ type: 'teacher_preview', text });
-          },
-          onLanguage: (next) => switchLanguage(next, 'detected'),
-          onFallback: (reason) => {
-            console.warn(`[Poken] Scribe unavailable (${reason}) — teacher transcription falls back to Gemini`);
-            sendDebug('warn', 'Teacher transcription fell back to Gemini');
-          },
-          onDebug: (level, message) => sendDebug(level, message),
-        });
-      }
-      scribe.start();
-    }
-
     async function startSolo(fullMaterials: string) {
-      ensureScribe();
       const instruction = getStudentInstruction(topic, persona, fullMaterials, video, language);
       let sess: LiveSession | null = null;
       try {
@@ -1541,7 +1528,7 @@ function buildServer(): http.Server {
           },
           onmessage: (message: types.LiveServerMessage) => {
             handleSessionMeta('solo', message);
-            if (message.serverContent?.inputTranscription?.text && !scribeOwnsTranscription()) {
+            if (message.serverContent?.inputTranscription?.text) {
               ingestTeacherTranscript(message.serverContent.inputTranscription.text);
             }
             if (message.serverContent?.outputTranscription?.text) {
@@ -1640,7 +1627,7 @@ function buildServer(): http.Server {
           // Interruption is NOT triggered here — speech_start fires on any noise.
           return;
         case 'speech_end':
-          endTeacherTurn(msg.media);
+          onTeacherSpeechEnd(msg.media);
           return;
         case 'request_reflection':
           if (reflectionRequested) return;
@@ -1717,7 +1704,6 @@ function buildServer(): http.Server {
       clearInterval(pingTimer);
       if (blackoutFlushTimer) { clearTimeout(blackoutFlushTimer); blackoutFlushTimer = null; }
       try { session?.close(); } catch (_) {}
-      scribe?.close();
     }
 
     socket.on('close', () => {
