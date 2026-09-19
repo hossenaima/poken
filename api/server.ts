@@ -1370,6 +1370,7 @@ function buildServer(): http.Server {
     function maybeCoach(text: string, media?: { camera?: boolean; whiteboard?: boolean; screen?: boolean }) {
       const now = Date.now();
       if (now <= coachingCooldown) return;
+      if (text.split(/\s+/).length < 12) return;   // too short to coach — and must not consume the cooldown
       coachingCooldown = now + COACHING_COOLDOWN_MS;
       generateCoachingTip(ai, topic, text, media ?? mediaState).then(tip => {
         if (tip) sendJson({ type: 'coaching_tip', tip });
