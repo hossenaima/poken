@@ -3,7 +3,7 @@
 // (server.ts throws at import unless GEMINI_API_KEY is non-empty; no network calls are made,
 //  so any placeholder value in .env is enough to run these.)
 import assert from 'node:assert/strict';
-import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage, isDiagramRequest, buildDiagramBrief } from '../api/server.js';
+import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage, isDiagramRequest, buildDiagramBrief, silencePcmBase64 } from '../api/server.js';
 
 // explicit requests, including Gemini's fragmented ASR and CJK phrasing
 assert.equal(detectLanguageSwitchRequest('Can we switch to Chinese now?'), 'Simplified Chinese');
@@ -71,4 +71,9 @@ const long = 'w'.repeat(500);
 const brief = buildDiagramBrief([t(long), s(long)], 'X');
 assert.ok(brief.includes(`"${'w'.repeat(400)}"`));
 assert.ok(!brief.includes('w'.repeat(401)));
+// trailing silence sent at speech_end: 16 kHz 16-bit mono zeros (800ms = 25600 bytes)
+const silence = Buffer.from(silencePcmBase64(800), 'base64');
+assert.equal(silence.length, 16000 * 2 * 0.8);
+assert.ok(silence.every(b => b === 0));
+assert.equal(Buffer.from(silencePcmBase64(0), 'base64').length, 0);
 console.log('language + cleanup checks OK');

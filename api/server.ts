@@ -62,6 +62,11 @@ const IMAGE_MODEL    = 'gemini-3.1-flash-image';
 
 // ── Session timing constants — tuned empirically against real hardware; do not round ──
 const AUDIO_BLACKOUT_MS            = 1500;   // buffer teacher audio this long after Gemini onopen, then flush
+// The browser VAD stops sending audio the instant speech ends, so Gemini's endpointer never gets the
+// silence that finalises its last inputTranscription segment and the end of each utterance is lost.
+// Sending this much PCM silence at speech_end makes the full tail arrive (verified 2026-09-19).
+const AUDIO_TAIL_SILENCE_MS        = 800;
+const SPEECH_END_SETTLE_MS         = 1200;   // the tail transcript lands ~1s after the silence; wait for it
 const COACHING_COOLDOWN_MS         = 10_000;
 const GREETING_KICK_DELAY_MS       = 400;
 const ERROR_FLUSH_DELAY_MS         = 500;    // let a fatal {type:'error'} reach the browser before closing
@@ -200,6 +205,11 @@ export function detectLanguageSwitchRequest(text: string): string | null {
 
 type Script = 'Han' | 'Devanagari' | 'Arabic' | 'Latin';
 const SCRIPT_LANGUAGE: Record<Script, string> = { Han: 'Simplified Chinese', Devanagari: 'Hindi', Arabic: 'Arabic', Latin: 'English' };
+/** `ms` of 16 kHz 16-bit mono PCM silence, base64-encoded for the Live API. */
+export function silencePcmBase64(ms: number): string {
+  return Buffer.alloc(Math.round(16000 * 2 * (ms / 1000))).toString('base64');
+}
+
 /** Append a transcript chunk verbatim: Gemini streams sub-word fragments and puts a leading space on chunks that start a new word. */
 export function joinChunk(buf: string, chunk: string): string {
   return buf + chunk;
@@ -1054,6 +1064,7 @@ function buildServer(): http.Server {
     // Blackout: buffer instead of discard, flush in order when the window lifts.
     const blackoutBuffer: string[] = [];
     let blackoutFlushTimer: ReturnType<typeof setTimeout> | null = null;
+    let speechEndSettleTimer: ReturnType<typeof setTimeout> | null = null;
 
     // Transcription that arrives before teacherHasSpoken is held, not dropped.
     const pendingTeacherTranscript: { text: string; ts: number }[] = [];
@@ -1605,11 +1616,21 @@ function buildServer(): http.Server {
       switch (msg.type) {
         case 'speech_start':
           markTeacherSpoken('speech_start');
+          // Resumed within the settle window: the next speech_end processes the combined buffer.
+          if (speechEndSettleTimer) { clearTimeout(speechEndSettleTimer); speechEndSettleTimer = null; }
           // Interruption is NOT triggered here — speech_start fires on any noise.
           return;
-        case 'speech_end':
-          onTeacherSpeechEnd(msg.media);
+        case 'speech_end': {
+          // Goes through onTeacherAudio so a session still in its blackout queues the silence like any audio.
+          onTeacherAudio(Buffer.from(silencePcmBase64(AUDIO_TAIL_SILENCE_MS), 'base64'));
+          if (speechEndSettleTimer) clearTimeout(speechEndSettleTimer);
+          const media = msg.media;
+          speechEndSettleTimer = setTimeout(() => {
+            speechEndSettleTimer = null;
+            onTeacherSpeechEnd(media);
+          }, SPEECH_END_SETTLE_MS);
           return;
+        }
         case 'request_reflection':
           if (reflectionRequested) return;
           reflectionRequested = true;
@@ -1684,6 +1705,7 @@ function buildServer(): http.Server {
       clearTimeout(handoverTimer);
       clearInterval(pingTimer);
       if (blackoutFlushTimer) { clearTimeout(blackoutFlushTimer); blackoutFlushTimer = null; }
+      if (speechEndSettleTimer) { clearTimeout(speechEndSettleTimer); speechEndSettleTimer = null; }
       try { session?.close(); } catch (_) {}
     }
 
