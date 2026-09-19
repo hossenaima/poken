@@ -38,6 +38,15 @@ learn something the next session would otherwise rediscover the hard way.
   request of a connection on the same instance — WebSockets die without it; `SESSION_TIMEOUT_S`
   is set to the same 3600 so the server can hand the client over before the platform cuts the
   socket. Change one, change both.
+- **Supabase** (for Learn Mode's knowledge tree; no schema yet): project `Poken`, ref
+  `qdaqmtgfikkrtnjsjmnu`, `us-west-2`, in Jerry's Pro org. `supabase/config.toml` is committed;
+  link state (`supabase/.temp`) is gitignored, so each machine links once:
+  `supabase login` then `supabase link --project-ref qdaqmtgfikkrtnjsjmnu`. No database password
+  needed — the CLI uses a temporary login role. **If `supabase login` says "You are now logged
+  in" without opening a browser, a stale `SUPABASE_ACCESS_TOKEN` env var is overriding it**
+  (the CLI prefers the env var; it silently "logged in" with a dead token). Remove the var, open
+  a new terminal, log in again. Migrations must be **additive** (new tables/columns; no renames
+  or drops): the app deploys by hand, so the database can be ahead of the running code.
 
 ## Two connection limits and how sessions survive them
 
