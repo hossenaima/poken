@@ -20,19 +20,23 @@ npm run dev            # http://localhost:8000
 
 ## Deploy
 
+Cloud Run, via Cloud Build:
+
 ```bash
-npx vercel deploy --prod --yes
+gcloud builds submit --config cloudbuild.yaml
 ```
 
-`GEMINI_API_KEY` must exist in the Vercel project's environment variables. Production:
-https://poken-xi.vercel.app
+Needs the Secret Manager secret `gemini-api-key` in the project. `cloudbuild.yaml` sets the
+60-minute request timeout, session affinity (required for WebSockets), and
+`SESSION_TIMEOUT_S` to match the timeout.
 
 ## Layout
 
 ```
-api/server.ts        HTTP (Hono) + WebSocket + Gemini Live + prompts — the one Vercel function
+main.ts              process entry — listens on $PORT
+api/server.ts        HTTP (Hono) + WebSocket + Gemini Live + prompts
 server/              materials extraction, vision and video analysis
-public/              index.html, app.js, logo.svg — served statically by Vercel
-dev.ts               local dev entry (listens on :8000)
-vercel.json          rewrites /ws/live and /api/* to the function; maxDuration
+public/              index.html, app.js, logo.svg — served by the same process
+Dockerfile           node:20-slim, tsx runtime (no build step)
+cloudbuild.yaml      build → push → gcloud run deploy poken
 ```

@@ -1,9 +1,9 @@
-// Production smoke test: a solo session that rides through the Hobby-plan 300s deadline
-// handover and resumes with memory intact.
+// Smoke test: a solo session that (1) survives an in-place Gemini reopen (debug_reopen,
+// non-production only) and (2) rides through the request-timeout handover with memory intact.
 // Usage: node scripts/smoke-prod.mjs   (BASE=wss://... to point elsewhere; takes ~5 min)
 import WebSocket from 'ws';
 
-const BASE = process.env.BASE || 'wss://poken-xi.vercel.app';
+const BASE = process.env.BASE || 'wss://poken-19v33swnpq-uc.a.run.app';
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
 function connect(query, { resume } = {}) {
@@ -40,6 +40,17 @@ await sleep(3000);
 s1.ws.send(JSON.stringify({ type: 'text_input', text: 'Water evaporates from oceans, rises, condenses into clouds, and falls back as rain or snow. Remember the secret word: PINEAPPLE.' }));
 await sleep(12000);
 log('solo reply:', JSON.stringify(s1.transcript.join(' ').slice(0, 200)), '| audio chunks:', s1.audioChunks, '| token handles:', s1.token && Object.keys(s1.token.handles));
+
+// ── In-place Gemini reopen (same socket) ─────────────────────────────────────
+if (process.env.SKIP_REOPEN !== '1') {
+  const before = s1.transcript.length;
+  s1.ws.send(JSON.stringify({ type: 'debug_reopen' }));
+  await sleep(4000);
+  log('reopen debug:', JSON.stringify(s1.debug.slice(-3)), '| socket still open:', s1.ws.readyState === 1, '| unsolicited speech:', s1.transcript.length - before);
+  s1.ws.send(JSON.stringify({ type: 'text_input', text: 'Same socket check: what was the secret word?' }));
+  await sleep(12000);
+  log('reply after reopen:', JSON.stringify(s1.transcript.slice(before).join(' ').slice(0, 160)));
+}
 
 // Wait for the deadline handover (Hobby: 300s - 45s lead ≈ 255s after connect).
 const deadlineWait = 300_000;

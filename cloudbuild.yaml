@@ -1,0 +1,32 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/poken:$BUILD_ID', '.']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/poken:$BUILD_ID']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    args:
+      - gcloud
+      - run
+      - deploy
+      - poken
+      - --image=gcr.io/$PROJECT_ID/poken:$BUILD_ID
+      - --region=us-central1
+      - --allow-unauthenticated
+      - --min-instances=0
+      - --max-instances=3
+      - --memory=512Mi
+      # --timeout is the hard ceiling on one WebSocket connection (60 min, the Cloud Run max).
+      # SESSION_TIMEOUT_S must equal it: the server hands the client over 45s before it.
+      - --timeout=3600
+      - --set-env-vars=SESSION_TIMEOUT_S=3600
+      # WebSockets need every request of a connection on the same instance.
+      - --session-affinity
+      - --set-secrets=GEMINI_API_KEY=gemini-api-key:latest
+
+images:
+  - 'gcr.io/$PROJECT_ID/poken:$BUILD_ID'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

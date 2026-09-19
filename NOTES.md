@@ -1,48 +1,51 @@
 # NOTES — Poken handoff
 
-Poken is a real-time "learn by teaching" app: one Vercel function, one Gemini Live
-session, one page. This file records the decisions that cost something to reach and the
+Poken is a real-time "learn by teaching" app: one Node process on Cloud Run, one Gemini
+Live session, one page. This file records the decisions that cost something to reach and the
 mistakes already made. Read it before changing anything non-trivial; add to it when you
 learn something the next session would otherwise rediscover the hard way.
 
 ## Where things run
 
-- **Production:** https://poken-xi.vercel.app (Vercel project `poken`, Hobby plan).
-  Deploys are manual: `npx vercel deploy --prod --yes`. Preview: `npx vercel deploy --yes`.
-- **Static frontend** (`public/`) is served by Vercel's CDN; **one function** (`api/server.ts`)
-  serves `/api/*` and the WebSocket at `/ws/live` (both via rewrites in `vercel.json`).
-- **Local dev:** `npm run dev` → `dev.ts` listens on :8000 and adds a static fallback for
-  `public/` (gated on `!process.env.VERCEL`). `npm run typecheck` runs strict `tsc`.
-- **Env:** `GEMINI_API_KEY` (set in Vercel for production/preview/development; `.env` locally,
-  gitignored). Optional `CLEANUP_MODEL`; dev-only `DEV_MAX_DURATION_S` (see handover).
+- **Production:** Cloud Run, service `poken`, `us-central1`. Deploys are manual:
+  `gcloud builds submit --config cloudbuild.yaml` (builds the image, pushes it, deploys).
+  The service URL is printed at the end; `scripts/smoke-prod.mjs` defaults to it.
+- **One process** (`main.ts` → `api/server.ts`): Hono serves `public/` and `/api/*`, and the
+  same `http.Server` upgrades `/ws/live` to a WebSocket. Nothing is written to disk.
+- **Local dev:** `npm run dev` (tsx watch on :8000). `npm run typecheck` runs strict `tsc`.
+- **Env:** `GEMINI_API_KEY` (Secret Manager `gemini-api-key` in prod; `.env` locally,
+  gitignored). `SESSION_TIMEOUT_S` (see below). Optional `CLEANUP_MODEL`.
+- **Cloud Run flags that matter** (all in `cloudbuild.yaml`): `--timeout=3600` is the hard
+  ceiling on one WebSocket connection (the Cloud Run maximum); `--session-affinity` keeps every
+  request of a connection on the same instance — WebSockets die without it; `SESSION_TIMEOUT_S`
+  is set to the same 3600 so the server can hand the client over before the platform cuts the
+  socket. Change one, change both.
 
-## The Hobby-plan constraint and the handover protocol
+## Two connection limits and how sessions survive them
 
-Vercel closes a function — and the WebSocket pinned to it — at `maxDuration`, a **hard
-300s on Hobby** (`vercel.json` says 300; raise to 800 only after upgrading to Pro). A
-lesson is longer than that, so every session hands itself over about every 4¼ minutes:
+**1. Cloud Run cuts the request at `--timeout` (60 min).** The server times its own clock from
+`SESSION_TIMEOUT_S` (there is no platform deadline API — if this env is missing the default is
+3600, and if it is *wrong* handovers fire at the wrong moment, silently). 45s before the limit
+it sends `{type:'session_handover', resumeToken}`; the client opens a new socket with
+`&resume=1`, sends `{type:'resume', token, materialsContext}` then `ready_to_start`, keeps the
+mic hot and queues frames (`wsSend`) until the new `session_ready`. The old socket stays open
+until then. Rehearse locally: `SESSION_TIMEOUT_S=150 npm run dev`.
 
-1. Server tracks the invocation deadline with `getDeadline()` from `@vercel/functions`
-   (dev.ts falls back to `DEV_MAX_DURATION_S`, default 780s). 45s before it, it sends
-   `{type:'session_handover', resumeToken}`.
-2. The token carries **Gemini session-resumption handles** (for the single Live session), a digest of the
-   lesson, the last 60 log entries, settings and elapsed time. The client also holds the
-   analyzed `materialsContext` (sent once as `session_context`) so vision never re-runs.
-3. Client opens a new socket with `&resume=1`, sends `{type:'resume', token, materialsContext}`
-   then `ready_to_start`. Mic stays hot; outgoing frames queue (`wsSend`) until the new
-   `session_ready`, then flush. The old socket stays open (and audible) until then.
-4. The new invocation reconnects the Gemini Live session with `sessionResumption.handle`,
-   so the model keeps its full memory and does **not** greet again. If a handle is rejected,
-   it falls back to a fresh session primed with a `[RESUME]` digest block.
-5. `session_state` (a fresh token) is pushed after every teacher turn and mirrored to
-   `sessionStorage`, so unexpected closes reconnect with backoff (1s→30s, 3 attempts) and a
-   reloaded tab gets a **Resume last session** button on the setup screen.
+**2. Gemini Live closes its own connection after ~10 minutes (`goAway`).** This is handled
+*without* touching the browser socket: `reopenGemini()` closes the Gemini session, holds any
+teacher audio in the blackout buffer, and reconnects with the **session-resumption handle** so
+the model keeps its full memory and does not greet again (a rejected handle falls back to a
+fresh session primed with a `[RESUME]` digest). The same path recovers any mid-lesson Gemini
+close. Exercise it on demand with the `debug_reopen` WebSocket message (ignored when
+`NODE_ENV=production`); the smoke script does this.
 
+The resume token carries the handle, a digest of the lesson, the last 60 log entries, settings
+and elapsed time; `session_state` (a fresh token) is pushed after every teacher turn and whenever
+Gemini issues a new handle, and mirrored to `sessionStorage` — so unexpected socket closes
+reconnect with backoff (1s→30s, 3 attempts) and a reloaded tab gets **Resume last session**.
 Every Live session also sets `contextWindowCompression: { slidingWindow: {} }` — Gemini's own
-fix for the `code 1007` overflow that used to kill sessions around the 10-minute mark. Token estimates are
-logged per teacher turn (`[Poken][Tokens]`) in case it ever recurs.
-
-To rehearse a handover locally in two minutes: `DEV_MAX_DURATION_S=150 npm run dev`.
+fix for the `code 1007` overflow that used to kill sessions around the 10-minute mark. Token
+estimates are logged per teacher turn (`[Poken][Tokens]`).
 
 ## Design decisions (deliberate)
 
@@ -51,14 +54,12 @@ To rehearse a handover locally in two minutes: `DEV_MAX_DURATION_S=150 npm run d
   `student_turn_complete` / `student_interrupted` / `teacher_turn` / `classroom_audio` messages,
   student profiles/voices, classroom orbs and the mode tabs.
 
-- **No Vercel Blob / HTTP materials store.** The frontend never called `/api/materials/*`;
-  files travel over the WebSocket as `material_file` frames (proven path). Handover carries
-  the analyzed context instead. `server/materials-store.ts` was deleted. Add Blob only if a
-  feature actually needs cross-request file storage.
-- **No separate 8-minute Gemini-only refresh.** Context compression plus the resumption
-  handle make it unnecessary; on Hobby the full handover rebuilds sessions anyway.
-- `/api/materials/session|upload|:id|notes` routes are gone with the store. `/api/materials/extract`,
-  `/api/diagram/test`, `/api/cleanup-transcript`, `/api/topics`, `/api/logs` remain.
+- **No server-side file store.** Files travel over the WebSocket as `material_file` frames and
+  the handover carries the analyzed context, so nothing needs disk or a bucket. Add storage
+  only if a feature actually needs files to outlive a session.
+- **Not on Vercel.** Its 300s function cap (Hobby) forced a full client handover every ~4
+  minutes; Cloud Run's 60-minute request timeout plus in-place Gemini reopens make handovers
+  hourly. The code has no Vercel dependency left.
 
 ## Bugs already fixed (don't reintroduce)
 
@@ -77,18 +78,13 @@ To rehearse a handover locally in two minutes: `DEV_MAX_DURATION_S=150 npm run d
   session binding exists. Anything in `onopen` that touches the session must run in a
   `setTimeout` (the 400ms greeting kick) — `afterOpen()` takes a getter for this reason.
   Reading it synchronously throws a ReferenceError (temporal dead zone).
-- **ESM on Vercel needs explicit `.js` extensions on relative imports.** `tsx` tolerates
-  `'../server/materials-extract'`; Node's loader in production does not
-  (`ERR_MODULE_NOT_FOUND`). Always write `'../server/x.js'`.
-- **`pdf-parse` must be imported lazily.** Its `pdfjs-dist` throws `DOMMatrix is not defined`
-  at import time on Vercel (the optional native `@napi-rs/canvas` isn't traced into the
-  bundle; it is installed locally, which is why dev never showed it). It's only the PDF
-  *text fallback* — Gemini vision is the primary PDF path — so on Vercel that fallback
-  currently returns an error string. Upgrade path: make `@napi-rs/canvas` a real dependency
-  and add it to `includeFiles`.
-- Right after a deploy the first requests can return `FUNCTION_INVOCATION_FAILED` while the
-  alias flips; probe again before assuming the build is broken. Use `npx vercel logs <url>`
-  (start it first, then make the request — it streams live).
+- **ESM needs explicit `.js` extensions on relative imports** (`'../server/x.js'`). `tsx`
+  tolerates the bare form; plain Node does not (`ERR_MODULE_NOT_FOUND`).
+- **`pdf-parse` is imported lazily.** Its `pdfjs-dist` can throw `DOMMatrix is not defined` at
+  import time when the optional native `@napi-rs/canvas` is absent; it is only the PDF *text
+  fallback* (Gemini vision is the primary PDF path), so it must never take the process down.
+- A `session_state` token pushed only on teacher turns carried a Gemini handle from *before*
+  the model's reply; it is now also pushed whenever Gemini issues a newer handle.
 - `preview_start`/the in-app browser can't grant mic/camera; drive the session with
   `text_input` and read `debugEvents` / `.t-entry` from the page instead.
 
@@ -105,6 +101,6 @@ To rehearse a handover locally in two minutes: `DEV_MAX_DURATION_S=150 npm run d
 
 ## Known limitations / next steps
 
-- Hobby: handover every ~4 min. Rehearse the demo around it or show it off on purpose.
-- `/api/logs` is unauthenticated and its ring is per-instance; use `npx vercel logs`.
+- `/api/logs` is unauthenticated and its ring is per-instance (with `--session-affinity` a
+  browser sticks to one instance, so it usually shows the right one); Cloud Logging is authoritative.
 - The `[RESUME]` digest fallback loses the model's own memory; handles are the normal path.

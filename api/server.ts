@@ -2,7 +2,6 @@ import http from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import { getRequestListener } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
-import { getDeadline } from '@vercel/functions';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { GoogleGenAI, Modality } from '@google/genai';
@@ -62,8 +61,10 @@ const AUDIO_BLACKOUT_MS            = 1500;   // buffer teacher audio this long a
 const COACHING_COOLDOWN_MS         = 10_000;
 const GREETING_KICK_DELAY_MS       = 400;
 const ERROR_FLUSH_DELAY_MS         = 500;    // let a fatal {type:'error'} reach the browser before closing
-const HANDOVER_LEAD_MS             = 45_000; // hand over this long before the Vercel function deadline
-const DEV_MAX_DURATION_MS          = (Number(process.env.DEV_MAX_DURATION_S) || 780) * 1000; // dev.ts only; Vercel provides getDeadline()
+const HANDOVER_LEAD_MS             = 45_000; // hand the client over this long before the request timeout
+// Must equal the Cloud Run --timeout (cloudbuild.yaml sets both to 3600). Override locally, e.g.
+// SESSION_TIMEOUT_S=120, to rehearse a client handover in two minutes.
+const SESSION_TIMEOUT_MS           = (Number(process.env.SESSION_TIMEOUT_S) || 3600) * 1000;
 
 const VISION_SCREENSHOT_NOTE = '[Fresh screenshot attached. Answer the teacher\'s question briefly — just confirm what you can see in 1-2 short sentences. Do NOT describe the whole image. Do NOT repeat yourself if you already answered a similar question.]';
 
@@ -74,6 +75,8 @@ type ResumeToken = {
   v: 1;
   topic: string; persona: string; language: string; video: boolean;
   handles: Record<string, string>;   // Gemini session-resumption handle, keyed 'solo'
+  handleAt: number;                  // when that handle was issued …
+  lastExchangeAt: number;            // … vs the last logged turn: an older handle is missing turns
   digest: string;                    // fallback memory when a handle is missing or rejected
   logTail: SessionEntry[];
   elapsedMs: number;
@@ -917,18 +920,15 @@ function buildServer(): http.Server {
   });
 
   // ── HTTP server + WebSocket upgrade ────────────────────────────────────────
-  // Vercel imports this module and drives the exported server itself; dev.ts
-  // calls .listen() locally. Never listen here.
-  // Vercel serves public/ itself; only the local dev server needs this fallback.
-  if (!process.env.VERCEL) app.use('/*', serveStatic({ root: './public' }));
+  // main.ts calls .listen(); this module only builds the server.
+  app.use('/*', serveStatic({ root: './public' }));
 
   const server = http.createServer(getRequestListener(app.fetch));
   const wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', (request, socket, head) => {
     const pathname = new URL(request.url || '/', 'http://localhost').pathname;
-    // A Vercel rewrite may deliver either the public path or the function path.
-    if (pathname !== '/ws/live' && pathname !== '/api/server') {
+    if (pathname !== '/ws/live') {
       socket.destroy();
       return;
     }
@@ -972,6 +972,10 @@ function buildServer(): http.Server {
 
     // Resume state (set by a `resume` frame before ready_to_start)
     let resumeInfo: ResumeToken | null = null;
+    let elapsedBaseMs = 0;
+    let handleIssuedAt = 0;
+    let lastExchangeAt = 0;
+    let rejoining = false;   // the Gemini session has been swapped behind this same socket at least once
     let resumeMaterialsContext = '';
     const resumeHandles = new Map<string, string>();  // Gemini session-resumption handle, keyed 'solo'
     let digestSummary = '';
@@ -1023,6 +1027,12 @@ function buildServer(): http.Server {
       sendToSession({ media: { data: base64, mimeType: 'image/jpeg' } });
     }
     function sendAudio(base64: string) {
+      if (!session) {
+        // The Gemini session is being swapped — hold audio; the next open flushes it in order.
+        blackoutBuffer.push(base64);
+        if (blackoutBuffer.length > 400) blackoutBuffer.shift();
+        return;
+      }
       tokenEstimate.audioSec += (base64.length * 0.75) / 32000; // PCM16 mono @16k = 32000 bytes/s
       sendToSession({ media: { data: base64, mimeType: 'audio/pcm;rate=16000' } });
     }
@@ -1045,11 +1055,13 @@ function buildServer(): http.Server {
     function buildResumeToken(opts: { dropHandles?: boolean } = {}): ResumeToken {
       const handles: Record<string, string> = {};
       if (!opts.dropHandles) resumeHandles.forEach((h, id) => { handles[id] = h; });
-      const elapsedMs = (resumeInfo?.elapsedMs ?? 0) + (Date.now() - connectedAt);
+      const elapsedMs = elapsedBaseMs + (Date.now() - connectedAt);
       return {
         v: 1,
         topic, persona, language, video,
         handles,
+        handleAt: handleIssuedAt,
+        lastExchangeAt,
         digest: buildDigest(),
         logTail: sessionLog.slice(-60).map(e => ({ ...e, text: e.text.slice(0, 400) })),
         elapsedMs,
@@ -1070,9 +1082,8 @@ function buildServer(): http.Server {
       sendJson({ type: 'session_handover', reason, resumeToken: buildResumeToken(opts) });
     }
 
-    // Vercel closes the socket at the function deadline; hand over 45s before that.
-    const deadline = getDeadline()?.getTime() ?? (connectedAt + DEV_MAX_DURATION_MS);
-    const handoverTimer = setTimeout(() => beginHandover('deadline'), Math.max(5_000, deadline - HANDOVER_LEAD_MS - Date.now()));
+    // Cloud Run closes the request — and this socket — at --timeout; hand the client over first.
+    const handoverTimer = setTimeout(() => beginHandover('request timeout'), Math.max(5_000, SESSION_TIMEOUT_MS - HANDOVER_LEAD_MS));
 
     async function refreshDigestSummary() {
       const transcript = sessionLog.slice(-40).map(e => `${e.role === 'teacher' ? 'Teacher' : e.name}: ${e.text}`).join('\n');
@@ -1111,34 +1122,57 @@ function buildServer(): http.Server {
         `Continue exactly as before: stay silent and wait for the teacher to speak next.`;
     }
 
-    /** Called from every onclose. Decides between a real error and a recoverable handover. */
+    /** Called from the live session's onclose. Decides between a real error and an in-place reopen. */
     function onGeminiClosed(id: string, code: number, reason: string) {
       if (tearingDown) return;
       const openedAt = sessionOpenedAt.get(id) ?? Date.now();
       const age = Date.now() - openedAt;
       if (!sessionReady) return; // startup failure is reported by the connect catch
       if (age < 10_000) {
-        if (resumeInfo && resumeHandles.has(id)) {
-          // The resumption handle was rejected — retry once from the digest instead.
+        if ((resumeInfo || rejoining) && resumeHandles.has(id)) {
+          // The resumption handle was rejected — rebuild once from the digest instead.
           resumeHandles.delete(id);
-          beginHandover(`resume handle rejected for ${id} (code ${code})`, { dropHandles: true });
+          reopenGemini(`resume handle rejected (code ${code})`);
         } else {
           fatal(`Live session ended (code ${code}${reason ? ': ' + reason : ''})`);
         }
         return;
       }
-      beginHandover(`Gemini session closed for ${id} (code ${code}${reason ? ': ' + reason : ''})`);
+      reopenGemini(`Gemini session closed (code ${code}${reason ? ': ' + reason : ''})`);
+    }
+
+    let reopenInFlight = false;
+    /**
+     * Swap the Gemini session behind this same browser socket — on goAway (Gemini's ~10-minute
+     * connection limit) or a mid-lesson close. With the resumption handle the model keeps its
+     * memory and the teacher never notices; the client handover is reserved for the request timeout.
+     */
+    async function reopenGemini(reason: string) {
+      if (reopenInFlight || tearingDown || handoverStarted || socket.readyState !== WebSocket.OPEN) return;
+      reopenInFlight = true;
+      rejoining = true;
+      console.log(`[Poken] Reopening Gemini session in place (${reason}) | handle=${resumeHandles.has('solo')} | est tokens=${estimatedTokens()}`);
+      sendDebug('warn', `Reopening Gemini session: ${reason}`);
+      const old = session;
+      session = null; // teacher audio queues in blackoutBuffer until the new session opens
+      try { old?.close(); } catch (_) {}
+      try {
+        await startSolo(materialsContext);
+      } finally {
+        reopenInFlight = false;
+      }
     }
 
     function handleSessionMeta(id: string, msg: types.LiveServerMessage) {
       const upd = msg.sessionResumptionUpdate;
       if (upd?.resumable && upd.newHandle && resumeHandles.get(id) !== upd.newHandle) {
         resumeHandles.set(id, upd.newHandle);
+        handleIssuedAt = Date.now();
         // A token pushed only on teacher turns would carry a handle from before the model's
         // reply; refresh it whenever Gemini issues a newer one so resume never loses a turn.
         if (sessionReady) pushSessionState();
       }
-      if (msg.goAway) beginHandover(`Gemini goAway for ${id}${msg.goAway.timeLeft ? ' (' + msg.goAway.timeLeft + ' left)' : ''}`);
+      if (msg.goAway) reopenGemini(`Gemini goAway${msg.goAway.timeLeft ? ' (' + msg.goAway.timeLeft + ' left)' : ''}`);
     }
 
     // ── Teacher speech plumbing ────────────────────────────────────────────
@@ -1213,6 +1247,7 @@ function buildServer(): http.Server {
       console.log(`[Poken][Tokens] est≈${estimatedTokens()} (audio ${tokenEstimate.audioSec.toFixed(1)}s, text ${tokenEstimate.textChars} chars, frames ${tokenEstimate.frames}) | handles=${resumeHandles.size}`);
 
       sessionLog.push({ role: 'teacher', name: 'Teacher', text, time: Date.now() });
+      lastExchangeAt = Date.now();
       teacherTurns++;
       if (teacherTurns % 10 === 0) refreshDigestSummary().catch(() => {});
       pushSessionState();
@@ -1243,6 +1278,7 @@ function buildServer(): http.Server {
     async function onStudentSpeech(name: string, text: string) {
       if (!text) return;
       sessionLog.push({ role: 'student', name, text, time: Date.now() });
+      lastExchangeAt = Date.now();
       const emotion = await classifyEmotion(ai, text);
       if (emotion) sendJson({ type: 'emotion', state: emotion });
     }
@@ -1252,6 +1288,7 @@ function buildServer(): http.Server {
       markTeacherSpoken('text input');
       sendText(userText);
       sessionLog.push({ role: 'teacher', name: 'Teacher', text: userText, time: Date.now() });
+      lastExchangeAt = Date.now();
       pushSessionState();
       if (isDiagramRequest(userText)) {
         console.log('[Poken] On-demand diagram requested via text_input');
@@ -1327,8 +1364,11 @@ function buildServer(): http.Server {
      */
     function afterOpen(getSess: () => LiveSession | null, id: string, greeting: string) {
       sessionOpenedAt.set(id, Date.now());
-      const text = resumeInfo ? (resumeHandles.has(id) ? null : resumeBlock()) : greeting;
-      if (!text) return; // resumed from a Gemini handle: the model already remembers, no kick needed
+      // A handle issued before the last turn resumes a model that is missing that turn — the
+      // digest (recent turns verbatim) fills the gap. A fresh handle needs nothing.
+      const freshHandle = resumeHandles.has(id) && handleIssuedAt >= lastExchangeAt;
+      const text = (resumeInfo || rejoining) ? (freshHandle ? null : resumeBlock()) : greeting;
+      if (!text) return;
       setTimeout(() => { try { getSess()?.sendRealtimeInput({ text }); } catch (_) {} }, GREETING_KICK_DELAY_MS);
     }
 
@@ -1341,8 +1381,12 @@ function buildServer(): http.Server {
             console.log(`[Poken] Live session opened${resumeHandles.has('solo') ? ' (resumed)' : ''}, topic:`, topic);
             sendDebug('info', `Gemini Live session opened (solo${resumeHandles.has('solo') ? ', resumed' : ''})`);
             sessionStartedAt = Date.now();
-            sendJson({ type: 'session_ready' });
-            sendJson({ type: 'info', message: resumeInfo ? `Reconnected. Keep going: ${topic}` : `Your student is ready. Start explaining: ${topic}` });
+            if (rejoining) {
+              sendJson({ type: 'info', message: `Reconnected — keep going: ${topic}` });
+            } else {
+              sendJson({ type: 'session_ready' });
+              sendJson({ type: 'info', message: resumeInfo ? `Reconnected. Keep going: ${topic}` : `Your student is ready. Start explaining: ${topic}` });
+            }
             afterOpen(() => sess, 'solo', `Say a short greeting out loud in ${language} right now (e.g. "Hi, ready when you are!" or "Hey there!"). Say ONLY this greeting — nothing else. Do NOT ask a question. Do NOT mention the topic. Just greet and wait silently.`);
           },
           onmessage: (message: types.LiveServerMessage) => {
@@ -1374,6 +1418,7 @@ function buildServer(): http.Server {
             sendDebug('error', `Gemini session error: ${e?.message ?? JSON.stringify(e)}`);
           },
           onclose: (e: any) => {
+            if (!sess || sess !== session) return; // a session we already replaced
             console.log('[Poken] Live session closed:', e?.code, e?.reason || '');
             sendDebug('error', `Gemini session closed: code ${e?.code}${e?.reason ? ', reason: ' + e.reason : ''}`);
             onGeminiClosed('solo', e?.code, e?.reason || '');
@@ -1381,10 +1426,13 @@ function buildServer(): http.Server {
         });
         session = sess;
         sessionReady = true;
+        // Audio held during a swap goes out once the new session's blackout window lifts.
+        if (blackoutBuffer.length && !blackoutFlushTimer) blackoutFlushTimer = setTimeout(flushBlackout, AUDIO_BLACKOUT_MS);
       } catch (e: any) {
         console.error('[Poken] Failed to connect to Live API:', e);
         sendDebug('error', `Failed to connect to Gemini Live API: ${e.message}`);
-        fatal(`Failed to connect: ${e.message}`);
+        if (rejoining) beginHandover(`Gemini reopen failed: ${e.message}`);
+        else fatal(`Failed to connect: ${e.message}`);
       }
     }
 
@@ -1402,6 +1450,9 @@ function buildServer(): http.Server {
         if (parsed.type === 'resume' && parsed.token && parsed.token.v === 1) {
           const t = parsed.token as ResumeToken;
           resumeInfo = t;
+          elapsedBaseMs = Number(t.elapsedMs) || 0;
+          handleIssuedAt = Number(t.handleAt) || 0;
+          lastExchangeAt = Number(t.lastExchangeAt) || 0;
           resumeMaterialsContext = String(parsed.materialsContext || '').slice(0, MAX_MATERIALS_CHARS * 2);
           resumeHandles.clear();
           for (const [id, h] of Object.entries(t.handles || {})) if (typeof h === 'string' && h) resumeHandles.set(id, h);
@@ -1471,6 +1522,10 @@ function buildServer(): http.Server {
         case 'diagram_popup_open':
         case 'diagram_popup_closed':
           return; // tracked client-side only
+        case 'debug_reopen':
+          // Test hook (never in production): exercise the in-place Gemini reopen on demand.
+          if (process.env.NODE_ENV !== 'production') reopenGemini('debug_reopen');
+          return;
         case 'material_file':
           if (msg.base64 && msg.name) {
             const name = String(msg.name || 'file');

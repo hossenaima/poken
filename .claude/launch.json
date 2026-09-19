@@ -4,7 +4,10 @@
     {
       "name": "poken-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 8000
     }
   ]

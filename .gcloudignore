@@ -1,0 +1,12 @@
+node_modules
+.env
+.env.*
+.git
+.gitignore
+.claude
+.DS_Store
+*.md
+*.log
+*.mov
+*.mp4
+scripts
