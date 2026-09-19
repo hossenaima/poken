@@ -346,6 +346,7 @@ let lastTeacherFinalizedAt = 0;
 let lastStudentFinalizedAt = 0;
 const STALE_CHUNK_WINDOW_MS = 600;
 const liveCleanupTimers = new Map();
+const teacherUtterances = PokenTeacherUtterances.createTracker({ createEntry: () => addTranscriptEntry("You", "teacher"), maxEntries: 20 });
 const liveCleanupInFlight = new Map();
 const LIVE_CLEANUP_DEBOUNCE_MS = 250;
 const transcriptContextHistory = [];
@@ -974,14 +975,17 @@ async function cleanupEntry(entry, showCleaningState = true) {
       }),
     });
     const { cleaned } = await res.json();
+    if (entry.clean) return;
     const sane = cleaned && cleaned.trim() && cleaned.length <= Math.max(entry.rawText.length * 3, entry.rawText.length + 80);
     const text = sane ? cleaned : entry.rawText;
     entry.rawText = text;
     entry.textEl.textContent = text;
     rememberTranscriptContext(entry.speaker, text);
   } catch (_) {
-    entry.textEl.textContent = entry.rawText;
-    rememberTranscriptContext(entry.speaker, entry.rawText);
+    if (!entry.clean) {
+      entry.textEl.textContent = entry.rawText;
+      rememberTranscriptContext(entry.speaker, entry.rawText);
+    }
   } finally {
     entry.textEl.classList.remove("cleaning");
   }
@@ -2462,6 +2466,15 @@ async function connect(opts = {}) {
     }
   };
 
+  function closeStudentEntryForTeacher() {
+    if (currentStudentEntry) {
+      const entry = currentStudentEntry;
+      currentStudentEntry = null;
+      lastStudentFinalizedAt = Date.now();
+      if (entry.rawText.trim()) cleanupEntry(entry, false).catch(() => {});
+    }
+  }
+
   sock.onmessage = async event => {
     const stale = ws !== sock;
     if (stale && oldWs !== sock) return; // a socket we've fully abandoned
@@ -2566,42 +2579,53 @@ async function connect(opts = {}) {
         setTimeout(() => hideSessionToast(), 3000);
       }
 
-
       // Teacher transcript: new teacher turn — close any open student entry first.
       // Live preview of the utterance in progress (ElevenLabs Scribe): replaces the bubble text, never cleaned.
       if (msg.type === "teacher_preview" && typeof msg.text === "string") {
         resetIdleTimer();
-        if (!currentTeacherEntry) {
-          if (currentStudentEntry) {
-            const entry = currentStudentEntry;
-            currentStudentEntry = null;
-            lastStudentFinalizedAt = Date.now();
-            if (entry.rawText.trim()) cleanupEntry(entry, false).catch(() => {});
+        if (Number.isInteger(msg.utt)) {
+          const { entry, created } = teacherUtterances.preview(msg.utt, msg.text);
+          if (created) {
+            closeStudentEntryForTeacher();
+            currentTeacherEntry = entry;
+            lastTeacherEntry = entry;
           }
-          currentTeacherEntry = addTranscriptEntry("You", "teacher");
-          lastTeacherEntry = currentTeacherEntry;
+          entry.textEl.textContent = msg.text;
+          transcriptBody.scrollTop = transcriptBody.scrollHeight;
+        } else {
+          if (!currentTeacherEntry) {
+            closeStudentEntryForTeacher();
+            currentTeacherEntry = addTranscriptEntry("You", "teacher");
+            lastTeacherEntry = currentTeacherEntry;
+          }
+          currentTeacherEntry.preview = true;
+          currentTeacherEntry.rawText = msg.text;
+          currentTeacherEntry.textEl.textContent = msg.text;
+          transcriptBody.scrollTop = transcriptBody.scrollHeight;
         }
-        currentTeacherEntry.preview = true;
-        currentTeacherEntry.rawText = msg.text;
-        currentTeacherEntry.textEl.textContent = msg.text;
-        transcriptBody.scrollTop = transcriptBody.scrollHeight;
       }
 
       // Final Scribe segment: the whole utterance, already clean — replace the preview, skip cleanup.
       if (msg.type === "teacher_transcript" && msg.text && msg.replace) {
         resetIdleTimer();
-        let entry = currentTeacherEntry;
-        if (!entry && lastTeacherEntry && lastTeacherEntry.preview && Date.now() - lastTeacherFinalizedAt < 8000) entry = lastTeacherEntry;
-        if (!entry) {
-          if (currentStudentEntry) {
-            const s = currentStudentEntry;
-            currentStudentEntry = null;
-            lastStudentFinalizedAt = Date.now();
-            if (s.rawText.trim()) cleanupEntry(s, false).catch(() => {});
+        let entry;
+        if (Number.isInteger(msg.utt)) {
+          const result = teacherUtterances.final(msg.utt, msg.text, msg.clean);
+          entry = result.entry;
+          if (result.created) {
+            closeStudentEntryForTeacher();
+            lastTeacherEntry = entry;
+            lastTeacherFinalizedAt = Date.now();
           }
-          entry = addTranscriptEntry("You", "teacher");
-          lastTeacherEntry = entry;
-          lastTeacherFinalizedAt = Date.now();
+        } else {
+          entry = currentTeacherEntry;
+          if (!entry && lastTeacherEntry && lastTeacherEntry.preview && Date.now() - lastTeacherFinalizedAt < 8000) entry = lastTeacherEntry;
+          if (!entry) {
+            closeStudentEntryForTeacher();
+            entry = addTranscriptEntry("You", "teacher");
+            lastTeacherEntry = entry;
+            lastTeacherFinalizedAt = Date.now();
+          }
         }
         const t = liveCleanupTimers.get(entry.id);
         if (t) { clearTimeout(t); liveCleanupTimers.delete(entry.id); }

@@ -995,6 +995,8 @@ function buildServer(): http.Server {
     // ── Per-connection state ───────────────────────────────────────────────
     const sessionLog: SessionEntry[] = [];
     let teacherTranscriptBuf = '';
+    let utteranceSeq = 0;
+    let committingUtt = 0;
     let coachingCooldown     = 0;
     let reflectionRequested  = false;
     let teacherHasSpoken     = false;
@@ -1288,7 +1290,7 @@ function buildServer(): http.Server {
       teacherTranscriptBuf = joinChunk(teacherTranscriptBuf, chunk);
       // A Scribe segment is the whole utterance, already clean: the client replaces its preview
       // and skips the Gemini cleanup pass. Gemini's own chunks still append and get cleaned.
-      sendJson(opts.final ? { type: 'teacher_transcript', text: chunk, replace: true, clean: true } : { type: 'teacher_transcript', text: chunk });
+      sendJson(opts.final ? { type: 'teacher_transcript', text: chunk, replace: true, clean: true, utt: committingUtt } : { type: 'teacher_transcript', text: chunk });
 
     }
 
@@ -1334,6 +1336,7 @@ function buildServer(): http.Server {
 
     /** The tail of an utterance rides in on Scribe's committed segment — let it land before the turn closes. */
     async function endTeacherTurn(media?: { camera?: boolean; whiteboard?: boolean; screen?: boolean }) {
+      committingUtt = utteranceSeq;
       if (scribeOwnsTranscription()) {
         scribe!.commit();
         await scribe!.waitForCommit(SCRIBE_COMMIT_WAIT_MS);
@@ -1493,7 +1496,7 @@ function buildServer(): http.Server {
           onTranscript: (text) => ingestTeacherTranscript(text, { final: true }),
           onPartial: (text) => {
             autoDetectLanguage(text);   // switch as soon as the script is visible, not only at commit
-            sendJson({ type: 'teacher_preview', text });
+            sendJson({ type: 'teacher_preview', text, utt: utteranceSeq });
           },
           onLanguage: (next) => switchLanguage(next, 'detected'),
           onFallback: (reason) => {
@@ -1621,6 +1624,7 @@ function buildServer(): http.Server {
 
       switch (msg.type) {
         case 'speech_start':
+          utteranceSeq++;
           markTeacherSpoken('speech_start');
           // Interruption is NOT triggered here — speech_start fires on any noise.
           return;
