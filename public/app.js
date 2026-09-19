@@ -52,12 +52,8 @@ const reflectionSummary    = document.getElementById("reflectionSummary");
 const reflectionStrengths  = document.getElementById("reflectionStrengths");
 const reflectionGaps       = document.getElementById("reflectionGaps");
 const reflectionQuestions  = document.getElementById("reflectionQuestions");
-const reflectionImprovements = document.getElementById("reflectionImprovements");
 const reflectionVisualsGestures = document.getElementById("reflectionVisualsGestures");
-const reflectionExplanations = document.getElementById("reflectionExplanations");
-const reflectionMediaUsage  = document.getElementById("reflectionMediaUsage");
 const teachAgainBtn   = document.getElementById("teachAgainBtn");
-const continueTeachingBtn = document.getElementById("continueTeachingBtn");
 const changeTopicBtn  = document.getElementById("changeTopicBtn");
 const reflectionLoadingScreen = document.getElementById("reflection-loading-screen");
 const transcriptPanel  = document.getElementById("transcriptPanel");
@@ -388,9 +384,6 @@ let coachingPanelWidth   = COACHING_DEFAULT_WIDTH;
 let transcriptCollapsed  = false;
 let coachingCollapsed   = false;
 let resizingLeft = false, resizingRight = false;
-
-// Firebase
-let db = null;
 
 // ── Startup tone & sounds ────────────────────────────────────────────────────
 let _audioCtx = null;
@@ -2257,7 +2250,6 @@ function showReflection(data) {
     const totalSec = (raw ? parseInt(raw, 10) : 0) + sessionDuration;
     localStorage.setItem("poken_total_seconds", String(totalSec));
   } catch (_) {}
-  saveSession({ topic: sessionTopic, reflection: data, duration: sessionDuration });
 }
 
 function disconnect(keepScreen = false) {
@@ -2954,34 +2946,7 @@ if (downloadSummaryBtn) {
   });
 }
 
-// ── Firebase ─────────────────────────────────────────────────────────────────
-function initFirebase() {
-  if (!window.__FIREBASE_CONFIG || !window.__FIREBASE_CONFIG.apiKey) return;
-  if (typeof firebase === "undefined") { setTimeout(initFirebase, 500); return; }
-  try {
-    if (!firebase.apps.length) firebase.initializeApp(window.__FIREBASE_CONFIG);
-    firebase.auth().signInAnonymously().catch(e => console.warn("[Poken] Firebase auth:", e));
-    db = firebase.firestore();
-    console.log("[Poken] Firebase initialized");
-  } catch (e) { console.warn("[Poken] Firebase init:", e); }
-}
-
-async function saveSession(data) {
-  if (!db) return;
-  try {
-    const user = firebase.auth().currentUser;
-    await db.collection("sessions").add({
-      ...data,
-      userId: user?.uid || "anonymous",
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    });
-    console.log("[Poken] Session saved to Firebase");
-  } catch (e) { console.warn("[Poken] Firebase save:", e); }
-}
-
 // ── Boot ─────────────────────────────────────────────────────────────────────
-initFirebase();
-
 if (sessionHomeBtn) {
   sessionHomeBtn.addEventListener("click", () => {
     disconnect(true);

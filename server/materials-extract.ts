@@ -7,7 +7,7 @@ import JSZip from 'jszip';
 // PDF path; this text extraction is only the fallback, so it must never take the process down.
 
 const MAX_FILE_BYTES = 12 * 1024 * 1024; // 12 MB
-const MAX_EXTRACT_CHARS = 120_000; // keep URL param safe
+const MAX_EXTRACT_CHARS = 120_000;
 
 function truncate(s: string): string {
   const t = s.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();

@@ -7,7 +7,6 @@
   <link rel="icon" type="image/svg+xml" href="/logo.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <!--FIREBASE_CONFIG-->
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1610,18 +1609,7 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
-  <!-- Firebase SDK (loads only if configured) -->
-  <script>
-    if (window.__FIREBASE_CONFIG && window.__FIREBASE_CONFIG.apiKey) {
-      ['firebase-app-compat.js','firebase-firestore-compat.js','firebase-auth-compat.js'].forEach(f => {
-        const s = document.createElement('script');
-        s.src = 'https://www.gstatic.com/firebasejs/10.7.0/' + f;
-        document.head.appendChild(s);
-      });
-    }
-  </script>
   <!-- ── Diagram popup overlay ──────────────────────────────────────────── -->
   <div id="diagramPopup">
     <div class="diagram-titlebar" id="diagramTitlebar">
