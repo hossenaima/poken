@@ -31,6 +31,18 @@ Needs the Secret Manager secret `gemini-api-key` in the project. `cloudbuild.yam
 60-minute request timeout, session affinity (required for WebSockets), and
 `SESSION_TIMEOUT_S` to match the timeout.
 
+## Built with Devin
+
+Part of this codebase is implemented by [Devin](https://devin.ai), Cognition's AI software
+engineer, working from specs the team writes as GitHub issues. Each task runs in its own
+draft PR: the kickoff `/devin` command, Devin's commits, its own verification summary, and the
+team's review are all on the PR.
+
+| Task | Issue | PR | Devin session |
+|---|---|---|---|
+| Traditional → Simplified Chinese conversion in transcripts | [#1](https://github.com/poken-app/poken/issues/1) | [#4](https://github.com/poken-app/poken/pull/4) (merged) | [cd128bce](https://app.devin.ai/sessions/cd128bce0a45447a92124ebea0ec4a55) |
+| Teacher transcription via ElevenLabs Scribe v2 Realtime | [#2](https://github.com/poken-app/poken/issues/2) | [#5](https://github.com/poken-app/poken/pull/5) (in progress) | [4c4040ee](https://app.devin.ai/sessions/4c4040eed2df4cc3bbe6a2497f50038d) |
+
 ## Layout
 
 ```
