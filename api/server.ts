@@ -51,9 +51,9 @@ if (!GOOGLE_API_KEY) {
   throw new Error('Missing GEMINI_API_KEY');
 }
 
-// Live model (env override lets you trial e.g. gemini-3.1-flash-live-preview, Google's suggested
-// workaround for the intermittent 1007 CONTENT_TYPE_AUDIO closes on the 2.5 native-audio model).
-const AUDIO_MODEL    = process.env.AUDIO_MODEL || 'gemini-2.5-flash-native-audio-latest';
+// Live model. Default is gemini-3.1-flash-live-preview: ~2.4x faster first audio than 2.5 native audio
+// and Google's suggested workaround for its intermittent 1007 CONTENT_TYPE_AUDIO closes. Env override to trial others.
+const AUDIO_MODEL    = process.env.AUDIO_MODEL || 'gemini-3.1-flash-live-preview';
 const VIDEO_MODEL    = AUDIO_MODEL;  // same model; the video flag only picks prompts
 const FAST_MODEL     = 'gemini-2.5-flash';
 // Heavier model for transcript cleanup only (accuracy over latency).
@@ -62,6 +62,11 @@ const IMAGE_MODEL    = 'gemini-3.1-flash-image';
 
 // ── Session timing constants — tuned empirically against real hardware; do not round ──
 const AUDIO_BLACKOUT_MS            = 1500;   // buffer teacher audio this long after Gemini onopen, then flush
+// The browser VAD stops sending audio the instant speech ends, so Gemini's endpointer never gets the
+// silence that finalises its last inputTranscription segment and the end of each utterance is lost.
+// Sending this much PCM silence at speech_end makes the full tail arrive (verified 2026-09-19).
+const AUDIO_TAIL_SILENCE_MS        = 800;
+const SPEECH_END_SETTLE_MS         = 1200;   // the tail transcript lands ~1s after the silence; wait for it
 const COACHING_COOLDOWN_MS         = 10_000;
 const GREETING_KICK_DELAY_MS       = 400;
 const ERROR_FLUSH_DELAY_MS         = 500;    // let a fatal {type:'error'} reach the browser before closing
@@ -149,6 +154,19 @@ function isAllowedCharForLanguage(ch: string, language: string): boolean {
 // Gemini's input transcription emits Traditional characters even in a Simplified session.
 const toSimplified = Converter({ from: 'tw', to: 'cn' });
 
+/**
+ * Turns one raw ASR chunk into display text.
+ * Two things Gemini does that the transcript must not inherit:
+ *  - the word break arrives as a leading space on the chunk, which enforceTranscriptLanguage trims;
+ *  - Chinese comes back spaced out ("光 合 作 用"), which is not how the script is written.
+ */
+export function transcriptChunk(raw: string, language: string): string {
+  const body = enforceTranscriptLanguage(raw, language)
+    .replace(/(?<=[\p{Script=Han}\p{P}])\s+(?=[\p{Script=Han}\p{P}])/gu, '');
+  if (!body) return '';
+  return /^\s/.test(raw) && !/^[\p{Script=Han}\p{P}]/u.test(body) ? ' ' + body : body;
+}
+
 export function enforceTranscriptLanguage(text: string, language: string): string {
   if (!text) return text;
   let out = '';
@@ -215,13 +233,14 @@ export function detectLanguageSwitchRequest(text: string): string | null {
 
 type Script = 'Han' | 'Devanagari' | 'Arabic' | 'Latin';
 const SCRIPT_LANGUAGE: Record<Script, string> = { Han: 'Simplified Chinese', Devanagari: 'Hindi', Arabic: 'Arabic', Latin: 'English' };
-/** Append a transcript chunk: a space between Latin words, none around CJK. Gemini streams CJK one character at a time. */
+/** `ms` of 16 kHz 16-bit mono PCM silence, base64-encoded for the Live API. */
+export function silencePcmBase64(ms: number): string {
+  return Buffer.alloc(Math.round(16000 * 2 * (ms / 1000))).toString('base64');
+}
+
+/** Append a transcript chunk verbatim: Gemini streams sub-word fragments and puts a leading space on chunks that start a new word. */
 export function joinChunk(buf: string, chunk: string): string {
-  if (!buf) return chunk;
-  if (!chunk) return buf;
-  const a = buf[buf.length - 1], b = chunk[0];
-  if (/\s/.test(a) || /\s/.test(b) || /\p{Script=Han}/u.test(a) || /\p{Script=Han}/u.test(b)) return buf + chunk;
-  return buf + ' ' + chunk;
+  return buf + chunk;
 }
 
 function scriptOfLanguage(language: string): Script {
@@ -418,41 +437,230 @@ async function generateCoachingTip(
   }
 }
 
+// ── Learn Mode index (pre-session `learn_index` frame) ───────────────────────
+// The explanations a Learn Mode tree covered before this session, so reflection gaps
+// can point back at a specific block. Not part of the resume token: a handover re-sends it.
+export interface LearnIndexEntry { id: string; label: string }
+export const LEARN_INDEX_MAX_ENTRIES = 60;
+export const LEARN_INDEX_MAX_ID_CHARS = 64;
+export const LEARN_INDEX_MAX_LABEL_CHARS = 200;
+
+export function parseLearnIndex(nodes: unknown): LearnIndexEntry[] {
+  if (!Array.isArray(nodes)) return [];
+  const out: LearnIndexEntry[] = [];
+  const seen = new Set<string>();
+  for (const n of nodes) {
+    if (out.length >= LEARN_INDEX_MAX_ENTRIES) break;
+    if (!n || typeof n !== 'object') continue;
+    const { id, label } = n as { id?: unknown; label?: unknown };
+    if (typeof id !== 'string' || typeof label !== 'string') continue;
+    const cleanId = id.trim();
+    const cleanLabel = label.trim();
+    if (!cleanId || cleanId.length > LEARN_INDEX_MAX_ID_CHARS) continue;
+    if (!cleanLabel || cleanLabel.length > LEARN_INDEX_MAX_LABEL_CHARS) continue;
+    if (seen.has(cleanId)) continue;
+    seen.add(cleanId);
+    out.push({ id: cleanId, label: cleanLabel });
+  }
+  return out;
+}
+
+// ── Reflection ───────────────────────────────────────────────────────────────
+export interface ReflectionGapNode { text: string; nodeId: string | null }
+
+export interface Reflection {
+  summary: string;
+  strengths: string[];
+  gaps: string[];
+  gapNodes: ReflectionGapNode[];
+  topQuestions: string[];
+  improvements: string[];
+  keyVocabulary: string[];
+  presentationSkills: { visualsAndGestures: string; explanations: string; mediaUsage: string };
+  presentationMechanics: { clarity: string; visuals: string; pacing: string; tools: string };
+  uiLabels?: Record<string, string>;
+}
+
+const REFLECTION_UI_LABEL_KEYS = ['title', 'summary', 'strengths', 'gaps', 'gapsEmpty', 'vocabulary', 'nextSteps', 'questions', 'presentationFeedback', 'mechanics', 'teachAgain', 'changeTopic', 'downloadSummary'];
+
+export function buildReflectionSchema(hasIndex: boolean): types.Schema {
+  const T = types.Type;
+  const stringArray: types.Schema = { type: T.ARRAY, items: { type: T.STRING } };
+  const properties: Record<string, types.Schema> = {
+    summary: { type: T.STRING },
+    strengths: stringArray,
+    gaps: stringArray,
+    topQuestions: stringArray,
+    improvements: stringArray,
+    keyVocabulary: stringArray,
+    presentationSkills: {
+      type: T.OBJECT,
+      properties: { visualsAndGestures: { type: T.STRING }, explanations: { type: T.STRING }, mediaUsage: { type: T.STRING } },
+      required: ['visualsAndGestures', 'explanations', 'mediaUsage'],
+    },
+    presentationMechanics: {
+      type: T.OBJECT,
+      properties: { clarity: { type: T.STRING }, visuals: { type: T.STRING }, pacing: { type: T.STRING }, tools: { type: T.STRING } },
+      required: ['clarity', 'visuals', 'pacing', 'tools'],
+    },
+    uiLabels: {
+      type: T.OBJECT,
+      properties: Object.fromEntries(REFLECTION_UI_LABEL_KEYS.map(k => [k, { type: T.STRING }])),
+      required: REFLECTION_UI_LABEL_KEYS,
+    },
+  };
+  const required = ['summary', 'strengths', 'gaps', 'topQuestions', 'improvements', 'keyVocabulary', 'presentationSkills', 'presentationMechanics', 'uiLabels'];
+  if (hasIndex) {
+    properties.gapNodes = {
+      type: T.ARRAY,
+      items: {
+        type: T.OBJECT,
+        properties: { text: { type: T.STRING }, nodeId: { type: T.STRING, nullable: true } },
+        required: ['text', 'nodeId'],
+      },
+    };
+    required.push('gapNodes');
+  }
+  return { type: T.OBJECT, properties, required };
+}
+
+function fallbackReflection(summary: string, improvements: string[] = []): Reflection {
+  return {
+    summary,
+    strengths: [],
+    gaps: [],
+    gapNodes: [],
+    topQuestions: [],
+    improvements,
+    keyVocabulary: [],
+    presentationSkills: { visualsAndGestures: '', explanations: '', mediaUsage: '' },
+    presentationMechanics: { clarity: 'Fair', visuals: 'Fair', pacing: 'Steady', tools: 'Minimal' },
+  };
+}
+
+function stringList(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [];
+}
+
+// Fills defaults, keeps `gaps` a string[] for the existing UI, and aligns `gapNodes` with it:
+// gapNodes[i].text === gaps[i]; nodeId is one of validIds or null (never a model-invented id).
+export function coerceReflection(parsed: unknown, validIds: string[], topic: string): Reflection {
+  const fb = fallbackReflection(`You taught "${topic}". A detailed reflection could not be generated.`);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fb;
+  const p = parsed as Record<string, unknown>;
+
+  const gaps = stringList(p.gaps);
+  const valid = new Set(validIds);
+  let gapNodes: ReflectionGapNode[] = [];
+  if (valid.size > 0) {
+    const raw = Array.isArray(p.gapNodes) ? p.gapNodes : [];
+    const byText = new Map<string, string | null>();
+    const byIndex: (string | null)[] = [];
+    for (const g of raw) {
+      const text = g && typeof g === 'object' && typeof (g as { text?: unknown }).text === 'string' ? (g as { text: string }).text : null;
+      const rawId = g && typeof g === 'object' ? (g as { nodeId?: unknown }).nodeId : null;
+      const nodeId = typeof rawId === 'string' && valid.has(rawId) ? rawId : null;
+      byIndex.push(nodeId);
+      if (text !== null && !byText.has(text.trim())) byText.set(text.trim(), nodeId);
+    }
+    gapNodes = gaps.map((text, i) => {
+      const id = byText.get(text.trim()) ?? (raw.length === gaps.length ? byIndex[i] : null) ?? null;
+      return { text, nodeId: id };
+    });
+  }
+
+  const ps = p.presentationSkills;
+  let presentationSkills = fb.presentationSkills;
+  if (Array.isArray(ps)) {
+    presentationSkills = {
+      visualsAndGestures: typeof ps[0] === 'string' ? ps[0] : '',
+      explanations: typeof ps[1] === 'string' ? ps[1] : '',
+      mediaUsage: typeof ps[2] === 'string' ? ps[2] : '',
+    };
+  } else if (ps && typeof ps === 'object') {
+    const o = ps as Record<string, unknown>;
+    presentationSkills = {
+      visualsAndGestures: typeof o.visualsAndGestures === 'string' ? o.visualsAndGestures : '',
+      explanations: typeof o.explanations === 'string' ? o.explanations : '',
+      mediaUsage: typeof o.mediaUsage === 'string' ? o.mediaUsage : '',
+    };
+  }
+
+  let presentationMechanics = fb.presentationMechanics;
+  const pm = p.presentationMechanics;
+  if (pm && typeof pm === 'object' && !Array.isArray(pm)) {
+    const o = pm as Record<string, unknown>;
+    presentationMechanics = {
+      clarity: typeof o.clarity === 'string' ? o.clarity : 'Fair',
+      visuals: typeof o.visuals === 'string' ? o.visuals : 'Fair',
+      pacing: typeof o.pacing === 'string' ? o.pacing : 'Steady',
+      tools: typeof o.tools === 'string' ? o.tools : 'Minimal',
+    };
+  }
+
+  const out: Reflection = {
+    summary: typeof p.summary === 'string' && p.summary.trim() ? p.summary : fb.summary,
+    strengths: stringList(p.strengths),
+    gaps,
+    gapNodes,
+    topQuestions: stringList(p.topQuestions),
+    improvements: stringList(p.improvements),
+    keyVocabulary: stringList(p.keyVocabulary),
+    presentationSkills,
+    presentationMechanics,
+  };
+  const ul = p.uiLabels;
+  if (ul && typeof ul === 'object' && !Array.isArray(ul)) {
+    const labels: Record<string, string> = {};
+    for (const [k, v] of Object.entries(ul as Record<string, unknown>)) if (typeof v === 'string') labels[k] = v;
+    out.uiLabels = labels;
+  }
+  return out;
+}
+
 async function generateReflection(
   ai: GoogleGenAI,
   topic: string,
   sessionLog: SessionEntry[],
   language: string = 'English',
-): Promise<object> {
+  learnIndex: LearnIndexEntry[] = [],
+): Promise<Reflection> {
   if (sessionLog.length < 2) {
-    return {
-      summary: 'The session was too short to generate a meaningful reflection.',
-      strengths: [],
-      gaps: [],
-      topQuestions: [],
-      improvements: ['Try a longer session — aim for at least 5 minutes of explanation.'],
-      keyVocabulary: [],
-      presentationSkills: { visualsAndGestures: '', explanations: '', mediaUsage: '' },
-      presentationMechanics: { clarity: 'Fair', visuals: 'Fair', pacing: 'Steady', tools: 'Minimal' },
-    };
+    return fallbackReflection(
+      'The session was too short to generate a meaningful reflection.',
+      ['Try a longer session — aim for at least 5 minutes of explanation.'],
+    );
   }
 
   const transcript = sessionLog
     .map(e => `${e.role === 'teacher' ? 'Teacher' : e.name}: ${e.text}`)
     .join('\n');
+  const hasIndex = learnIndex.length > 0;
+  const validIds = learnIndex.map(n => n.id);
 
   try {
     const result = await ai.models.generateContent({
       model: FAST_MODEL,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: buildReflectionSchema(hasIndex),
+      },
       contents: [{
         role: 'user',
         parts: [{ text:
           `You are analyzing a "learn by teaching" session where a human taught "${topic}" to AI students.\n\n` +
           `Full transcript:\n${transcript}\n\n` +
-          `Return a JSON object (no markdown, no code block) with exactly these keys:\n` +
+          (hasIndex
+            ? `The explanations the teacher studied before this session (id — label):\n` +
+              learnIndex.map(n => `- ${n.id} — ${n.label}`).join('\n') + `\n\n`
+            : '') +
+          `Return a JSON object with exactly these keys:\n` +
           `- "summary": string — 2-3 sentences summarising what was covered\n` +
           `- "strengths": string[] — 2-3 specific things the teacher did well. Wrap the key phrase in **asterisks** (e.g. "**Clear examples** made the concept stick.")\n` +
           `- "gaps": string[] — 2-3 concepts that were missed, skipped, or explained unclearly (empty array if none). Wrap the key problem in **asterisks** (e.g. "**The second step** was unclear.")\n` +
+          (hasIndex
+            ? `- "gapNodes": array with exactly one entry per item of "gaps", in the same order: {"text": the identical gap sentence, "nodeId": the id of the studied explanation this gap belongs to, copied exactly from the list above, or null when none fits}. Never invent an id.\n`
+            : '') +
           `- "topQuestions": string[] — the 3 most insightful student questions verbatim (fewer if session was short)\n` +
           `- "improvements": string[] — 2-3 concrete, actionable suggestions. Wrap the key action in **asterisks** (e.g. "**Use the whiteboard** for the diagram.")\n` +
           `- "keyVocabulary": string[] — 4-6 key vocabulary terms or concepts that were central to this teaching session (short 1-2 word terms only, e.g. "Prime Number", "Composite", "Factors")\n` +
@@ -468,42 +676,15 @@ async function generateReflection(
           `- "uiLabels": object with translated section headers for the reflection page in ${language}. Keys: "title", "summary", "strengths", "gaps", "gapsEmpty", "vocabulary", "nextSteps", "questions", "presentationFeedback", "mechanics", "teachAgain", "changeTopic", "downloadSummary". Values must be the natural ${language} translation of these UI labels: "Session Reflection", "What Went Well", "Concepts to Revisit", "Mastery achieved! You explained every point clearly.", "Key Vocabulary", "Next Steps", "Student Questions", "Presentation Skills Feedback", "Presentation & Mechanics", "Teach Again", "Change topic", "Download Summary".\n\n` +
           (language !== 'English' ? `IMPORTANT: Write ALL text content (summary, strengths, gaps, topQuestions, improvements, keyVocabulary, presentationSkills values) in ${language}. Only the JSON keys and presentationMechanics rating words (Excellent/Good/Fair/etc.) should remain in English.\n` : '') +
           (language === 'Simplified Chinese' ? `Use simplified Chinese characters (简体字) exclusively. Never use traditional Chinese characters.\n` : '') +
-          `Keep every bullet and presentationSkills value to at most one short sentence. Be explicit and useful. Return ONLY valid JSON. No extra text.`
+          `Keep every bullet and presentationSkills value to at most one short sentence. Be explicit and useful.`
         }]
       }],
     });
 
-    const raw = result.text?.trim() ?? '';
-    const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '');
-    const parsed = JSON.parse(cleaned);
-    const ps = parsed.presentationSkills;
-    if (Array.isArray(ps)) {
-      parsed.presentationSkills = {
-        visualsAndGestures: ps[0] ?? '',
-        explanations: ps[1] ?? '',
-        mediaUsage: ps[2] ?? '',
-      };
-    } else if (ps && typeof ps === 'object' && !Array.isArray(ps)) {
-      parsed.presentationSkills = {
-        visualsAndGestures: typeof ps.visualsAndGestures === 'string' ? ps.visualsAndGestures : '',
-        explanations: typeof ps.explanations === 'string' ? ps.explanations : '',
-        mediaUsage: typeof ps.mediaUsage === 'string' ? ps.mediaUsage : '',
-      };
-    } else {
-      parsed.presentationSkills = { visualsAndGestures: '', explanations: '', mediaUsage: '' };
-    }
-    return parsed;
+    const parsed: unknown = JSON.parse(result.text?.trim() || '{}');
+    return coerceReflection(parsed, validIds, topic);
   } catch {
-    return {
-      summary: `You taught "${topic}". A detailed reflection could not be generated.`,
-      strengths: [],
-      gaps: [],
-      topQuestions: [],
-      improvements: [],
-      keyVocabulary: [],
-      presentationSkills: { visualsAndGestures: '', explanations: '', mediaUsage: '' },
-      presentationMechanics: { clarity: 'Fair', visuals: 'Fair', pacing: 'Steady', tools: 'Minimal' },
-    };
+    return fallbackReflection(`You taught "${topic}". A detailed reflection could not be generated.`);
   }
 }
 
@@ -771,7 +952,7 @@ function triggerOnDemandDiagram(
 
     // Send the diagram image to the Live session so the student can "see" its own diagram
     try {
-      liveSession.sendRealtimeInput({ media: { data: result.base64, mimeType: result.mimeType } });
+      liveSession.sendRealtimeInput({ video: { data: result.base64, mimeType: result.mimeType } });
       liveSession.sendRealtimeInput({ text: '[You just drew this diagram on the whiteboard. The teacher can see it and may draw on it or point at parts of it.]' });
     } catch (_) {}
   }).catch(err => {
@@ -1058,6 +1239,8 @@ function buildServer(): http.Server {
     // Pasted notes arrive as a pre-session `materials_text` frame, never in the URL
     // (URLs land in Cloud Run request logs and have a length cap).
     let materials = '';
+    // Learn Mode explanations covered by this session (pre-session `learn_index` frame).
+    let learnIndex: LearnIndexEntry[] = [];
 
     // Resume state (set by a `resume` frame before ready_to_start)
     let resumeInfo: ResumeToken | null = null;
@@ -1073,6 +1256,7 @@ function buildServer(): http.Server {
     // Blackout: buffer instead of discard, flush in order when the window lifts.
     const blackoutBuffer: string[] = [];
     let blackoutFlushTimer: ReturnType<typeof setTimeout> | null = null;
+    let speechEndSettleTimer: ReturnType<typeof setTimeout> | null = null;
 
     // Transcription that arrives before teacherHasSpoken is held, not dropped.
     const pendingTeacherTranscript: { text: string; ts: number }[] = [];
@@ -1113,7 +1297,7 @@ function buildServer(): http.Server {
     }
     function sendImage(base64: string) {
       tokenEstimate.frames += 1;
-      sendToSession({ media: { data: base64, mimeType: 'image/jpeg' } });
+      sendToSession({ video: { data: base64, mimeType: 'image/jpeg' } });
     }
     function sendAudio(base64: string) {
       if (!session) {
@@ -1123,7 +1307,7 @@ function buildServer(): http.Server {
         return;
       }
       tokenEstimate.audioSec += (base64.length * 0.75) / 32000; // PCM16 mono @16k = 32000 bytes/s
-      sendToSession({ media: { data: base64, mimeType: 'audio/pcm;rate=16000' } });
+      sendToSession({ audio: { data: base64, mimeType: 'audio/pcm;rate=16000' } });
     }
 
     // Keep the connection alive through HTTP/1.1 proxies that drop idle sockets.
@@ -1294,7 +1478,7 @@ function buildServer(): http.Server {
       sendJson({ type: 'language_changed', language: next, source });
       pushSessionState();
       // Characters stripped before the switch was recognised belong to the teacher's sentence — put them back.
-      const recovered = enforceTranscriptLanguage(droppedRaw, next);
+      const recovered = transcriptChunk(droppedRaw, next).trimStart();
       droppedRaw = '';
       if (recovered) {
         teacherTranscriptBuf = joinChunk(teacherTranscriptBuf, recovered);
@@ -1320,7 +1504,7 @@ function buildServer(): http.Server {
         return;
       }
       autoDetectLanguage(rawChunk); // before enforcement, which would strip a new script entirely
-      const chunk = enforceTranscriptLanguage(rawChunk, language);
+      const chunk = transcriptChunk(rawChunk, language);
       if (!chunk) { if (rawChunk.trim()) droppedRaw += rawChunk; return; }
       teacherTranscriptBuf = joinChunk(teacherTranscriptBuf, chunk);
       sendJson({ type: 'teacher_transcript', text: chunk });
@@ -1532,7 +1716,7 @@ function buildServer(): http.Server {
               ingestTeacherTranscript(message.serverContent.inputTranscription.text);
             }
             if (message.serverContent?.outputTranscription?.text) {
-              const chunk = enforceTranscriptLanguage(message.serverContent.outputTranscription.text, language);
+              const chunk = transcriptChunk(message.serverContent.outputTranscription.text, language);
               if (chunk) {
                 studentTranscriptBuf = joinChunk(studentTranscriptBuf, chunk);
                 sendJson({ type: 'transcript', text: chunk });
@@ -1575,13 +1759,17 @@ function buildServer(): http.Server {
 
     // ── Message handler ────────────────────────────────────────────────────
     socket.on('message', (data: Buffer, isBinary: boolean) => { try {
-      // Pre-session: only materials_text / material_file / resume / ready_to_start; everything else (binary included) is dropped.
+      // Pre-session: only materials_text / material_file / learn_index / resume / ready_to_start; everything else (binary included) is dropped.
       if (!sessionReady) {
         if (isBinary) return;
         let parsed: any;
         try { parsed = JSON.parse(data.toString()); } catch (_) { return; }
         if (parsed.type === 'materials_text' && typeof parsed.text === 'string') {
           materials = parsed.text.slice(0, MAX_MATERIALS_CHARS * 2);
+          return;
+        }
+        if (parsed.type === 'learn_index') {
+          learnIndex = parseLearnIndex(parsed.nodes);
           return;
         }
         if (parsed.type === 'material_file' && parsed.base64 && parsed.name) {
@@ -1624,15 +1812,27 @@ function buildServer(): http.Server {
       switch (msg.type) {
         case 'speech_start':
           markTeacherSpoken('speech_start');
+          // Resumed within the settle window: the next speech_end processes the combined buffer.
+          if (speechEndSettleTimer) { clearTimeout(speechEndSettleTimer); speechEndSettleTimer = null; }
           // Interruption is NOT triggered here — speech_start fires on any noise.
           return;
-        case 'speech_end':
-          onTeacherSpeechEnd(msg.media);
+        case 'speech_end': {
+          // Goes through onTeacherAudio so a session still in its blackout queues the silence like any audio.
+          onTeacherAudio(Buffer.from(silencePcmBase64(AUDIO_TAIL_SILENCE_MS), 'base64'));
+          // gemini-3.1-flash-live-preview only closes the teacher's turn on an explicit stream end; 2.5 tolerates it.
+          sendToSession({ audioStreamEnd: true });
+          if (speechEndSettleTimer) clearTimeout(speechEndSettleTimer);
+          const media = msg.media;
+          speechEndSettleTimer = setTimeout(() => {
+            speechEndSettleTimer = null;
+            onTeacherSpeechEnd(media);
+          }, SPEECH_END_SETTLE_MS);
           return;
+        }
         case 'request_reflection':
           if (reflectionRequested) return;
           reflectionRequested = true;
-          generateReflection(ai, topic, sessionLog, language).then(reflData => { sendJson({ type: 'reflection', data: reflData }); });
+          generateReflection(ai, topic, sessionLog, language, learnIndex).then(reflData => { sendJson({ type: 'reflection', data: reflData }); });
           return;
         case 'text_input':
           if (typeof msg.text === 'string' && msg.text.trim()) onTextInput(msg.text.trim());
@@ -1703,6 +1903,7 @@ function buildServer(): http.Server {
       clearTimeout(handoverTimer);
       clearInterval(pingTimer);
       if (blackoutFlushTimer) { clearTimeout(blackoutFlushTimer); blackoutFlushTimer = null; }
+      if (speechEndSettleTimer) { clearTimeout(speechEndSettleTimer); speechEndSettleTimer = null; }
       try { session?.close(); } catch (_) {}
     }
 

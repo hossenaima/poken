@@ -44,6 +44,13 @@ learn something the next session would otherwise rediscover the hard way.
   `sessionStorage` and rebuilt + saved on return. A page cannot show its own dialog on tab
   close (browsers allow only the generic *Leave site?* box), so the in-page banner is the
   warning. Google OAuth client ID/secret live in the Supabase dashboard, never in the repo.
+- **Supabase vanity subdomain:** the project answers on **`poken.supabase.co`** as well as its
+  ref domain (free on Pro; `supabase vanity-subdomains ... --experimental`). It exists so
+  Google's consent screen says "continue to poken.supabase.co" instead of the project ref.
+  `public/learn-store.js` uses it, so the OAuth callback is
+  `https://poken.supabase.co/auth/v1/callback` — that exact URI must be in the Google OAuth
+  client's authorized redirect URIs, or sign-in fails with `redirect_uri_mismatch`. The ref
+  domain keeps working; both are the same project.
 - **Supabase** (Learn Mode's knowledge tree; schema applied 2026-09-19): project `Poken`, ref
   `qdaqmtgfikkrtnjsjmnu`, `us-west-2`, in Jerry's Pro org. `supabase/config.toml` is committed;
   link state (`supabase/.temp`) is gitignored, so each machine links once:
@@ -130,7 +137,10 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
   English — Spanish/French/German/Portuguese cannot be told apart by script, so they need an
   explicit request. Characters stripped before the switch fired are recovered (`droppedRaw`)
   and relayed, so the teacher's sentence is whole.
-- Transcript buffers use `joinChunk()`: a space between Latin words, none around CJK.
+- Transcript buffers concatenate Gemini's chunks verbatim (`joinChunk()` is plain `buf + chunk`):
+  the chunks are sub-word fragments ("pho", "tos", "yn", "the", "sis"…) and Gemini already puts
+  a leading space on a chunk that starts a new word, so inserting spaces mangles words. Merged
+  words are repaired by the cleanup pass; diagram/vision detection keeps its spaceless fallback.
 - Gemini's input transcription emits **Traditional** characters (陽光, 葉綠素) even in a
   Simplified session. `enforceTranscriptLanguage` now runs `opencc-js`
   (`Converter({ from: 'tw', to: 'cn' })`, built once at module scope) on Simplified Chinese
@@ -156,8 +166,25 @@ English → Chinese flow against a local server.
 forum (Aug 2026) with no root cause. Handling: **every** Gemini close is recovered in place by
 `reopenGemini()` (a session that died young drops its handle and rebuilds from the digest),
 bounded to 3 reopens per minute before a visible error. Google staff suggest
-`gemini-3.1-flash-live-preview`; `AUDIO_MODEL=gemini-3.1-flash-live-preview` switches to it with
-no code change, and it passed the same language-switch probe here.
+`gemini-3.1-flash-live-preview`, which is now the default (first audio ~0.9 s vs ~2.3 s; passed the
+same language-switch and audio probes). `AUDIO_MODEL=gemini-2.5-flash-native-audio-latest` switches back.
+
+### What the 3.1 live model needs that 2.5 did not
+
+Three differences, all found by probe and all handled in `api/server.ts` — check them first if a
+future model swap goes quiet:
+
+1. **`audio:` / `video:`, never `media:`.** The SDK still maps `media:` onto the deprecated
+   `mediaChunks` field; 3.1 rejects it and closes with
+   `1007 realtime_input.media_chunks is deprecated`. Audio goes in `audio:`, camera and whiteboard
+   frames in `video:`.
+2. **The teacher's turn needs an explicit end.** 2.5 ends a turn on its own VAD; 3.1 waits for
+   `sendRealtimeInput({ audioStreamEnd: true })`. Without it the student hears the teacher but
+   never replies, and the transcript stays empty. Sent from `speech_end` alongside the trailing
+   silence.
+3. **Chinese arrives spaced out** ("光 合 作 用"). `transcriptChunk()` collapses whitespace between
+   Han/punctuation pairs and is the single place both the teacher and student transcripts go
+   through — fix spacing there, not at the call sites.
 
 ## Bugs already fixed (don't reintroduce)
 

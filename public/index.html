@@ -1153,6 +1153,23 @@
       border: 1px solid var(--poken-border-solid); border-radius: 999px; padding: 0.3rem 0.75rem;
     }
     .learn-suggest button:hover { border-color: var(--poken-accent); color: var(--poken-accent); }
+    .reflection-digback {
+      max-width: 44rem; margin: 2.5rem auto 0; padding: 0 1rem;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+    }
+    .reflection-digback[hidden] { display: none; }
+    .reflection-digback-label { font-size: 0.8125rem; color: var(--poken-text-secondary); }
+    .reflection-digback button {
+      font-family: inherit; font-size: 0.8125rem; color: var(--poken-text); background: #fff; cursor: pointer;
+      border: 1px solid var(--poken-border-solid); border-radius: 999px; padding: 0.35rem 0.85rem;
+    }
+    .reflection-digback button:hover { border-color: var(--poken-accent); color: var(--poken-accent); }
+    /* Mastery, set on each explanation after a teaching session. */
+    .learn-node[data-mastery="shaky"] > .learn-crumb::after { content: " · shaky"; color: #B45309; font-weight: 600; }
+    .learn-node[data-mastery="taught"] > .learn-crumb::after { content: " · taught"; color: #047857; font-weight: 600; }
+    .learn-node[data-mastery="solid"] > .learn-crumb::after { content: " · solid"; color: #047857; font-weight: 600; }
+    @keyframes learnFocus { from { background: rgba(255,115,85,0.18); } to { background: transparent; } }
+    .learn-node.focus > .learn-block { animation: learnFocus 2s ease-out; }
     .learn-account { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
     .learn-account + .learn-teach { margin-left: 0; }
     .learn-google {
@@ -1675,6 +1692,7 @@
       </div>
 
       <!-- Actions -->
+      <div class="reflection-digback" id="reflectionDigBack" hidden></div>
       <div class="reflection-actions">
         <button class="reflection-btn primary" id="teachAgainBtn" type="button">&#x1F393; Teach Again</button>
         <button class="reflection-btn" id="backToLearnBtn" type="button">&#x1F4DA; Back to learning</button>

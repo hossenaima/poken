@@ -3,8 +3,7 @@
 // (server.ts throws at import unless GEMINI_API_KEY is non-empty; no network calls are made,
 //  so any placeholder value in .env is enough to run these.)
 import assert from 'node:assert/strict';
-import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage, isDiagramRequest } from '../api/server.js';
-import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage, buildDiagramBrief } from '../api/server.js';
+import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage, transcriptChunk, isDiagramRequest, buildDiagramBrief, silencePcmBase64 } from '../api/server.js';
 
 // explicit requests, including Gemini's fragmented ASR and CJK phrasing
 assert.equal(detectLanguageSwitchRequest('Can we switch to Chinese now?'), 'Simplified Chinese');
@@ -26,9 +25,10 @@ const prompt = 'Raw speech-to-text (may have missing spaces). Task: produce a tr
 assert.equal(cleanupLooksBroken('Change language.', prompt), true);
 assert.equal(cleanupLooksBroken('thewater cycle', 'the water cycle'), false);
 assert.equal(cleanupLooksBroken('hi', 'x'.repeat(200)), true);
-// chunk joining: Latin words get a space, CJK characters do not
+// chunk joining: verbatim concatenation — Gemini streams sub-word fragments and adds its own leading spaces
 assert.equal(joinChunk('光合', '作用'), '光合作用');
-assert.equal(joinChunk('the water', 'cycle'), 'the water cycle');
+assert.equal(joinChunk('photosynthesis', 'turns'), 'photosynthesisturns');
+assert.equal(joinChunk('the', ' water'), 'the water');
 assert.equal(joinChunk('', '光'), '光');
 assert.equal(joinChunk('hello,', ' world'), 'hello, world');
 // transcript enforcement: Traditional characters become Simplified in a Simplified Chinese session
@@ -47,6 +47,10 @@ assert.equal(enforceTranscriptLanguage('All right。Well，um，how do I…？',
 assert.equal(enforceTranscriptLanguage('… Wait！ Really： yes； no （maybe）', 'Spanish'), 'Wait! Really: yes; no (maybe)');
 assert.equal(enforceTranscriptLanguage('光合作用需要阳光。', 'Simplified Chinese'), '光合作用需要阳光。');
 assert.equal(enforceTranscriptLanguage('the water cycle.', 'English'), 'the water cycle.');
+assert.equal(transcriptChunk(' water', 'English'), ' water');
+assert.equal(transcriptChunk(' 光', 'Simplified Chinese'), '光');
+assert.equal(transcriptChunk(',', 'English'), ',');
+assert.equal(transcriptChunk(' 陽光', 'English'), '');
 // Diagram request detection: explicit asks (clean or fragmented ASR) vs incidental visual words
 assert.equal(isDiagramRequest('Can you produce a diagram that shows this?'), true);
 assert.equal(isDiagramRequest('give me a sketch of that'), true);
@@ -78,4 +82,14 @@ const long = 'w'.repeat(500);
 const brief = buildDiagramBrief([t(long), s(long)], 'X');
 assert.ok(brief.includes(`"${'w'.repeat(400)}"`));
 assert.ok(!brief.includes('w'.repeat(401)));
+// trailing silence sent at speech_end: 16 kHz 16-bit mono zeros (800ms = 25600 bytes)
+const silence = Buffer.from(silencePcmBase64(800), 'base64');
+assert.equal(silence.length, 16000 * 2 * 0.8);
+assert.ok(silence.every(b => b === 0));
+assert.equal(Buffer.from(silencePcmBase64(0), 'base64').length, 0);
 console.log('language + cleanup checks OK');
+
+// Gemini returns Chinese spaced out ("光 合 作 用"); the transcript must not inherit that.
+assert.equal(transcriptChunk('光 合 作 用 需 要 阳 光 , 水 。', 'Simplified Chinese'), '光合作用需要阳光,水。');
+assert.equal(transcriptChunk('叶 绿 素 absorbs 光', 'Simplified Chinese'), '叶绿素光'); // Latin stripped, Han joined
+assert.equal(transcriptChunk(' water and carbon dioxide', 'English'), ' water and carbon dioxide');
