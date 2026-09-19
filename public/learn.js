@@ -540,10 +540,8 @@
 
   // After a teaching session: what the reflection flagged is shaky, what it didn't is a level
   // better. Only explanations that were actually taught (in the index we sent) move.
+  // Mastery only: the reflection page itself offers the way back, one button per concept.
   window.pokenLearnReflection = (data) => {
-    const digBack = document.getElementById("reflectionDigBack");
-    digBack.replaceChildren();
-    digBack.hidden = true;
     const taught = nodes.filter(n => n.text.trim());
     if (!taught.length) return;
     const shaky = new Set((data?.gapNodes || []).map(g => g?.nodeId).filter(Boolean));
@@ -551,20 +549,21 @@
       if (shaky.has(node.id)) setMastery(node, "shaky");
       else setMastery(node, node.mastery === "taught" || node.mastery === "solid" ? "solid" : "taught");
     }
-    const weak = taught.filter(n => shaky.has(n.id));
-    if (!weak.length) return;
-    const label = document.createElement("span");
-    label.className = "reflection-digback-label";
-    label.textContent = weak.length === 1 ? "Dig back into:" : "Dig back into the shaky parts:";
-    digBack.append(label);
-    for (const node of weak) {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = node.label || topic;
-      b.addEventListener("click", () => digInto(node.id));
-      digBack.append(b);
-    }
-    digBack.hidden = false;
+  };
+
+  // Reflection → Learn Mode for one concept: the explanation it came from when we know it,
+  // otherwise a fresh topic. Never discards a tree with unsaved work — that one waits for a click.
+  window.pokenLearnRevisit = (label, nodeId) => {
+    if (nodeId && byId(nodeId)) { digInto(nodeId); return; }
+    const t = String(label || "").trim();
+    if (!t) return;
+    disconnect(true);
+    document.getElementById("reflection-screen").style.display = "none";
+    document.getElementById("reflection-loading-screen")?.classList.remove("visible");
+    show();
+    topicEl.value = t;
+    if (hasUnsavedWork()) { topicEl.focus(); return; }
+    form.requestSubmit();
   };
 
   // Reflection screen → Learn Mode, scrolled to that explanation.

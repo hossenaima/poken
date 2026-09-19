@@ -1,4 +1,5 @@
-// Runnable check for the reflection helpers (issue #37): gaps tagged with Learn Mode node ids.
+// Runnable check for the reflection helpers: the topic list, and gaps carrying a study label
+// plus the Learn Mode node id they came from.
 //   npx tsx --env-file=.env scripts/test-reflection.ts
 // (server.ts throws at import unless GEMINI_API_KEY is non-empty; no network calls are made,
 //  so any placeholder value in .env is enough to run these.)
@@ -10,61 +11,73 @@ const topic = 'Photosynthesis';
 
 // ── coerceReflection ────────────────────────────────────────────────────────
 {
-  // gapNodes aligned with gaps; unknown id nulled; missing id nulled
+  // gapNodes aligned with gaps; unknown id nulled; missing id nulled; label kept
   const r = coerceReflection({
     summary: 'ok',
-    strengths: ['**Good** pace'],
+    topicsCovered: ['How light is captured', 'Where glucose goes'],
     gaps: ['**Photolysis** was skipped.', '**Calvin cycle** inputs were vague.', '**ATP** role unclear.'],
     gapNodes: [
-      { text: '**Photolysis** was skipped.', nodeId: 'n-light' },
-      { text: '**Calvin cycle** inputs were vague.', nodeId: 'made-up-id' },
-      { text: '**ATP** role unclear.' },
+      { text: '**Photolysis** was skipped.', label: 'Photolysis', nodeId: 'n-light' },
+      { text: '**Calvin cycle** inputs were vague.', label: 'Calvin cycle', nodeId: 'made-up-id' },
+      { text: '**ATP** role unclear.', label: 'ATP in photosynthesis' },
     ],
-    topQuestions: [], improvements: [], keyVocabulary: [],
-    presentationSkills: { visualsAndGestures: 'a', explanations: 'b', mediaUsage: 'c' },
-    presentationMechanics: { clarity: 'Good', visuals: 'Fair', pacing: 'Steady', tools: 'Minimal' },
+    keyVocabulary: ['Chlorophyll'],
   }, ids, topic);
   assert.deepEqual(r.gaps, ['**Photolysis** was skipped.', '**Calvin cycle** inputs were vague.', '**ATP** role unclear.']);
   assert.deepEqual(r.gapNodes, [
-    { text: '**Photolysis** was skipped.', nodeId: 'n-light' },
-    { text: '**Calvin cycle** inputs were vague.', nodeId: null },
-    { text: '**ATP** role unclear.', nodeId: null },
+    { text: '**Photolysis** was skipped.', label: 'Photolysis', nodeId: 'n-light' },
+    { text: '**Calvin cycle** inputs were vague.', label: 'Calvin cycle', nodeId: null },
+    { text: '**ATP** role unclear.', label: 'ATP in photosynthesis', nodeId: null },
   ]);
   assert.equal(r.gapNodes.length, r.gaps.length);
-  assert.deepEqual(r.presentationSkills, { visualsAndGestures: 'a', explanations: 'b', mediaUsage: 'c' });
-  assert.equal(r.presentationMechanics.clarity, 'Good');
+  assert.deepEqual(r.topicsCovered, ['How light is captured', 'Where glucose goes']);
+  assert.deepEqual(r.keyVocabulary, ['Chlorophyll']);
 }
 {
-  // model returns no gapNodes at all → still index-aligned, all null
-  const r = coerceReflection({ gaps: ['a', 'b'] }, ids, topic);
-  assert.deepEqual(r.gapNodes, [{ text: 'a', nodeId: null }, { text: 'b', nodeId: null }]);
+  // no gapNodes at all → still index-aligned, labels derived from the gap text
+  const r = coerceReflection({ gaps: ['**Photolysis** was skipped.', 'The second step was never explained.'] }, ids, topic);
+  assert.deepEqual(r.gapNodes, [
+    { text: '**Photolysis** was skipped.', label: 'Photolysis', nodeId: null },
+    { text: 'The second step was never explained.', label: 'The second step was never explained', nodeId: null },
+  ]);
+}
+{
+  // a derived label is capped at six words and loses its trailing punctuation
+  const r = coerceReflection({ gaps: ['one two three four five six seven eight.'] }, [], topic);
+  assert.equal(r.gapNodes[0].label, 'one two three four five six');
 }
 {
   // gapNodes in a different order / slightly different whitespace → matched by text
   const r = coerceReflection({
     gaps: ['a', 'b'],
-    gapNodes: [{ text: ' b ', nodeId: 'n-atp' }, { text: 'a', nodeId: 'n-calvin' }],
+    gapNodes: [{ text: ' b ', label: 'B', nodeId: 'n-atp' }, { text: 'a', label: 'A', nodeId: 'n-calvin' }],
   }, ids, topic);
-  assert.deepEqual(r.gapNodes, [{ text: 'a', nodeId: 'n-calvin' }, { text: 'b', nodeId: 'n-atp' }]);
+  assert.deepEqual(r.gapNodes, [
+    { text: 'a', label: 'A', nodeId: 'n-calvin' },
+    { text: 'b', label: 'B', nodeId: 'n-atp' },
+  ]);
 }
 {
   // gapNodes texts don't match but count does → fall back to positional alignment
   const r = coerceReflection({
     gaps: ['a', 'b'],
-    gapNodes: [{ text: 'A.', nodeId: 'n-light' }, { text: 'B.', nodeId: 'bogus' }],
+    gapNodes: [{ text: 'A.', label: 'Ay', nodeId: 'n-light' }, { text: 'B.', label: 'Bee', nodeId: 'bogus' }],
   }, ids, topic);
-  assert.deepEqual(r.gapNodes, [{ text: 'a', nodeId: 'n-light' }, { text: 'b', nodeId: null }]);
+  assert.deepEqual(r.gapNodes, [
+    { text: 'a', label: 'Ay', nodeId: 'n-light' },
+    { text: 'b', label: 'Bee', nodeId: null },
+  ]);
 }
 {
-  // count mismatch and no text match → null, never a guess
-  const r = coerceReflection({ gaps: ['a', 'b'], gapNodes: [{ text: 'zzz', nodeId: 'n-light' }] }, ids, topic);
-  assert.deepEqual(r.gapNodes, [{ text: 'a', nodeId: null }, { text: 'b', nodeId: null }]);
+  // count mismatch and no text match → null id, never a guess; label still derived
+  const r = coerceReflection({ gaps: ['a', 'b'], gapNodes: [{ text: 'zzz', label: 'Z', nodeId: 'n-light' }] }, ids, topic);
+  assert.deepEqual(r.gapNodes, [{ text: 'a', label: 'a', nodeId: null }, { text: 'b', label: 'b', nodeId: null }]);
 }
 {
-  // empty index → gapNodes is [] even if the model volunteers some
-  const r = coerceReflection({ gaps: ['a'], gapNodes: [{ text: 'a', nodeId: 'n-light' }] }, [], topic);
+  // no Learn Mode index → gaps are still clickable concepts, just never tied to a node
+  const r = coerceReflection({ gaps: ['a'], gapNodes: [{ text: 'a', label: 'A', nodeId: 'n-light' }] }, [], topic);
   assert.deepEqual(r.gaps, ['a']);
-  assert.deepEqual(r.gapNodes, []);
+  assert.deepEqual(r.gapNodes, [{ text: 'a', label: 'A', nodeId: null }]);
 }
 {
   // junk types: gaps stays string[] (non-strings dropped), gapNodes tolerates garbage entries
@@ -72,21 +85,19 @@ const topic = 'Photosynthesis';
     summary: 42,
     gaps: ['real', 7, null, { text: 'obj' }],
     gapNodes: 'nope',
-    strengths: 'not an array',
-    presentationSkills: ['x', 'y'],
-    presentationMechanics: 'bad',
+    topicsCovered: 'not an array',
+    keyVocabulary: [1, 'Glucose'],
     uiLabels: { title: 'Reflexión', gaps: 3 },
   }, ids, topic);
   assert.deepEqual(r.gaps, ['real']);
-  assert.deepEqual(r.gapNodes, [{ text: 'real', nodeId: null }]);
-  assert.deepEqual(r.strengths, []);
+  assert.deepEqual(r.gapNodes, [{ text: 'real', label: 'real', nodeId: null }]);
+  assert.deepEqual(r.topicsCovered, []);
+  assert.deepEqual(r.keyVocabulary, ['Glucose']);
   assert.equal(r.summary, `You taught "${topic}". A detailed reflection could not be generated.`);
-  assert.deepEqual(r.presentationSkills, { visualsAndGestures: 'x', explanations: 'y', mediaUsage: '' });
-  assert.deepEqual(r.presentationMechanics, { clarity: 'Fair', visuals: 'Fair', pacing: 'Steady', tools: 'Minimal' });
   assert.deepEqual(r.uiLabels, { title: 'Reflexión' });
 
   const r2 = coerceReflection({ gaps: ['a'], gapNodes: [null, 5, 'str', { nodeId: 'n-light' }] }, ids, topic);
-  assert.deepEqual(r2.gapNodes, [{ text: 'a', nodeId: null }]);
+  assert.deepEqual(r2.gapNodes, [{ text: 'a', label: 'a', nodeId: null }]);
 }
 {
   // not an object at all → full fallback shape
@@ -94,8 +105,8 @@ const topic = 'Photosynthesis';
     const r = coerceReflection(junk, ids, topic);
     assert.deepEqual(r.gaps, []);
     assert.deepEqual(r.gapNodes, []);
+    assert.deepEqual(r.topicsCovered, []);
     assert.equal(typeof r.summary, 'string');
-    assert.deepEqual(r.presentationMechanics, { clarity: 'Fair', visuals: 'Fair', pacing: 'Steady', tools: 'Minimal' });
   }
 }
 
@@ -103,12 +114,20 @@ const topic = 'Photosynthesis';
 {
   const withIndex = buildReflectionSchema(true);
   const without = buildReflectionSchema(false);
-  assert.ok(withIndex.properties?.gapNodes, 'gapNodes present when index given');
-  assert.ok(withIndex.required?.includes('gapNodes'));
-  assert.equal(without.properties?.gapNodes, undefined, 'gapNodes absent without index');
-  assert.ok(!without.required?.includes('gapNodes'));
-  assert.ok(without.properties?.gaps, 'gaps always present');
+  // gapNodes is always asked for (the label drives the "learn this" hand-off)
+  for (const schema of [withIndex, without]) {
+    assert.ok(schema.properties?.gapNodes, 'gapNodes always present');
+    assert.ok(schema.required?.includes('gapNodes'));
+    assert.ok(schema.properties?.gaps && schema.properties?.topicsCovered);
+    assert.ok(schema.properties?.gapNodes?.items?.required?.includes('label'));
+  }
+  // nodeId is only offered when there are real ids to choose from
   assert.equal(withIndex.properties?.gapNodes?.items?.properties?.nodeId?.nullable, true);
+  assert.equal(without.properties?.gapNodes?.items?.properties?.nodeId, undefined);
+  // the cut sections are gone
+  for (const dead of ['strengths', 'topQuestions', 'improvements', 'presentationSkills', 'presentationMechanics']) {
+    assert.equal(withIndex.properties?.[dead], undefined, `${dead} should no longer be requested`);
+  }
 }
 
 // ── parseLearnIndex ─────────────────────────────────────────────────────────

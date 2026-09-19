@@ -828,118 +828,85 @@
     }
     /* Topic card — frosted teal glass */
     .reflection-topic-card {
-      display: flex; align-items: center; justify-content: space-between;
+      display: flex; align-items: center; justify-content: space-between; gap: 1.5rem;
       background: rgba(224, 242, 241, 0.4);
-      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-      border-radius: 1rem; padding: 2rem 2.5rem;
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
       border: 1px solid rgba(178, 223, 219, 0.5);
-      box-shadow: 0 2px 16px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255,255,255,0.5);
-      margin-bottom: 2.5rem; gap: 1.5rem; flex-wrap: wrap;
+      border-radius: 1rem; padding: 1.5rem 1.75rem; margin-bottom: 2rem;
     }
     .reflection-topic-label {
-      font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.08em; color: #00796b; margin-bottom: 0.25rem; display: block;
+      display: block; font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; color: #00796b; margin-bottom: 0.35rem;
     }
-    .reflection-topic-name { font-size: 1.875rem; font-weight: 800; color: #0f172a; margin: 0; }
-    .reflection-topic-meta { font-size: 0.95rem; color: #475569; margin-top: 0.5rem; font-weight: 500; }
-    .reflection-download-btn {
-      display: flex; align-items: center; gap: 0.5rem;
-      padding: 0.7rem 1.5rem; border-radius: 0.75rem;
+    .reflection-topic-name { font-size: 1.75rem; font-weight: 800; color: #0f172a; margin: 0; }
+    .reflection-topic-right { text-align: right; flex-shrink: 0; }
+    .reflection-duration { display: block; font-size: 1.5rem; font-weight: 800; color: #0f172a; font-variant-numeric: tabular-nums; }
+    .reflection-duration-label {
+      font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; color: #00796b;
+    }
+    @media (max-width: 720px) {
+      .reflection-topic-card { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
+      .reflection-topic-right { text-align: left; }
+    }
+
+    /* One column, in reading order: vocabulary → what you covered → what to revisit */
+    .reflection-stack { display: flex; flex-direction: column; gap: 1.25rem; }
+    .reflection-card {
       background: rgba(255, 255, 255, 0.55);
       backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-      border: 1px solid rgba(178, 223, 219, 0.5); color: #00796b;
-      font-family: inherit; font-size: 0.875rem; font-weight: 600;
-      cursor: pointer; transition: all 0.2s; white-space: nowrap;
-    }
-    .reflection-download-btn:hover { background: #00796b; color: #fff; border-color: #00796b; }
-    .reflection-download-icon { font-size: 1rem; }
-    /* Bento grid */
-    .reflection-bento { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
-    .reflection-bento .bento-row1 { grid-column: span 1; }
-    .reflection-bento .bento-full { grid-column: 1 / -1; }
-    @media (max-width: 768px) {
-      .reflection-bento { grid-template-columns: 1fr; }
-      .reflection-bento .bento-row1, .reflection-bento .bento-full { grid-column: span 1; }
-      .reflection-topic-card { flex-direction: column; align-items: flex-start; }
-    }
-    /* Cards — frosted glass */
-    .reflection-card {
-      padding: 1.5rem; border-radius: 1rem;
-      background: rgba(255, 255, 255, 0.5);
-      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
       border: 1px solid rgba(255, 255, 255, 0.6);
-      box-shadow: 0 2px 16px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255,255,255,0.6);
-      transition: box-shadow 0.25s, transform 0.25s;
-    }
-    .reflection-card:hover {
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255,255,255,0.7);
-      transform: translateY(-1px);
+      border-radius: 1rem; padding: 1.5rem 1.75rem;
+      box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
     }
     .reflection-card h3 {
-      font-size: 1.15rem; font-weight: 700; color: #0f172a;
-      margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;
+      display: flex; align-items: center; gap: 0.5rem; margin: 0 0 1rem;
+      font-size: 1.0625rem; font-weight: 800; color: #0f172a;
     }
     .rcard-icon { font-size: 1.1rem; }
-    .rcard-icon-strength { color: #0d9488; }
     .rcard-icon-gap { color: #f472b6; }
-    /* Card item rows */
-    .rcard-items { display: flex; flex-direction: column; gap: 0.5rem; }
-    .rcard-item {
-      display: flex; align-items: center; gap: 0.75rem;
-      padding: 0.85rem 1rem; border-radius: 0.75rem;
-      border: 1px solid rgba(255, 255, 255, 0.4);
-      font-size: 0.9375rem; font-weight: 600; color: #334155;
-    }
-    .rcard-item-icon { font-size: 1rem; flex-shrink: 0; }
-    .card-strength .rcard-item { background: rgba(224,242,241,0.35); }
-    .card-strength .rcard-item-icon { color: #0d9488; }
-    .card-strength .reflection-highlight { font-weight: 700; color: #0d9488; }
-    .card-gap .rcard-item { background: rgba(252,231,243,0.3); }
-    .card-gap .rcard-item-icon { color: #f472b6; }
-    .card-gap .reflection-highlight { font-weight: 700; color: #e11d48; }
-    /* Vocabulary tags */
+
+    /* Key vocabulary — pills */
     .rcard-vocab-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; }
     .rcard-vocab-tag {
-      padding: 0.5rem 1rem; background: rgba(224, 242, 241, 0.25); color: #0d9488;
-      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-      border: 1px solid rgba(13, 148, 136, 0.2); border-radius: 999px;
-      font-size: 0.8125rem; font-weight: 700;
+      padding: 0.4rem 0.85rem; border-radius: 999px;
+      background: rgba(224, 242, 241, 0.7); border: 1px solid rgba(178, 223, 219, 0.7);
+      font-size: 0.875rem; font-weight: 600; color: #00695c;
     }
-    /* Next steps */
-    .rcard-next-steps { list-style: disc; padding-left: 1.25rem; margin: 0; }
-    .rcard-next-steps li {
-      font-size: 0.9375rem; font-weight: 500; color: #334155;
-      padding: 0.35rem 0; line-height: 1.6;
+
+    /* What you covered — numbered list */
+    .rcard-topics { list-style: none; margin: 0; padding: 0; counter-reset: rtopic; }
+    .rcard-topics li {
+      counter-increment: rtopic; position: relative;
+      padding: 0.6rem 0 0.6rem 2.25rem; font-size: 1rem; line-height: 1.55; color: #1e293b;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.06);
     }
-    .card-improvement .reflection-highlight { font-weight: 700; color: #0d9488; }
-    /* Questions */
-    .rcard-questions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-    @media (max-width: 600px) { .rcard-questions-grid { grid-template-columns: 1fr; } }
-    .rcard-question {
-      padding: 1rem 1.25rem; background: rgba(255,243,224,0.35);
-      border-radius: 0.75rem; border-left: 4px solid #ffcc80;
-      font-size: 0.9375rem; font-weight: 500; font-style: italic; color: #334155;
+    .rcard-topics li:last-child { border-bottom: none; }
+    .rcard-topics li::before {
+      content: counter(rtopic); position: absolute; left: 0; top: 0.55rem;
+      width: 1.5rem; height: 1.5rem; border-radius: 999px;
+      background: rgba(224, 242, 241, 0.9); color: #00695c;
+      font-size: 0.75rem; font-weight: 800; display: flex; align-items: center; justify-content: center;
     }
-    /* Presentation feedback */
-    .rcard-feedback-box {
-      padding: 1.25rem 1.5rem; background: rgba(224,242,241,0.25);
-      border-radius: 0.75rem; border: 1px solid rgba(255, 255, 255, 0.4);
+
+    /* Concepts to revisit — each one is a way back into learning */
+    .rcard-gap-hint { margin: -0.5rem 0 1rem; font-size: 0.875rem; color: #64748b; }
+    .rcard-items { display: flex; flex-direction: column; gap: 0.6rem; }
+    .rcard-gap-btn {
+      display: flex; align-items: center; gap: 0.75rem; width: 100%; text-align: left;
+      padding: 0.85rem 1rem; border-radius: 0.75rem; cursor: pointer;
+      background: rgba(252, 231, 243, 0.35); border: 1px solid rgba(244, 114, 182, 0.3);
+      font: inherit; font-size: 0.95rem; line-height: 1.5; color: #1e293b;
+      transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
     }
-    .rcard-feedback-box .reflection-skill-text {
-      font-size: 0.9375rem; color: #334155; line-height: 1.7;
+    .rcard-gap-btn:hover, .rcard-gap-btn:focus-visible {
+      background: rgba(252, 231, 243, 0.6); border-color: #f472b6; transform: translateY(-1px);
     }
-    /* Mechanics grid */
-    .rcard-mechanics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
-    @media (max-width: 600px) { .rcard-mechanics-grid { grid-template-columns: repeat(2, 1fr); } }
-    .rcard-mechanic {
-      display: flex; flex-direction: column; align-items: center;
-      padding: 1.25rem 0.75rem; background: rgba(224, 242, 241, 0.15);
-      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-      border-radius: 0.75rem; border: 1px solid rgba(13, 148, 136, 0.15); text-align: center;
+    .rcard-gap-text { flex: 1; }
+    .rcard-gap-cta {
+      flex-shrink: 0; font-size: 0.8125rem; font-weight: 700; color: #be185d; white-space: nowrap;
     }
-    .rcard-mechanic-icon { font-size: 1.5rem; margin-bottom: 0.4rem; color: rgba(13, 148, 136, 0.55); }
-    .rcard-mechanic-label { font-size: 0.8125rem; font-weight: 800; color: #0f172a; }
-    .rcard-mechanic-value { font-size: 0.75rem; font-weight: 700; color: #64748b; }
+    .card-gap .reflection-highlight { font-weight: 700; color: #e11d48; }
     .reflection-empty-msg { font-size: 0.95rem; color: #94a3b8; font-style: italic; padding: 0.5rem 0; }
     /* Actions — glass buttons */
     .reflection-actions { display: flex; gap: 0.75rem; justify-content: center; margin-top: 3rem; flex-wrap: wrap; }
@@ -1076,17 +1043,6 @@
       border: 1px solid var(--poken-border-solid); border-radius: 999px; padding: 0.3rem 0.75rem;
     }
     .learn-suggest button:hover { border-color: var(--poken-accent); color: var(--poken-accent); }
-    .reflection-digback {
-      max-width: 44rem; margin: 2.5rem auto 0; padding: 0 1rem;
-      display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
-    }
-    .reflection-digback[hidden] { display: none; }
-    .reflection-digback-label { font-size: 0.8125rem; color: var(--poken-text-secondary); }
-    .reflection-digback button {
-      font-family: inherit; font-size: 0.8125rem; color: var(--poken-text); background: #fff; cursor: pointer;
-      border: 1px solid var(--poken-border-solid); border-radius: 999px; padding: 0.35rem 0.85rem;
-    }
-    .reflection-digback button:hover { border-color: var(--poken-accent); color: var(--poken-accent); }
     /* Mastery, set on each explanation after a teaching session. */
     .learn-node[data-mastery="shaky"] > .learn-crumb::after { content: " · shaky"; color: #B45309; font-weight: 600; }
     .learn-node[data-mastery="taught"] > .learn-crumb::after { content: " · taught"; color: #047857; font-weight: 600; }
@@ -1528,94 +1484,42 @@
     <p class="reflection-loading-text">Your student is writing up their reflection…</p>
   </div>
 
-  <!-- REFLECTION (Bento) -->
+  <!-- REFLECTION -->
   <div id="reflection-screen">
     <div class="reflection-inner">
-      <!-- Header -->
       <h2 class="reflection-title">Session Reflection</h2>
       <p class="reflection-summary" id="reflectionSummary"></p>
 
-      <!-- Topic card with download button -->
       <div class="reflection-topic-card" id="reflectionRecap">
         <div class="reflection-topic-left">
-          <span class="reflection-topic-label">Topic of Discussion</span>
+          <span class="reflection-topic-label" id="reflectionTopicLabel">Topic of Discussion</span>
           <h3 class="reflection-topic-name" id="reflectionRecapTopic"></h3>
-          <p class="reflection-topic-meta">
-            <span id="reflectionRecapMode"></span> &bull;
-            <span id="reflectionRecapDuration"></span> Session
-          </p>
         </div>
-        <button class="reflection-download-btn" id="downloadSummaryBtn" type="button" title="Download PDF summary">
-          <span class="reflection-download-icon">&#x1F4E5;</span> Download Summary
-        </button>
+        <div class="reflection-topic-right">
+          <span class="reflection-duration" id="reflectionRecapDuration"></span>
+          <span class="reflection-duration-label" id="reflectionSessionLabel">Session</span>
+        </div>
       </div>
 
-      <!-- Two-column grid -->
-      <div class="reflection-bento">
-        <!-- What Went Well -->
-        <div class="reflection-card card-strength bento-row1" id="reflectionCardStrength">
-          <h3><span class="rcard-icon rcard-icon-strength">&#x2714;</span> What Went Well</h3>
-          <div class="rcard-items" id="reflectionStrengths"></div>
-        </div>
-        <!-- Concepts to Revisit -->
-        <div class="reflection-card card-gap bento-row1" id="reflectionCardGap">
-          <h3><span class="rcard-icon rcard-icon-gap">&#x26A0;</span> Concepts to Revisit</h3>
-          <div class="rcard-items" id="reflectionGaps"></div>
-          <p class="reflection-empty-msg" id="reflectionGapsEmpty" style="display:none;">Mastery achieved! You explained every point clearly.</p>
-        </div>
-        <!-- Key Vocabulary -->
-        <div class="reflection-card card-vocab bento-row1" id="reflectionCardVocab">
+      <div class="reflection-stack">
+        <div class="reflection-card card-vocab" id="reflectionCardVocab">
           <h3>Key Vocabulary</h3>
           <div class="rcard-vocab-tags" id="reflectionVocabulary"></div>
         </div>
-        <!-- Next Steps -->
-        <div class="reflection-card card-improvement bento-row1" id="reflectionCardImprovement">
-          <h3>Next Steps</h3>
-          <ul class="rcard-next-steps" id="reflectionImprovementsChecklist"></ul>
+
+        <div class="reflection-card card-topics" id="reflectionCardTopics">
+          <h3>What You Covered</h3>
+          <ol class="rcard-topics" id="reflectionTopics"></ol>
         </div>
-        <!-- Student Questions -->
-        <div class="reflection-card card-questions bento-full" id="reflectionCardQuestions">
-          <h3>Student Questions</h3>
-          <div class="rcard-questions-grid" id="reflectionQuestions"></div>
-        </div>
-        <!-- Presentation Skills Feedback -->
-        <div class="reflection-card card-presentation bento-full" id="reflectionCardPresentation">
-          <h3>Presentation Skills Feedback</h3>
-          <div class="rcard-feedback-box">
-            <div class="reflection-skill-text" id="reflectionVisualsGestures">—</div>
-          </div>
-          <p class="reflection-empty-msg" id="reflectionVisualsEmpty" style="display:none;"></p>
-        </div>
-        <!-- Presentation & Mechanics -->
-        <div class="reflection-card card-mechanics bento-full" id="reflectionCardMechanics">
-          <h3>Presentation &amp; Mechanics</h3>
-          <div class="rcard-mechanics-grid" id="reflectionMechanicsGrid">
-            <div class="rcard-mechanic">
-              <span class="rcard-mechanic-icon">&#x1F50A;</span>
-              <span class="rcard-mechanic-label">Clarity</span>
-              <span class="rcard-mechanic-value" id="mechClarity">—</span>
-            </div>
-            <div class="rcard-mechanic">
-              <span class="rcard-mechanic-icon">&#x1F441;</span>
-              <span class="rcard-mechanic-label">Visuals</span>
-              <span class="rcard-mechanic-value" id="mechVisuals">—</span>
-            </div>
-            <div class="rcard-mechanic">
-              <span class="rcard-mechanic-icon">&#x23F1;</span>
-              <span class="rcard-mechanic-label">Pacing</span>
-              <span class="rcard-mechanic-value" id="mechPacing">—</span>
-            </div>
-            <div class="rcard-mechanic">
-              <span class="rcard-mechanic-icon">&#x1F6E0;</span>
-              <span class="rcard-mechanic-label">Tools</span>
-              <span class="rcard-mechanic-value" id="mechTools">—</span>
-            </div>
-          </div>
+
+        <div class="reflection-card card-gap" id="reflectionCardGap">
+          <h3><span class="rcard-icon rcard-icon-gap">&#x26A0;</span> Concepts to Revisit</h3>
+          <p class="rcard-gap-hint" id="reflectionGapHint">Pick one to go learn it, then come back and teach it again.</p>
+          <div class="rcard-items" id="reflectionGaps"></div>
+          <p class="reflection-empty-msg" id="reflectionGapsEmpty" style="display:none;">Mastery achieved! You explained every point clearly.</p>
         </div>
       </div>
 
-      <!-- Actions -->
-      <div class="reflection-digback" id="reflectionDigBack" hidden></div>
       <div class="reflection-actions">
         <button class="reflection-btn primary" id="teachAgainBtn" type="button">&#x1F393; Teach Again</button>
         <button class="reflection-btn" id="backToLearnBtn" type="button">&#x1F4DA; Back to learning</button>
@@ -1624,7 +1528,6 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js"></script>
 
   </div>
 

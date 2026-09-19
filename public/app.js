@@ -49,10 +49,6 @@ const wbResetViewBtn  = document.getElementById("wbResetViewBtn");
 const transcriptBody  = document.getElementById("transcriptBody");
 const coachingBody    = document.getElementById("coachingBody");
 const reflectionSummary    = document.getElementById("reflectionSummary");
-const reflectionStrengths  = document.getElementById("reflectionStrengths");
-const reflectionGaps       = document.getElementById("reflectionGaps");
-const reflectionQuestions  = document.getElementById("reflectionQuestions");
-const reflectionVisualsGestures = document.getElementById("reflectionVisualsGestures");
 const teachAgainBtn   = document.getElementById("teachAgainBtn");
 const changeTopicBtn  = document.getElementById("changeTopicBtn");
 const reflectionLoadingScreen = document.getElementById("reflection-loading-screen");
@@ -2071,165 +2067,105 @@ function showLanding() {
   landingScreen.classList.remove("fade-out");
 }
 
-// Store last reflection data for PDF download
-let lastReflectionData = null;
-
 function showReflection(data) {
-  lastReflectionData = data;
-  // Learn Mode marks the explanations behind any gaps as shaky and offers to dig back in.
+  // Learn Mode marks the explanations behind any gaps as shaky, so the tree shows what to dig into.
   try { window.pokenLearnReflection?.(data); } catch (e) { console.warn("[Poken] learn reflection hook:", e); }
   if (reflectionLoadingScreen) reflectionLoadingScreen.classList.remove("visible");
   sessionScreen.style.display = "none";
   reflectionScreen.style.display = "block";
+  window.scrollTo(0, 0);
 
-  // Apply localized labels if provided (non-English sessions)
+  // Section headers: the model translates them for a non-English session. Always written, never
+  // left as-is — teaching again in another language must not keep the previous session's headers.
   const labels = data.uiLabels || {};
-  if (labels.title) {
-    const titleEl = document.querySelector(".reflection-title");
-    if (titleEl) titleEl.textContent = labels.title;
-  }
-  const labelMap = {
-    reflectionCardStrength: labels.strengths,
-    reflectionCardGap: labels.gaps,
-    reflectionCardVocab: labels.vocabulary,
-    reflectionCardImprovement: labels.nextSteps,
-    reflectionCardQuestions: labels.questions,
-    reflectionCardPresentation: labels.presentationFeedback,
-    reflectionCardMechanics: labels.mechanics,
-  };
-  for (const [cardId, label] of Object.entries(labelMap)) {
-    if (!label) continue;
+  const L = (key, english) => labels[key] || english;
+  const setText = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+  const titleEl = document.querySelector(".reflection-title");
+  if (titleEl) titleEl.textContent = L("title", "Session Reflection");
+  setText("reflectionTopicLabel", L("topicLabel", "Topic of Discussion"));
+  setText("reflectionSessionLabel", L("sessionLabel", "Session"));
+  setText("reflectionGapHint", L("gapHint", "Pick one to go learn it, then come back and teach it again."));
+  for (const [cardId, label] of Object.entries({
+    reflectionCardVocab: L("vocabulary", "Key Vocabulary"),
+    reflectionCardTopics: L("topics", "What You Covered"),
+    reflectionCardGap: L("gaps", "Concepts to Revisit"),
+  })) {
     const h3 = document.querySelector(`#${cardId} h3`);
     if (!h3) continue;
     const icon = h3.querySelector(".rcard-icon");
-    if (icon) {
-      h3.textContent = "";
-      h3.appendChild(icon);
-      h3.append(" " + label);
-    } else {
-      h3.textContent = label;
-    }
+    h3.textContent = "";
+    if (icon) { h3.appendChild(icon); h3.append(" " + label); } else { h3.textContent = label; }
   }
-  if (labels.teachAgain) teachAgainBtn.innerHTML = `&#x1F393; ${labels.teachAgain}`;
-  if (labels.changeTopic) changeTopicBtn.textContent = labels.changeTopic;
-  const dlBtn = document.getElementById("downloadSummaryBtn");
-  if (labels.downloadSummary && dlBtn) dlBtn.innerHTML = `<span class="reflection-download-icon">&#x1F4E5;</span> ${labels.downloadSummary}`;
+  teachAgainBtn.innerHTML = `&#x1F393; ${escapeHtml(L("teachAgain", "Teach Again"))}`;
+  const backBtn = document.getElementById("backToLearnBtn");
+  if (backBtn) backBtn.innerHTML = `&#x1F4DA; ${escapeHtml(L("backToLearning", "Back to learning"))}`;
+  changeTopicBtn.textContent = L("changeTopic", "Change topic");
 
   reflectionSummary.textContent = data.summary || "";
-
-  const recapTopic = document.getElementById("reflectionRecapTopic");
-  const recapMode = document.getElementById("reflectionRecapMode");
-  const recapDuration = document.getElementById("reflectionRecapDuration");
-  if (recapTopic) recapTopic.textContent = sessionTopic || "—";
-  if (recapMode) recapMode.textContent = sessionRecapLabel();
-  if (recapDuration) recapDuration.textContent = formatTime(sessionDuration) || "0:00";
+  setText("reflectionRecapTopic", sessionTopic || "—");
+  setText("reflectionRecapDuration", formatTime(sessionDuration) || "0:00");
 
   function wrapBold(s) {
-    return s.replace(/\*\*(.*?)\*\*/g, (_, t) => `<span class="reflection-highlight">${escapeHtml(t)}</span>`);
+    return escapeHtml(s).replace(/\*\*(.*?)\*\*/g, (_, t) => `<span class="reflection-highlight">${t}</span>`);
   }
 
-  // Strengths — card-style items with icons
-  const strengthIcons = ["\u{1F60A}", "\u{1F465}", "\u{1F551}"];
-  if (reflectionStrengths) {
-    reflectionStrengths.innerHTML = "";
-    (data.strengths || []).forEach((item, i) => {
-      const raw = typeof item === "string" ? item : String(item);
-      const div = document.createElement("div");
-      div.className = "rcard-item";
-      div.innerHTML = `<span class="rcard-item-icon">${strengthIcons[i % strengthIcons.length]}</span> <span>${wrapBold(raw)}</span>`;
-      reflectionStrengths.appendChild(div);
-    });
-  }
-
-  // Gaps — card-style items with icons
-  const gapIcons = ["\u{1F504}", "\u{2757}", "\u{1F914}"];
-  const gapsList = document.getElementById("reflectionGaps");
-  const gapsEmpty = document.getElementById("reflectionGapsEmpty");
-  if (gapsList && gapsEmpty) {
-    gapsList.innerHTML = "";
-    if (labels.gapsEmpty) gapsEmpty.textContent = labels.gapsEmpty;
-    if (!data.gaps || data.gaps.length === 0) {
-      gapsEmpty.style.display = "block";
-    } else {
-      gapsEmpty.style.display = "none";
-      data.gaps.forEach((item, i) => {
-        const raw = typeof item === "string" ? item : String(item);
-        const div = document.createElement("div");
-        div.className = "rcard-item";
-        div.innerHTML = `<span class="rcard-item-icon">${gapIcons[i % gapIcons.length]}</span> <span>${wrapBold(raw)}</span>`;
-        gapsList.appendChild(div);
-      });
-    }
-  }
-
-  // Key Vocabulary — pill tags
+  // Key vocabulary — pills
   const vocabEl = document.getElementById("reflectionVocabulary");
   if (vocabEl) {
-    vocabEl.innerHTML = "";
+    vocabEl.replaceChildren();
     (data.keyVocabulary || []).forEach(term => {
       const span = document.createElement("span");
       span.className = "rcard-vocab-tag";
-      span.textContent = typeof term === "string" ? term : String(term);
+      span.textContent = String(term);
       vocabEl.appendChild(span);
     });
-  }
-
-  // Next steps — bullet list
-  const checklistEl = document.getElementById("reflectionImprovementsChecklist");
-  if (checklistEl) {
-    checklistEl.innerHTML = "";
-    (data.improvements || []).forEach(text => {
-      const raw = typeof text === "string" ? text : String(text);
-      const li = document.createElement("li");
-      li.innerHTML = wrapBold(raw);
-      checklistEl.appendChild(li);
-    });
-    if (!data.improvements || data.improvements.length === 0) {
-      const li = document.createElement("li");
-      li.textContent = "No steps suggested.";
-      li.style.color = "#94a3b8";
-      checklistEl.appendChild(li);
+    if (!vocabEl.childElementCount) {
+      const span = document.createElement("span");
+      span.className = "reflection-empty-msg";
+      span.textContent = "No terms picked up this session.";
+      vocabEl.appendChild(span);
     }
   }
 
-  // Student questions — quote cards
-  if (reflectionQuestions) {
-    reflectionQuestions.innerHTML = "";
-    (data.topQuestions || []).forEach(q => {
-      const raw = typeof q === "string" ? q : String(q);
-      const div = document.createElement("div");
-      div.className = "rcard-question";
-      div.textContent = raw.startsWith('"') ? raw : `"${raw}"`;
-      reflectionQuestions.appendChild(div);
+  // What you covered — the session's map, in the order it happened
+  const topicsEl = document.getElementById("reflectionTopics");
+  if (topicsEl) {
+    topicsEl.replaceChildren();
+    (data.topicsCovered || []).forEach(text => {
+      const li = document.createElement("li");
+      li.textContent = String(text);
+      topicsEl.appendChild(li);
     });
-  }
-
-  // Presentation skills feedback — combined text
-  const ps = data.presentationSkills || {};
-  const feedbackParts = [ps.visualsAndGestures, ps.explanations, ps.mediaUsage].filter(s => s && s.trim() && s !== "—");
-  if (reflectionVisualsGestures) {
-    reflectionVisualsGestures.textContent = feedbackParts.length > 0 ? feedbackParts.join(" ") : "No presentation feedback available.";
-  }
-  const visualsEmpty = document.getElementById("reflectionVisualsEmpty");
-  if (visualsEmpty) {
-    if (feedbackParts.length === 0) {
-      visualsEmpty.textContent = "Tip: Next time, try using the whiteboard to illustrate " + (sessionTopic || "your topic") + ".";
-      visualsEmpty.style.display = "block";
-    } else {
-      visualsEmpty.style.display = "none";
+    if (!topicsEl.childElementCount) {
+      const li = document.createElement("li");
+      li.textContent = data.summary || "Not enough of the session to summarise.";
+      topicsEl.appendChild(li);
     }
   }
 
-  // Presentation mechanics — 4-column ratings
-  const mech = data.presentationMechanics || {};
-  const mechClarity = document.getElementById("mechClarity");
-  const mechVisuals = document.getElementById("mechVisuals");
-  const mechPacing = document.getElementById("mechPacing");
-  const mechTools = document.getElementById("mechTools");
-  if (mechClarity) mechClarity.textContent = mech.clarity || "—";
-  if (mechVisuals) mechVisuals.textContent = mech.visuals || "—";
-  if (mechPacing) mechPacing.textContent = mech.pacing || "—";
-  if (mechTools) mechTools.textContent = mech.tools || "—";
+  // Concepts to revisit — each one hands you back to Learn Mode for that concept
+  const gapsList = document.getElementById("reflectionGaps");
+  const gapsEmpty = document.getElementById("reflectionGapsEmpty");
+  const gapHint = document.getElementById("reflectionGapHint");
+  if (gapsList && gapsEmpty) {
+    gapsList.replaceChildren();
+    gapsEmpty.textContent = L("gapsEmpty", "Mastery achieved! You explained every point clearly.");
+    const gaps = data.gaps || [];
+    gapsEmpty.style.display = gaps.length ? "none" : "block";
+    if (gapHint) gapHint.style.display = gaps.length ? "" : "none";
+    gaps.forEach((item, i) => {
+      const raw = String(item);
+      const node = (data.gapNodes || [])[i] || {};
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "rcard-gap-btn";
+      btn.innerHTML =
+        `<span class="rcard-gap-text">${wrapBold(raw)}</span>` +
+        `<span class="rcard-gap-cta">${escapeHtml(labels.revisitCta || "Learn this")} &rarr;</span>`;
+      btn.addEventListener("click", () => revisitConcept(node.label || raw, node.nodeId || null));
+      gapsList.appendChild(btn);
+    });
+  }
 
   pushRecentTopic(sessionTopic);
   try {
@@ -2237,6 +2173,21 @@ function showReflection(data) {
     const totalSec = (raw ? parseInt(raw, 10) : 0) + sessionDuration;
     localStorage.setItem("poken_total_seconds", String(totalSec));
   } catch (_) {}
+}
+
+// Closing the loop: a concept from the reflection sends you back into Learn Mode to study it,
+// either at the explanation it came from or as a fresh topic.
+function revisitConcept(label, nodeId) {
+  if (typeof window.pokenLearnRevisit === "function") {
+    window.pokenLearnRevisit(label, nodeId);
+    return;
+  }
+  // Learn Mode unavailable: fall back to setting up a teaching session on that concept.
+  const custom = document.getElementById("customTopic");
+  if (custom) custom.value = label;
+  disconnect(true);
+  reflectionScreen.style.display = "none";
+  setupScreen.style.display = "block";
 }
 
 function disconnect(keepScreen = false) {
@@ -2792,93 +2743,6 @@ function sessionRecapLabel() {
   const persona = String(selectedPersona || "").trim();
   const personaLabel = persona ? persona.charAt(0).toUpperCase() + persona.slice(1) + " student" : "Student";
   return personaLabel + "  \u2022  " + (sessionLanguage || "English");
-}
-
-// ── PDF Download ─────────────────────────────────────────────────────────────
-const downloadSummaryBtn = document.getElementById("downloadSummaryBtn");
-if (downloadSummaryBtn) {
-  downloadSummaryBtn.addEventListener("click", () => {
-    if (!lastReflectionData) return;
-    const data = lastReflectionData;
-    const { jsPDF } = window.jspdf || {};
-    if (!jsPDF) { alert("PDF library not loaded. Please try again."); return; }
-    const doc = new jsPDF({ unit: "mm", format: "a4" });
-    const pw = 210; // page width
-    const margin = 20;
-    const tw = pw - margin * 2; // text width
-    let y = 20;
-
-    function addText(text, size, style, color, maxW) {
-      doc.setFontSize(size);
-      doc.setFont("helvetica", style);
-      doc.setTextColor(...color);
-      const lines = doc.splitTextToSize(text, maxW || tw);
-      if (y + lines.length * size * 0.45 > 280) { doc.addPage(); y = 20; }
-      doc.text(lines, margin, y);
-      y += lines.length * size * 0.45 + 2;
-    }
-
-    function addSection(title, items, bullet) {
-      y += 4;
-      if (y > 265) { doc.addPage(); y = 20; }
-      addText(title, 13, "bold", [15, 23, 42]);
-      (items || []).forEach(item => {
-        const raw = (typeof item === "string" ? item : String(item)).replace(/\*\*/g, "");
-        addText((bullet || "\u2022") + "  " + raw, 10, "normal", [51, 65, 85]);
-      });
-    }
-
-    // Title
-    addText("Session Reflection", 22, "bold", [15, 23, 42]);
-    y += 2;
-    // Summary
-    if (data.summary) addText(data.summary, 10, "normal", [100, 116, 139]);
-    y += 4;
-    // Topic block
-    addText("Topic: " + (sessionTopic || "—"), 14, "bold", [0, 121, 107]);
-    addText(sessionRecapLabel() + "  \u2022  " + (formatTime(sessionDuration) || "0:00") + " Session", 10, "normal", [71, 85, 105]);
-    y += 2;
-
-    // Sections
-    addSection("What Went Well", data.strengths);
-    addSection("Concepts to Revisit", data.gaps);
-
-    if (data.keyVocabulary && data.keyVocabulary.length > 0) {
-      y += 4;
-      addText("Key Vocabulary", 13, "bold", [15, 23, 42]);
-      addText(data.keyVocabulary.join("  \u2022  "), 10, "normal", [123, 31, 162]);
-    }
-
-    addSection("Next Steps", data.improvements);
-    addSection("Student Questions", data.topQuestions, "\u201C");
-
-    // Presentation feedback
-    const ps = data.presentationSkills || {};
-    const fb = [ps.visualsAndGestures, ps.explanations, ps.mediaUsage].filter(s => s && s.trim() && s !== "\u2014");
-    if (fb.length > 0) {
-      y += 4;
-      addText("Presentation Skills Feedback", 13, "bold", [15, 23, 42]);
-      addText(fb.join(" "), 10, "normal", [51, 65, 85]);
-    }
-
-    // Mechanics
-    const mech = data.presentationMechanics || {};
-    if (mech.clarity || mech.visuals || mech.pacing || mech.tools) {
-      y += 4;
-      addText("Presentation & Mechanics", 13, "bold", [15, 23, 42]);
-      addText(`Clarity: ${mech.clarity || "\u2014"}   |   Visuals: ${mech.visuals || "\u2014"}   |   Pacing: ${mech.pacing || "\u2014"}   |   Tools: ${mech.tools || "\u2014"}`, 10, "normal", [51, 65, 85]);
-    }
-
-    // Footer
-    y += 8;
-    if (y > 275) { doc.addPage(); y = 20; }
-    doc.setFontSize(8);
-    doc.setTextColor(148, 163, 184);
-    doc.text("Generated by Poken \u2014 Learn by Teaching", margin, 285);
-
-    const filename = "Poken-Reflection-" + (sessionTopic || "session").replace(/[^a-zA-Z0-9]/g, "-").slice(0, 40) + ".pdf";
-    doc.save(filename);
-  });
 }
 
 // ── Boot ─────────────────────────────────────────────────────────────────────

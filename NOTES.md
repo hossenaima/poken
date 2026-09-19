@@ -92,6 +92,15 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
 - **Teacher transcription is Gemini Live's `inputTranscription`**; an ElevenLabs Scribe
   integration was tried and removed (2026-09-19) — its punctuation and segment timing caused
   more transcript bugs than it fixed.
+- **The reflection page is a loop, not a report card.** It shows, in order: the session's topic and
+  length, key vocabulary, a numbered list of what was covered (`topicsCovered`), and the concepts to
+  revisit. Each concept is a button: it carries a short `label` (and, when the session was taught off
+  a Learn Mode tree, the `nodeId` it came from), and clicking it hands you to Learn Mode — scrolled to
+  that explanation, or starting it as a fresh topic. So a gap goes study → teach again. Removed
+  (2026-09-19) as noise: strengths, student questions, next steps, presentation skills, presentation
+  mechanics, and the PDF download (with the jsPDF dependency). Section headers are always written from
+  `uiLabels` with an English default, so teaching again in another language can't keep stale headers.
+
 - **The student cannot draw.** On-demand diagram generation was removed (2026-09-19): the image
   model added seconds of latency to a request that also fired on phrases that were not requests,
   and the sketch often did not match what the teacher had just explained. Gone: the image model

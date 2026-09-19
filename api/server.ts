@@ -450,83 +450,67 @@ export function parseLearnIndex(nodes: unknown): LearnIndexEntry[] {
 }
 
 // ── Reflection ───────────────────────────────────────────────────────────────
-export interface ReflectionGapNode { text: string; nodeId: string | null }
+// A gap is one concept the teacher left shaky. `label` is a 2-4 word name for it, used as the
+// topic when the teacher clicks it to go learn it; `nodeId` points at the Learn Mode explanation
+// it came from, when this session was taught off a tree.
+export interface ReflectionGapNode { text: string; label: string; nodeId: string | null }
 
 export interface Reflection {
   summary: string;
-  strengths: string[];
+  topicsCovered: string[];
   gaps: string[];
   gapNodes: ReflectionGapNode[];
-  topQuestions: string[];
-  improvements: string[];
   keyVocabulary: string[];
-  presentationSkills: { visualsAndGestures: string; explanations: string; mediaUsage: string };
-  presentationMechanics: { clarity: string; visuals: string; pacing: string; tools: string };
   uiLabels?: Record<string, string>;
 }
 
-const REFLECTION_UI_LABEL_KEYS = ['title', 'summary', 'strengths', 'gaps', 'gapsEmpty', 'vocabulary', 'nextSteps', 'questions', 'presentationFeedback', 'mechanics', 'teachAgain', 'changeTopic', 'downloadSummary'];
+const REFLECTION_UI_LABEL_KEYS = ['title', 'topics', 'vocabulary', 'gaps', 'gapsEmpty', 'revisitCta', 'topicLabel', 'sessionLabel', 'teachAgain', 'backToLearning', 'changeTopic'];
 
 export function buildReflectionSchema(hasIndex: boolean): types.Schema {
   const T = types.Type;
   const stringArray: types.Schema = { type: T.ARRAY, items: { type: T.STRING } };
+  const gapNodeProps: Record<string, types.Schema> = { text: { type: T.STRING }, label: { type: T.STRING } };
+  const gapNodeRequired = ['text', 'label'];
+  // nodeId is only offered when there are real ids to choose from, so the model can't invent one.
+  if (hasIndex) {
+    gapNodeProps.nodeId = { type: T.STRING, nullable: true };
+    gapNodeRequired.push('nodeId');
+  }
   const properties: Record<string, types.Schema> = {
     summary: { type: T.STRING },
-    strengths: stringArray,
+    topicsCovered: stringArray,
     gaps: stringArray,
-    topQuestions: stringArray,
-    improvements: stringArray,
+    gapNodes: { type: T.ARRAY, items: { type: T.OBJECT, properties: gapNodeProps, required: gapNodeRequired } },
     keyVocabulary: stringArray,
-    presentationSkills: {
-      type: T.OBJECT,
-      properties: { visualsAndGestures: { type: T.STRING }, explanations: { type: T.STRING }, mediaUsage: { type: T.STRING } },
-      required: ['visualsAndGestures', 'explanations', 'mediaUsage'],
-    },
-    presentationMechanics: {
-      type: T.OBJECT,
-      properties: { clarity: { type: T.STRING }, visuals: { type: T.STRING }, pacing: { type: T.STRING }, tools: { type: T.STRING } },
-      required: ['clarity', 'visuals', 'pacing', 'tools'],
-    },
     uiLabels: {
       type: T.OBJECT,
       properties: Object.fromEntries(REFLECTION_UI_LABEL_KEYS.map(k => [k, { type: T.STRING }])),
       required: REFLECTION_UI_LABEL_KEYS,
     },
   };
-  const required = ['summary', 'strengths', 'gaps', 'topQuestions', 'improvements', 'keyVocabulary', 'presentationSkills', 'presentationMechanics', 'uiLabels'];
-  if (hasIndex) {
-    properties.gapNodes = {
-      type: T.ARRAY,
-      items: {
-        type: T.OBJECT,
-        properties: { text: { type: T.STRING }, nodeId: { type: T.STRING, nullable: true } },
-        required: ['text', 'nodeId'],
-      },
-    };
-    required.push('gapNodes');
-  }
-  return { type: T.OBJECT, properties, required };
+  return {
+    type: T.OBJECT,
+    properties,
+    required: ['summary', 'topicsCovered', 'gaps', 'gapNodes', 'keyVocabulary', 'uiLabels'],
+  };
 }
 
-function fallbackReflection(summary: string, improvements: string[] = []): Reflection {
-  return {
-    summary,
-    strengths: [],
-    gaps: [],
-    gapNodes: [],
-    topQuestions: [],
-    improvements,
-    keyVocabulary: [],
-    presentationSkills: { visualsAndGestures: '', explanations: '', mediaUsage: '' },
-    presentationMechanics: { clarity: 'Fair', visuals: 'Fair', pacing: 'Steady', tools: 'Minimal' },
-  };
+function fallbackReflection(summary: string): Reflection {
+  return { summary, topicsCovered: [], gaps: [], gapNodes: [], keyVocabulary: [] };
 }
 
 function stringList(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [];
 }
 
-// Fills defaults, keeps `gaps` a string[] for the existing UI, and aligns `gapNodes` with it:
+/** Shortens a gap sentence into something usable as a learning topic when the model's label is missing. */
+function gapLabelFrom(text: string): string {
+  const bold = text.match(/\*\*(.+?)\*\*/);
+  const plain = (bold ? bold[1] : text).replace(/\*\*/g, '').replace(/[.!?]+\s*$/, '').trim();
+  return plain.split(/\s+/).slice(0, 6).join(' ');
+}
+
+// Fills defaults, keeps `gaps` a string[] for the UI, and aligns `gapNodes` with it:
 // gapNodes[i].text === gaps[i]; nodeId is one of validIds or null (never a model-invented id).
 export function coerceReflection(parsed: unknown, validIds: string[], topic: string): Reflection {
   const fb = fallbackReflection(`You taught "${topic}". A detailed reflection could not be generated.`);
@@ -535,63 +519,28 @@ export function coerceReflection(parsed: unknown, validIds: string[], topic: str
 
   const gaps = stringList(p.gaps);
   const valid = new Set(validIds);
-  let gapNodes: ReflectionGapNode[] = [];
-  if (valid.size > 0) {
-    const raw = Array.isArray(p.gapNodes) ? p.gapNodes : [];
-    const byText = new Map<string, string | null>();
-    const byIndex: (string | null)[] = [];
-    for (const g of raw) {
-      const text = g && typeof g === 'object' && typeof (g as { text?: unknown }).text === 'string' ? (g as { text: string }).text : null;
-      const rawId = g && typeof g === 'object' ? (g as { nodeId?: unknown }).nodeId : null;
-      const nodeId = typeof rawId === 'string' && valid.has(rawId) ? rawId : null;
-      byIndex.push(nodeId);
-      if (text !== null && !byText.has(text.trim())) byText.set(text.trim(), nodeId);
-    }
-    gapNodes = gaps.map((text, i) => {
-      const id = byText.get(text.trim()) ?? (raw.length === gaps.length ? byIndex[i] : null) ?? null;
-      return { text, nodeId: id };
-    });
+  const raw = Array.isArray(p.gapNodes) ? p.gapNodes : [];
+  const asObj = (g: unknown) => (g && typeof g === 'object' ? (g as Record<string, unknown>) : null);
+  const byText = new Map<string, Record<string, unknown>>();
+  for (const g of raw) {
+    const o = asObj(g);
+    const text = o && typeof o.text === 'string' ? o.text.trim() : null;
+    if (text !== null && !byText.has(text)) byText.set(text, o!);
   }
-
-  const ps = p.presentationSkills;
-  let presentationSkills = fb.presentationSkills;
-  if (Array.isArray(ps)) {
-    presentationSkills = {
-      visualsAndGestures: typeof ps[0] === 'string' ? ps[0] : '',
-      explanations: typeof ps[1] === 'string' ? ps[1] : '',
-      mediaUsage: typeof ps[2] === 'string' ? ps[2] : '',
-    };
-  } else if (ps && typeof ps === 'object') {
-    const o = ps as Record<string, unknown>;
-    presentationSkills = {
-      visualsAndGestures: typeof o.visualsAndGestures === 'string' ? o.visualsAndGestures : '',
-      explanations: typeof o.explanations === 'string' ? o.explanations : '',
-      mediaUsage: typeof o.mediaUsage === 'string' ? o.mediaUsage : '',
-    };
-  }
-
-  let presentationMechanics = fb.presentationMechanics;
-  const pm = p.presentationMechanics;
-  if (pm && typeof pm === 'object' && !Array.isArray(pm)) {
-    const o = pm as Record<string, unknown>;
-    presentationMechanics = {
-      clarity: typeof o.clarity === 'string' ? o.clarity : 'Fair',
-      visuals: typeof o.visuals === 'string' ? o.visuals : 'Fair',
-      pacing: typeof o.pacing === 'string' ? o.pacing : 'Steady',
-      tools: typeof o.tools === 'string' ? o.tools : 'Minimal',
-    };
-  }
+  const gapNodes: ReflectionGapNode[] = gaps.map((text, i) => {
+    const o = byText.get(text.trim()) ?? (raw.length === gaps.length ? asObj(raw[i]) : null);
+    const rawId = o?.nodeId;
+    const nodeId = typeof rawId === 'string' && valid.has(rawId) ? rawId : null;
+    const label = o && typeof o.label === 'string' && o.label.trim() ? o.label.trim() : gapLabelFrom(text);
+    return { text, label, nodeId };
+  });
 
   const out: Reflection = {
     summary: typeof p.summary === 'string' && p.summary.trim() ? p.summary : fb.summary,
-    strengths: stringList(p.strengths),
+    topicsCovered: stringList(p.topicsCovered),
     gaps,
     gapNodes,
-    topQuestions: stringList(p.topQuestions),
-    improvements: stringList(p.improvements),
     keyVocabulary: stringList(p.keyVocabulary),
-    presentationSkills,
-    presentationMechanics,
   };
   const ul = p.uiLabels;
   if (ul && typeof ul === 'object' && !Array.isArray(ul)) {
@@ -610,10 +559,7 @@ async function generateReflection(
   learnIndex: LearnIndexEntry[] = [],
 ): Promise<Reflection> {
   if (sessionLog.length < 2) {
-    return fallbackReflection(
-      'The session was too short to generate a meaningful reflection.',
-      ['Try a longer session — aim for at least 5 minutes of explanation.'],
-    );
+    return fallbackReflection('The session was too short to generate a meaningful reflection.');
   }
 
   const transcript = sessionLog
@@ -639,28 +585,19 @@ async function generateReflection(
               learnIndex.map(n => `- ${n.id} — ${n.label}`).join('\n') + `\n\n`
             : '') +
           `Return a JSON object with exactly these keys:\n` +
-          `- "summary": string — 2-3 sentences summarising what was covered\n` +
-          `- "strengths": string[] — 2-3 specific things the teacher did well. Wrap the key phrase in **asterisks** (e.g. "**Clear examples** made the concept stick.")\n` +
+          `- "summary": string — ONE sentence saying what the teacher covered overall.\n` +
+          `- "topicsCovered": string[] — 3-6 short noun phrases naming the ideas actually talked about, in the order they came up (e.g. "How chlorophyll captures light"). This is the reader's map of the session, so make each one concrete and distinct. No full sentences, no praise, no advice.\n` +
           `- "gaps": string[] — 2-3 concepts that were missed, skipped, or explained unclearly (empty array if none). Wrap the key problem in **asterisks** (e.g. "**The second step** was unclear.")\n` +
+          `- "gapNodes": array with exactly one entry per item of "gaps", in the same order: {"text": the identical gap sentence, "label": a 2-4 word name for the concept the teacher should go study, phrased so it stands on its own as a topic (e.g. "Light-dependent reactions")` +
           (hasIndex
-            ? `- "gapNodes": array with exactly one entry per item of "gaps", in the same order: {"text": the identical gap sentence, "nodeId": the id of the studied explanation this gap belongs to, copied exactly from the list above, or null when none fits}. Never invent an id.\n`
+            ? `, "nodeId": the id of the studied explanation this gap belongs to, copied exactly from the list above, or null when none fits. Never invent an id`
             : '') +
-          `- "topQuestions": string[] — the 3 most insightful student questions verbatim (fewer if session was short)\n` +
-          `- "improvements": string[] — 2-3 concrete, actionable suggestions. Wrap the key action in **asterisks** (e.g. "**Use the whiteboard** for the diagram.")\n` +
+          `}\n` +
           `- "keyVocabulary": string[] — 4-6 key vocabulary terms or concepts that were central to this teaching session (short 1-2 word terms only, e.g. "Prime Number", "Composite", "Factors")\n` +
-          `- "presentationSkills": object with exactly these three keys, each a single short sentence (or empty string if not applicable):\n` +
-          `  - "visualsAndGestures": Did the teacher use the camera, hands, or whiteboard effectively to demonstrate points?\n` +
-          `  - "explanations": Were the explanations concise and clear, or rambling?\n` +
-          `  - "mediaUsage": How effectively were screen sharing or shared files/materials utilized?\n` +
-          `- "presentationMechanics": object with exactly these four keys, each a single word rating:\n` +
-          `  - "clarity": one of "Excellent", "Good", "Fair", "Needs Work" — how clear and understandable was the teacher\n` +
-          `  - "visuals": one of "Excellent", "Good", "Fair", "Needs Work" — how well were visual aids used\n` +
-          `  - "pacing": one of "Excellent", "Steady", "Fast", "Slow" — was the pacing appropriate\n` +
-          `  - "tools": one of "Seamless", "Good", "Fair", "Minimal" — how well did the teacher use available tools (whiteboard, screen share, etc.)\n` +
-          `- "uiLabels": object with translated section headers for the reflection page in ${language}. Keys: "title", "summary", "strengths", "gaps", "gapsEmpty", "vocabulary", "nextSteps", "questions", "presentationFeedback", "mechanics", "teachAgain", "changeTopic", "downloadSummary". Values must be the natural ${language} translation of these UI labels: "Session Reflection", "What Went Well", "Concepts to Revisit", "Mastery achieved! You explained every point clearly.", "Key Vocabulary", "Next Steps", "Student Questions", "Presentation Skills Feedback", "Presentation & Mechanics", "Teach Again", "Change topic", "Download Summary".\n\n` +
-          (language !== 'English' ? `IMPORTANT: Write ALL text content (summary, strengths, gaps, topQuestions, improvements, keyVocabulary, presentationSkills values) in ${language}. Only the JSON keys and presentationMechanics rating words (Excellent/Good/Fair/etc.) should remain in English.\n` : '') +
+          `- "uiLabels": object with translated section headers for the reflection page in ${language}. Keys: "title", "topics", "vocabulary", "gaps", "gapsEmpty", "revisitCta", "topicLabel", "sessionLabel", "teachAgain", "backToLearning", "changeTopic". Values must be the natural ${language} translation of these UI labels: "Session Reflection", "What You Covered", "Key Vocabulary", "Concepts to Revisit", "Mastery achieved! You explained every point clearly.", "Learn this", "Topic of Discussion", "Session", "Teach Again", "Back to learning", "Change topic".\n\n` +
+          (language !== 'English' ? `IMPORTANT: Write ALL text content (summary, topicsCovered, gaps, gapNodes labels, keyVocabulary) in ${language}. Only the JSON keys stay in English.\n` : '') +
           (language === 'Simplified Chinese' ? `Use simplified Chinese characters (简体字) exclusively. Never use traditional Chinese characters.\n` : '') +
-          `Keep every bullet and presentationSkills value to at most one short sentence. Be explicit and useful.`
+          `Keep every item to at most one short sentence. Be concrete and useful — no filler, no praise.`
         }]
       }],
     });
