@@ -3,6 +3,7 @@
 // (server.ts throws at import unless GEMINI_API_KEY is non-empty; no network calls are made,
 //  so any placeholder value in .env is enough to run these.)
 import assert from 'node:assert/strict';
+import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage, isDiagramRequest } from '../api/server.js';
 import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage, buildDiagramBrief } from '../api/server.js';
 import { mapScribeLanguage, segmentDelta, parseScribeEvent } from '../server/scribe.js';
 
@@ -74,6 +75,15 @@ assert.deepEqual(parseScribeEvent('{"message_type":"input_error","error":"Unexpe
 assert.deepEqual(parseScribeEvent('{"message_type":"input_error","error":"auth_error"}'),
   { kind: 'error', code: 'auth_error', permanent: true });
 assert.deepEqual(parseScribeEvent('not json'), { kind: 'ignore' });
+// Diagram request detection: explicit asks (clean or fragmented ASR) vs incidental visual words
+assert.equal(isDiagramRequest('Can you produce a diagram that shows this?'), true);
+assert.equal(isDiagramRequest('give me a sketch of that'), true);
+assert.equal(isDiagramRequest('could you please show us a flowchart'), true);
+assert.equal(isDiagramRequest('dia gram this for me'), true);
+assert.equal(isDiagramRequest('can you draw me a diagram'), true);
+assert.equal(isDiagramRequest("let's draw a conclusion from this"), false);
+assert.equal(isDiagramRequest('the picture on page 3 shows a cell'), false);
+assert.equal(isDiagramRequest("I'll illustrate my point"), false);
 // On-demand diagram brief: student's latest utterance(s) + teacher's explanation before it, never the request
 const t = (text: string) => ({ role: 'teacher' as const, name: 'Teacher', text, time: 0 });
 const s = (text: string) => ({ role: 'student' as const, name: 'Student', text, time: 0 });

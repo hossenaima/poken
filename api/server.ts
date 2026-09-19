@@ -322,6 +322,7 @@ You are NOT a blank slate. You come in with partial knowledge, possible misconce
 - If the teacher asks you a question back, redirect naturally: "I mean, I have a guess, but I'd rather hear you explain it properly."
 - Don't be sycophantic. "Great explanation!" is not something a real student says — they just nod and ask the next question.
 - Stay on topic. If you drift, the teacher will redirect you.
+- You have a whiteboard. If the teacher asks for a diagram, sketch, drawing or picture, say you'll sketch it (e.g. "Sure, let me sketch that") — never say you can't draw.
 
 
 ${video ? GESTURE_INSTRUCTION.trim() : GESTURE_INSTRUCTION_VOICE_ONLY.trim()}
@@ -635,9 +636,11 @@ async function generateStudentDiagram(
 // words like "draw a conclusion" or "illustrate my point". Requires a clear
 // action verb + visual noun directed at the student.
 const DIAGRAM_REQUEST_PATTERNS = [
-  /\b(draw|sketch|make|create|generate)\s+(me\s+)?(a\s+)?(diagram|picture|image|drawing|sketch|chart|graph|flowchart|figure|illustration)\b/i,
-  /\bshow\s+(me\s+)?(a\s+)?(diagram|picture|sketch|drawing|chart|graph|flowchart|figure|illustration)\b/i,
-  /\bcan\s+you\s+(draw|sketch|make|create|generate)\b/i,
+  /\b(draw|sketch|make|create|generate|produce|build|put\s+together|give\s+(me|us))\s+(me\s+|us\s+)?(a\s+)?(diagram|picture|image|drawing|sketch|chart|graph|flowchart|figure|illustration)\b/i,
+  /\bshow\s+(me\s+|us\s+)?(a\s+)?(diagram|picture|sketch|drawing|chart|graph|flowchart|figure|illustration)\b/i,
+  /\b(can|could)\s+you\s+(please\s+)?(draw|sketch|make|create|generate|produce|build|put\s+together|give|show)\b/i,
+  /\b(can|could)\s+you\s+(please\s+)?(\w+\s+){1,4}?a\s+diagram\b/i,
+  /\bdiagram\s+(this|that)\b/i,
   /\b(put|write|draw)\s+(it|that|this)\s+(on|on the)\s+(the\s+)?(board|whiteboard)\b/i,
   /\bshow\s+(me\s+|us\s+)?(your\s+)?work\b/i,
   /\bvisuali[sz]e\s+(it|this|that)\b/i,
@@ -650,7 +653,7 @@ const DIAGRAM_REQUEST_PATTERNS = [
 const DIAGRAM_SPACELESS_PHRASES = [
   // verb + (me +) (a +) noun — all lowercased, no spaces
   ...[
-    'draw', 'sketch', 'make', 'create', 'generate',
+    'draw', 'sketch', 'make', 'create', 'generate', 'produce', 'build', 'puttogether', 'give',
   ].flatMap(verb => [
     'diagram', 'picture', 'image', 'drawing', 'sketch', 'chart',
     'graph', 'flowchart', 'figure', 'illustration',
@@ -659,14 +662,20 @@ const DIAGRAM_SPACELESS_PHRASES = [
     `${verb}a${noun}`,      // "drawadiagram"
     `${verb}me${noun}`,     // "drawmediagram"
     `${verb}mea${noun}`,    // "drawmeadiagram"
+    `${verb}us${noun}`,     // "giveusdiagram"
+    `${verb}usa${noun}`,    // "giveusadiagram"
   ])),
-  // "show me a ..."
+  // "show me/us a ..."
   ...[
     'diagram', 'picture', 'sketch', 'drawing', 'chart',
     'graph', 'flowchart', 'figure', 'illustration',
-  ].flatMap(noun => [`show${noun}`, `showme${noun}`, `showmea${noun}`]),
-  // "can you ..."
-  'canyoudraw', 'canyousketch', 'canyoumake', 'canyoucreate', 'canyougenerate',
+  ].flatMap(noun => [`show${noun}`, `showme${noun}`, `showmea${noun}`, `showus${noun}`, `showusa${noun}`]),
+  // "can/could you (please) ..."
+  ...['canyou', 'couldyou', 'canyouplease', 'couldyouplease'].flatMap(lead => [
+    'draw', 'sketch', 'make', 'create', 'generate', 'produce', 'build', 'puttogether', 'give', 'show',
+  ].map(verb => `${lead}${verb}`)),
+  // "diagram this/that"
+  'diagramthis', 'diagramthat',
   // whiteboard
   'putitontheboard', 'putitonthewhiteboard', 'putthisontheboard',
   'putthatontheboard', 'drawitontheboard', 'drawitonthewhiteboard',
@@ -677,7 +686,7 @@ const DIAGRAM_SPACELESS_PHRASES = [
   'visualizethis', 'visualisethat',
 ];
 
-function isDiagramRequest(text: string): boolean {
+export function isDiagramRequest(text: string): boolean {
   // Primary: regex on original text (works when transcription is clean)
   const regexMatch = DIAGRAM_REQUEST_PATTERNS.some(p => p.test(text));
   if (regexMatch) {
