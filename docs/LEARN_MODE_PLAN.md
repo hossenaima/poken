@@ -425,9 +425,17 @@ which navigates away, so the tree is stashed in `sessionStorage` first and rebui
 then written in one pass (`saveAll()`); a cancelled sign-in still gets the tree back. Saved
 state is tracked per node, so after a sign-out the warning doesn't claim saved work is lost.
 
-**Phase 5 — Teach → Learn return path.** Reflection gaps tagged by node id (the one server
-change), mastery updated in Supabase from the client, "Dig back into" on the reflection
-screen. **The loop closes here.**
+**Phase 5 — Teach → Learn return path. Done 2026-09-19.** A session started from a tree sends
+a pre-session `learn_index` frame (`[{id, label}]`, ≤60); `generateReflection` puts it in the
+prompt and returns `gapNodes: [{text, nodeId}]` index-aligned with `gaps` (which stays
+`string[]`, so the existing reflection UI is untouched) — via `responseSchema` now, not
+fence-stripping, with `coerceReflection` nulling any id the model invents. The client marks
+each taught explanation `shaky` (named in a gap) or a level better (`read → taught → solid`;
+`shaky → taught` when taught cleanly again), shows the state on the crumb, saves it, and the
+reflection screen offers **Dig back into <explanation>**, which opens Learn Mode scrolled to
+it. Verified live: taught the root well and fumbled a "memory cells" deep-dive — the student
+caught it from the notes, both gaps were tagged to that node (not the root), the tree showed
+taught/shaky, and Supabase held the same. **The loop closes here.**
 
 **Phase 6 — The map.** A view of the tree with mastery states: solid, shaky, unexplored.
 This is the retention feature and the reason to come back.
