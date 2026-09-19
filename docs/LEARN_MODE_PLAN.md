@@ -4,20 +4,23 @@ Poken is a learn-by-teaching app: you teach an AI student over Gemini Live. This
 learning phase in front of teaching and connects the two into a loop:
 **learn → teach → reflect → learn the gaps → teach again.** No code yet.
 
-Written against `7683d08` (the Cloud Run version). If `api/server.ts` has moved much since
-then, check the line references in §3 before relying on them.
+Written against `8969fca` (Cloud Run, with mid-session language switching). If
+`api/server.ts` has moved much since then, check the line references in §3 before relying
+on them.
 
 ---
 
 ## 0. What aima's Cloud Run rebuild changed for this plan
 
-| Change in `7683d08` | Effect on Learn Mode |
+| Change since the Vercel build | Effect on Learn Mode |
 |---|---|
 | One Node process on Cloud Run (`main.ts` → `api/server.ts`), with Hono serving `public/`, `/api/*` and `/ws/live` | Learn endpoints are just more Hono routes in the same process. No new service, no new deploy target. |
 | Classroom mode removed. One student, three personas (`eager`, `skeptic`, `confused`) | The handoff targets one student. Nothing here depends on multi-student. |
 | Deliberately stateless: "Nothing is written to disk", "add storage only if a feature actually needs files to outlive a session" (`NOTES.md`) | The knowledge tree is exactly that kind of feature. Supabase is the first persistence, and the server can **stay stateless** (§4). |
 | 60-minute socket, Gemini `goAway` handled by reopening in place, handover hourly | Learn Mode doesn't touch any of it. It's plain HTTP. |
 | Secrets come from Secret Manager via `--set-secrets` in `cloudbuild.yaml` | Supabase keys follow the same path. |
+| Pasted notes moved off the URL into a pre-session `materials_text` frame (`8316b1f`) | This is the handoff route. See §3. |
+| Session language is now live state and can switch mid-lesson (`8969fca`) | Learn Mode takes a language, and the handoff passes it to the teaching session. |
 
 ---
 
@@ -85,12 +88,12 @@ every rendered span must be addressable, and that drives the data model in §4.
 - **Hosting:** the blueprint assumed Vercel edge functions. Poken is one long-lived Node
   process on Cloud Run.
 - **Image models:** Imagen is shut down, and images now come from the Nano Banana family.
-  But `gemini-2.5-flash-image` is **already wired in** as `IMAGE_MODEL` (`api/server.ts:57`)
+  But `gemini-2.5-flash-image` is **already wired in** as `IMAGE_MODEL` (`api/server.ts:59`)
   for student diagrams. Reuse it for "Get images". The `-preview` image models were shut down
   on 2026-06-25, so any snippet naming one is already stale.
 - **Structured output:** returning JSON is right, but use a `responseSchema` rather than
-  "return ONLY valid JSON" in the prompt. `generateReflection` (`api/server.ts:324`) still
-  strips ```` ```json ```` fences and calls `JSON.parse` (`:381`); Learn Mode shouldn't copy that.
+  "return ONLY valid JSON" in the prompt. `generateReflection` (`api/server.ts:388`) still
+  strips ```` ```json ```` fences and calls `JSON.parse` (`:445`); Learn Mode shouldn't copy that.
 - **Pedagogy:** the blueprint's Socratic prompt (never give answers, always quiz) is wrong
   for Poken. See §5.
 
@@ -106,33 +109,40 @@ The student prompt treats study materials as the student's **own half-understood
 
 > "You've gone through them but didn't fully understand everything — some parts confused you
 > or didn't stick … Refer to these naturally as **your notes**"
-> — `getStudentInstruction`, `api/server.ts:180`
+> — `getStudentInstruction`, `api/server.ts:244`
 
 A finished learn session produces exactly that: a body of text the learner just worked
-through. And there's already a way to get it in:
+through. And there's already a way to get it in: the **`materials_text`** pre-session frame
+(`api/server.ts:1557`), which carries pasted notes. It becomes the `materials` string at the
+head of `materialsContext`, and the hourly handover already carries `materialsContext`.
 
-- Before the session starts, the client sends files as `material_file` WebSocket frames
-  (`api/server.ts:1446`).
-- **Text files skip vision analysis** and are read directly (`server/materials-extract.ts:30`,
-  `mime.startsWith('text/')`).
-- They're merged into `materialsContext`, which the hourly handover already carries.
+So the handoff is: **compile the learn tree to text on the client, send it as
+`materials_text` before `ready_to_start`, and prefill `topic` and `language`.** Zero server
+changes.
 
-So the handoff is: **compile the learn tree to text on the client, send it as a
-`text/plain` `material_file`, and prefill `topic`.** Zero server changes.
+Why `materials_text` and not a `text/plain` `material_file` (the earlier plan):
+- It's raw text with no "the teacher has shared a file" wrapper (`processMaterialFile`,
+  `:1335`), so it lands exactly as the "your notes" framing intends.
+- It's capped at 60k (`MAX_MATERIALS_CHARS × 2`, `:1039`) instead of 20k per file (`:1336`).
+- It skips the file-processing progress UI, which would be confusing for text the learner
+  just wrote.
 
-**Size budget:** 20k characters per file (`processMaterialFile`, `api/server.ts:1229`) and
-30k × 2 for the merged total (`MAX_MATERIALS_CHARS`, `:970`). The compiler has to fit inside
-20k, trimming the deepest and least-recent branches first.
+**One slot:** `materials_text` is also where pasted notes go, and a second frame overwrites
+the first. If the learner both pasted notes and brings a learn tree, the client joins them
+into one frame (tree first).
 
-**Don't use the URL.** Pasted notes currently travel in the WebSocket **URL**
-(`&materials=…`, `public/app.js:2386`). A compiled tree must not go that way: URLs have
-length limits, and they end up in Cloud Run request logs. (That's already worth flagging to
-aima for pasted notes too.)
+**Size budget:** the 60k cap covers the notes and any uploaded files together, and anything
+over it gets truncated from the end. The compiler should aim for about 30k, trimming the
+deepest and least-recent branches first, so there's room left for files.
+
+**Never the URL.** The frame exists because pasted notes used to travel in the WebSocket
+URL, which put them in Cloud Run request logs and under URL length limits. Fixed in
+`8316b1f`, and `NOTES.md` records the rule.
 
 ### Teach → Learn: half-built
 
 `generateReflection` already outputs `gaps` (concepts missed, skipped or explained unclearly)
-and `keyVocabulary`. They reach the client as `{type:'reflection'}` (`api/server.ts:1498`),
+and `keyVocabulary`. They reach the client as `{type:'reflection'}` (`api/server.ts:1613`),
 get shown once, and are thrown away.
 
 The missing piece is **tagging gaps with node ids**, so each gap points to a specific block
@@ -219,7 +229,12 @@ affinity.
 All of them are stateless: the client sends the context each call needs (ancestor
 summaries, not whole ancestors, to keep prompts small). Nothing is stored server-side.
 
-Reuse `/api/materials/extract` (`api/server.ts:796`) for "upload material to learn from"
+Every endpoint takes a `language` and writes in it. The learner picks it once on the learn
+screen, and the handoff passes it as the teaching session's `language`. The teaching session
+can still switch mid-lesson (`8969fca`), but it should start in the language the learner
+studied in.
+
+Reuse `/api/materials/extract` (`api/server.ts:860`) for "upload material to learn from"
 instead of building a second path. There's no `/compile` endpoint, because the client
 compiles (§3).
 
@@ -328,9 +343,9 @@ of persistence: the first half of the loop works before any database exists.
 + breadcrumbs. The tree lives in memory only. Proves the core interaction is pleasant before
 anything is saved.
 
-**Phase 2 — Learn → Teach handoff.** Client-side compiler (tree → ≤20k chars of text) → sent
-as a `text/plain` `material_file` frame, topic prefilled. **The first half of the loop works
-here**, with no server change and no database.
+**Phase 2 — Learn → Teach handoff.** Client-side compiler (tree → about 30k chars of text) →
+sent as a `materials_text` frame (joined with any pasted notes), with topic and language
+prefilled. **The first half of the loop works here**, with no server change and no database.
 
 **Phase 3 — Web sources and the rest of the aids.** Two-pass grounding with citation chips,
 plus Simplify, Get images, key terms and suggested rabbit holes. Matches Learn About.
@@ -366,14 +381,15 @@ Phases 1–3 need no database. Phases 1–2 touch no existing server code.
 - **Video sources.** Learn About embeds YouTube, but grounding returns web pages. Video would
   need the YouTube Data API. Defer until text sources prove out.
 
-## 10. For aima (spotted while reading `7683d08`)
+## 10. Resolved since the first draft
 
-- `README.md` line 7 still says "Hosted on Vercel."
-- `NOTES.md` "Verified" still mentions `DEV_MAX_DURATION_S` and the `/ws/live` **rewrite**.
-  Both are Vercel-era. The env is now `SESSION_TIMEOUT_S`, and there are no rewrites.
-- Pasted notes travel in the WebSocket URL (`app.js:2386`), so they end up in Cloud Run
-  request logs and are subject to URL length limits. Sending them as a `material_file` frame
-  would fix both.
+All fixed in `8316b1f` and live since `poken-00006`:
+- README and NOTES no longer describe Vercel.
+- Pasted notes no longer travel in the WebSocket URL. They go as a `materials_text` frame,
+  which is also the handoff route in §3.
+
+Still open, from reading the repo: `README.md` says `cp .env.example .env`, but no
+`.env.example` is committed.
 
 ---
 
