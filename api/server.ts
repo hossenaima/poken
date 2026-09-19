@@ -1363,13 +1363,17 @@ function buildServer(): http.Server {
         sendJson({ type: 'request_screenshot' });
       }
 
+      maybeCoach(text, media);
+    }
+
+    /** One coaching tip per COACHING_COOLDOWN_MS, for spoken and typed teacher turns alike. */
+    function maybeCoach(text: string, media?: { camera?: boolean; whiteboard?: boolean; screen?: boolean }) {
       const now = Date.now();
-      if (now > coachingCooldown) {
-        coachingCooldown = now + COACHING_COOLDOWN_MS;
-        generateCoachingTip(ai, topic, text, media ?? mediaState).then(tip => {
-          if (tip) sendJson({ type: 'coaching_tip', tip });
-        });
-      }
+      if (now <= coachingCooldown) return;
+      coachingCooldown = now + COACHING_COOLDOWN_MS;
+      generateCoachingTip(ai, topic, text, media ?? mediaState).then(tip => {
+        if (tip) sendJson({ type: 'coaching_tip', tip });
+      });
     }
 
     function triggerDiagramFromTeacher(text: string) {
@@ -1410,6 +1414,7 @@ function buildServer(): http.Server {
           }
         })();
       }
+      maybeCoach(userText);
     }
 
     // ── Session creation ───────────────────────────────────────────────────
