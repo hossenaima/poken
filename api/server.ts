@@ -877,59 +877,6 @@ function buildServer(): http.Server {
     return c.json({ logs: filtered });
   });
 
-  // Legacy: extract-only (no storage) — still used if something calls it directly.
-  app.post('/api/materials/extract', async (c) => {
-    try {
-      const formData = await c.req.formData();
-      const file = formData.get('file');
-      if (!file || typeof file === 'string' || !(file instanceof File)) {
-        return c.json({ error: 'Missing file field' }, 400);
-      }
-      const buf = Buffer.from(await file.arrayBuffer());
-      const mime = file.type || 'application/octet-stream';
-      let result = await extractFromBuffer(buf, mime, file.name);
-
-      // Images: OCR-ish via Gemini when extractFromBuffer returns unsupported
-      if (!result.text && mime.startsWith('image/') && buf.length < 4 * 1024 * 1024) {
-        try {
-          const b64 = buf.toString('base64');
-          const mimeType = mime || 'image/png';
-          const gen = await ai.models.generateContent({
-            model: FAST_MODEL,
-            contents: [{
-              role: 'user',
-              parts: [
-                {
-                  inlineData: { mimeType, data: b64 },
-                },
-                {
-                  text:
-                    'Transcribe every readable word in this image (slides, handwriting, diagrams with labels). ' +
-                    'Output plain text only, preserve line breaks where helpful. If no text, say [no text].',
-                },
-              ],
-            }],
-          });
-          const text = (gen.text || '').trim();
-          if (text && text !== '[no text]') result = { text: text.slice(0, 120_000) };
-          else result = { text: '', error: 'No text detected in image.' };
-        } catch (e) {
-          result = {
-            text: '',
-            error: e instanceof Error ? e.message : 'Image text extraction failed.',
-          };
-        }
-      }
-
-      if (result.error && !result.text) return c.json({ error: result.error }, 422);
-      return c.json({ text: result.text, filename: file.name });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('[Poken] /api/materials/extract', msg);
-      return c.json({ error: msg }, 500);
-    }
-  });
-
   // Test diagram generation directly (useful for debugging)
   app.post('/api/diagram/test', async (c) => {
     try {
@@ -1046,8 +993,6 @@ function buildServer(): http.Server {
     let teacherTranscriptBuf = '';
     let coachingCooldown     = 0;
     let reflectionRequested  = false;
-    let lastTeacherSpeechAt  = Date.now();
-    let teacherIsSpeaking    = false;
     let teacherHasSpoken     = false;
     let sessionStartedAt     = Date.now();  // reset in onopen so the blackout starts when Live is actually ready
     let sessionReady         = false;
@@ -1353,8 +1298,6 @@ function buildServer(): http.Server {
 
     function onTeacherAudio(data: Buffer) {
       markTeacherSpoken('first audio');
-      teacherIsSpeaking = true;
-      lastTeacherSpeechAt = Date.now();
       const b64 = data.toString('base64');
       // Fork: Scribe hears every VAD-gated frame as it arrives, Gemini keeps its own blackout
       // buffering below (the student must still hear the teacher).
@@ -1668,14 +1611,10 @@ function buildServer(): http.Server {
 
       switch (msg.type) {
         case 'speech_start':
-          teacherIsSpeaking = true;
           markTeacherSpoken('speech_start');
-          lastTeacherSpeechAt = Date.now();
           // Interruption is NOT triggered here — speech_start fires on any noise.
           return;
         case 'speech_end':
-          teacherIsSpeaking = false;
-          lastTeacherSpeechAt = Date.now();
           endTeacherTurn(msg.media);
           return;
         case 'request_reflection':
