@@ -130,7 +130,10 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
   English — Spanish/French/German/Portuguese cannot be told apart by script, so they need an
   explicit request. Characters stripped before the switch fired are recovered (`droppedRaw`)
   and relayed, so the teacher's sentence is whole.
-- Transcript buffers use `joinChunk()`: a space between Latin words, none around CJK.
+- Transcript buffers concatenate Gemini's chunks verbatim (`joinChunk()` is plain `buf + chunk`):
+  the chunks are sub-word fragments ("pho", "tos", "yn", "the", "sis"…) and Gemini already puts
+  a leading space on a chunk that starts a new word, so inserting spaces mangles words. Merged
+  words are repaired by the cleanup pass; diagram/vision detection keeps its spaceless fallback.
 - Gemini's input transcription emits **Traditional** characters (陽光, 葉綠素) even in a
   Simplified session. `enforceTranscriptLanguage` now runs `opencc-js`
   (`Converter({ from: 'tw', to: 'cn' })`, built once at module scope) on Simplified Chinese

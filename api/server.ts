@@ -200,13 +200,9 @@ export function detectLanguageSwitchRequest(text: string): string | null {
 
 type Script = 'Han' | 'Devanagari' | 'Arabic' | 'Latin';
 const SCRIPT_LANGUAGE: Record<Script, string> = { Han: 'Simplified Chinese', Devanagari: 'Hindi', Arabic: 'Arabic', Latin: 'English' };
-/** Append a transcript chunk: a space between Latin words, none around CJK. Gemini streams CJK one character at a time. */
+/** Append a transcript chunk verbatim: Gemini streams sub-word fragments and puts a leading space on chunks that start a new word. */
 export function joinChunk(buf: string, chunk: string): string {
-  if (!buf) return chunk;
-  if (!chunk) return buf;
-  const a = buf[buf.length - 1], b = chunk[0];
-  if (/\s/.test(a) || /\s/.test(b) || /\p{Script=Han}/u.test(a) || /\p{Script=Han}/u.test(b)) return buf + chunk;
-  return buf + ' ' + chunk;
+  return buf + chunk;
 }
 
 function scriptOfLanguage(language: string): Script {
