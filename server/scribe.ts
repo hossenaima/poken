@@ -11,10 +11,10 @@ const SCRIBE_MODEL = 'scribe_v2_realtime';
 const SCRIBE_URL = process.env.ELEVENLABS_STT_URL || 'wss://api.elevenlabs.io/v1/speech-to-text/realtime';
 
 const MAX_QUEUED_CHUNKS = 400;      // ~50s of 128ms frames held while the socket opens
-// Under commit_strategy=manual nothing but partials comes back until a commit lands, so segments
-// are cut mid-utterance too — otherwise the whole turn would only arrive after the browser's VAD
-// has already closed the teacher's transcript entry.
-const SEGMENT_COMMIT_MS = 1500;
+// Under commit_strategy=manual nothing but partials comes back until a commit lands. Commit only
+// at the browser's speech_end: committing on a timer mid-utterance makes the API throttle
+// (`commit_throttled` close) and cuts words in half ("sunlight-Mm-hmm", "叶绿-叶绿素"), whereas one
+// commit per utterance returns the whole sentence, correctly punctuated.
 const MAX_CONSECUTIVE_FAILURES = 3; // reset by every `session_started`
 const RECONNECT_DELAYS_MS = [500, 1000, 2000];
 
@@ -149,10 +149,8 @@ export class ScribeTranscriber {
   sendAudio(base64: string) {
     if (!this.active) return;
     if (this.socket?.readyState === WebSocket.OPEN) {
-      const now = Date.now();
-      if (!this.uncommittedSince) this.uncommittedSince = now;
-      const due = now - this.uncommittedSince >= SEGMENT_COMMIT_MS;
-      this.publishAudio(base64, due);
+      if (!this.uncommittedSince) this.uncommittedSince = Date.now();
+      this.publishAudio(base64, false);
       return;
     }
     this.queue.push(base64);
