@@ -113,8 +113,11 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
   and relayed, so the teacher's sentence is whole.
 - Transcript buffers use `joinChunk()`: a space between Latin words, none around CJK.
 - Gemini's input transcription emits **Traditional** characters (陽光, 葉綠素) even in a
-  Simplified session; the cleanup pass converts them, so the sidebar settles on Simplified a
-  moment later. A server-side converter (e.g. `opencc-js`) would make it instant.
+  Simplified session. `enforceTranscriptLanguage` now runs `opencc-js`
+  (`Converter({ from: 'tw', to: 'cn' })`, built once at module scope) on Simplified Chinese
+  sessions, so every consumer — transcript relays, cleanup fallback, session log, resume
+  digest — sees Simplified immediately, before the Gemini cleanup pass. Conversion happens
+  *after* `dominantScript`/`autoDetectLanguage`, which still see the raw chunk.
 - `node scripts/audio-probe.mjs <16k-pcm.wav> [ws-base] [language]` streams real speech
   through the mic path — synthesize test audio with
   `say -v Tingting "…" -o zh.aiff && afconvert -f WAVE -d LEI16@16000 -c 1 zh.aiff zh.wav`.
