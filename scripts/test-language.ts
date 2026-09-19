@@ -3,8 +3,7 @@
 // (server.ts throws at import unless GEMINI_API_KEY is non-empty; no network calls are made,
 //  so any placeholder value in .env is enough to run these.)
 import assert from 'node:assert/strict';
-import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage, isDiagramRequest } from '../api/server.js';
-import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage, buildDiagramBrief } from '../api/server.js';
+import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage, isDiagramRequest, buildDiagramBrief } from '../api/server.js';
 
 // explicit requests, including Gemini's fragmented ASR and CJK phrasing
 assert.equal(detectLanguageSwitchRequest('Can we switch to Chinese now?'), 'Simplified Chinese');
@@ -31,6 +30,9 @@ assert.equal(joinChunk('光合', '作用'), '光合作用');
 assert.equal(joinChunk('the water', 'cycle'), 'the water cycle');
 assert.equal(joinChunk('', '光'), '光');
 assert.equal(joinChunk('hello,', ' world'), 'hello, world');
+// relayed delta of the joined buffer carries the inserted space (Latin) or nothing (CJK)
+assert.equal(joinChunk('photosynthesis', 'turns').slice('photosynthesis'.length), ' turns');
+assert.equal(joinChunk('光合', '作用').slice(2), '作用');
 // transcript enforcement: Traditional characters become Simplified in a Simplified Chinese session
 assert.equal(enforceTranscriptLanguage('光合作用需要陽光', 'Simplified Chinese'), '光合作用需要阳光');
 assert.equal(enforceTranscriptLanguage('葉綠素吸收陽光', 'Simplified Chinese'), '叶绿素吸收阳光');

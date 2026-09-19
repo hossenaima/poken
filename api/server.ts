@@ -1307,8 +1307,9 @@ function buildServer(): http.Server {
       autoDetectLanguage(rawChunk); // before enforcement, which would strip a new script entirely
       const chunk = enforceTranscriptLanguage(rawChunk, language);
       if (!chunk) { if (rawChunk.trim()) droppedRaw += rawChunk; return; }
-      teacherTranscriptBuf = joinChunk(teacherTranscriptBuf, chunk);
-      sendJson({ type: 'teacher_transcript', text: chunk });
+      const before = teacherTranscriptBuf;
+      teacherTranscriptBuf = joinChunk(before, chunk);
+      sendJson({ type: 'teacher_transcript', text: teacherTranscriptBuf.slice(before.length) });
     }
 
     function flushBlackout() {
