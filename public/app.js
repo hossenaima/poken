@@ -2083,6 +2083,8 @@ let lastReflectionData = null;
 
 function showReflection(data) {
   lastReflectionData = data;
+  // Learn Mode marks the explanations behind any gaps as shaky and offers to dig back in.
+  try { window.pokenLearnReflection?.(data); } catch (e) { console.warn("[Poken] learn reflection hook:", e); }
   if (reflectionLoadingScreen) reflectionLoadingScreen.classList.remove("visible");
   sessionScreen.style.display = "none";
   reflectionScreen.style.display = "block";
@@ -2407,6 +2409,9 @@ async function connect(opts = {}) {
       } else {
         // Pasted notes go over the socket, not the URL (URLs are logged and length-capped)
         if (sessionMaterials) sock.send(JSON.stringify({ type: "materials_text", text: sessionMaterials }));
+        // The explanations behind those notes, so the reflection can point its gaps back at them.
+        const learnIndex = window.pokenLearnIndex?.(sessionTopic);
+        if (learnIndex?.length) sock.send(JSON.stringify({ type: "learn_index", nodes: learnIndex }));
         // Send uploaded study material files first so the server can merge them into the system instruction before the session starts
         for (const file of uploadedFiles) {
           try {

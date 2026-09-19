@@ -119,6 +119,7 @@
       // Creation time, not first-save time: a quick branch finishes (and saves) before a slow
       // sibling, and loadTree orders by created_at — siblings would come back swapped.
       created_at: node.createdAt,
+      mastery: node.mastery,
       body: node.text,
       extras: node.terms || node.suggestions ? { keyTerms: node.terms || [], suggestions: node.suggestions || [] } : null,
       image_path: node.imagePath || null,
@@ -243,15 +244,17 @@
     node.el.appendChild(fig);
   }
 
-  function createNode(parentId, label, afterBlockIdx, question = "", { id, kind, createdAt } = {}) {
+  function createNode(parentId, label, afterBlockIdx, question = "", { id, kind, createdAt, mastery } = {}) {
     const node = {
       id: id || crypto.randomUUID(), seq: seq++, createdAt: createdAt || new Date().toISOString(),
+      mastery: mastery || "read",
       parentId, kind: kind || (parentId == null ? "root" : "deeper"),
       label, question, afterBlock: parentId == null ? null : afterBlockIdx,
       text: "", el: document.createElement("div"), streaming: true,
     };
     node.el.className = "learn-node" + (parentId != null ? " child" : "");
     node.el.dataset.nodeId = node.id;
+    node.el.dataset.mastery = node.mastery;
     node.el.innerHTML = `<div class="learn-crumb">${crumbHtml(node)}</div>`
       + (question ? `<p class="learn-question">Q: ${esc(question)}</p>` : "")
       + `<div class="learn-thinking" role="status"><span class="learn-spinner"></span><span>Thinking…</span></div>`;
@@ -515,8 +518,67 @@
     return `${header}\n\n${ordered.filter(n => keep.has(n)).map(section).join("\n\n")}`.slice(0, budget);
   }
 
-  window.pokenLearnNotes = (sessionTopic, budget) =>
-    topic && sessionTopic && sessionTopic.trim().toLowerCase() === topic.toLowerCase() ? compileNotes(budget) : "";
+  const isThisTopic = (sessionTopic) =>
+    !!topic && !!sessionTopic && sessionTopic.trim().toLowerCase() === topic.toLowerCase();
+
+  window.pokenLearnNotes = (sessionTopic, budget) => (isThisTopic(sessionTopic) ? compileNotes(budget) : "");
+
+  // ── The loop: reflection → mastery → dig back in (Phase 5) ──────────────
+  // Sent when a session starts, so the reflection can tag each gap with the explanation it
+  // belongs to. Only explanations with text (a diagram can't be "taught").
+  window.pokenLearnIndex = (sessionTopic) => (isThisTopic(sessionTopic)
+    ? nodes.filter(n => n.text.trim()).sort((a, b) => a.seq - b.seq)
+        .map(n => ({ id: n.id, label: n.label || topic })).slice(0, 60)
+    : []);
+
+  function setMastery(node, mastery) {
+    if (node.mastery === mastery) return;
+    node.mastery = mastery;
+    node.el.dataset.mastery = mastery;
+    persist(node);
+  }
+
+  // After a teaching session: what the reflection flagged is shaky, what it didn't is a level
+  // better. Only explanations that were actually taught (in the index we sent) move.
+  window.pokenLearnReflection = (data) => {
+    const digBack = document.getElementById("reflectionDigBack");
+    digBack.replaceChildren();
+    digBack.hidden = true;
+    const taught = nodes.filter(n => n.text.trim());
+    if (!taught.length) return;
+    const shaky = new Set((data?.gapNodes || []).map(g => g?.nodeId).filter(Boolean));
+    for (const node of taught) {
+      if (shaky.has(node.id)) setMastery(node, "shaky");
+      else setMastery(node, node.mastery === "taught" || node.mastery === "solid" ? "solid" : "taught");
+    }
+    const weak = taught.filter(n => shaky.has(n.id));
+    if (!weak.length) return;
+    const label = document.createElement("span");
+    label.className = "reflection-digback-label";
+    label.textContent = weak.length === 1 ? "Dig back into:" : "Dig back into the shaky parts:";
+    digBack.append(label);
+    for (const node of weak) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = node.label || topic;
+      b.addEventListener("click", () => digInto(node.id));
+      digBack.append(b);
+    }
+    digBack.hidden = false;
+  };
+
+  // Reflection screen → Learn Mode, scrolled to that explanation.
+  function digInto(nodeId) {
+    disconnect(true);   // app.js: clean up socket/mic/audio without navigating
+    document.getElementById("reflection-screen").style.display = "none";
+    document.getElementById("reflection-loading-screen")?.classList.remove("visible");
+    show();
+    const node = byId(nodeId);
+    if (!node) return;
+    node.el.scrollIntoView({ behavior: "smooth", block: "center" });
+    node.el.classList.add("focus");
+    setTimeout(() => node.el.classList.remove("focus"), 2000);
+  }
 
   // ── Saved topics ────────────────────────────────────────────────────────
   const ago = (iso) => {
@@ -576,7 +638,7 @@
     langEl.value = language;
     for (const row of rows) {
       if (row.parent_id && !byId(row.parent_id)) continue;   // orphan (shouldn't happen)
-      const node = createNode(row.parent_id, row.label, row.after_block, row.question, { id: row.id, kind: row.kind, createdAt: row.created_at });
+      const node = createNode(row.parent_id, row.label, row.after_block, row.question, { id: row.id, kind: row.kind, createdAt: row.created_at, mastery: row.mastery });
       node.el.querySelector(".learn-thinking")?.remove();
       node.streaming = false;
       node.saved = saved;            // from the database: already saved; from the stash: not yet
