@@ -1331,7 +1331,7 @@ function buildServer(): http.Server {
         sess = await connectLive('solo', (h) => liveConfig('Zephyr', instruction, h), {
           onopen: () => {
             console.log(`[Poken] Live session opened${resumeHandles.has('solo') ? ' (resumed)' : ''}, topic:`, topic);
-            sendDebug('info', `Gemini Live session opened (solo${resumeHandles.has('solo') ? ', resumed' : ''})`);
+            sendDebug('info', `Gemini Live session opened${resumeHandles.has('solo') ? ' (resumed)' : ''}`);
             sessionStartedAt = Date.now();
             if (rejoining) {
               sendJson({ type: 'info', message: `Reconnected — keep going: ${topic}` });
