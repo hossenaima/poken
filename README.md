@@ -50,6 +50,7 @@ team's review are all on the PR.
 | On-demand diagrams drawn from the student's explanation, not the request *(feature later removed)* | [#31](https://github.com/poken-app/poken/issues/31) | [#32](https://github.com/poken-app/poken/pull/32) (merged) | — |
 | Gemini transcription: trailing silence + settle so utterance tails aren't dropped | [#33](https://github.com/poken-app/poken/issues/33) | [#34](https://github.com/poken-app/poken/pull/34) (merged) | — |
 | Transcript chunks concatenated verbatim (approach corrected in review) | [#35](https://github.com/poken-app/poken/issues/35) | [#36](https://github.com/poken-app/poken/pull/36) (merged) | — |
+| Drop the leftover "solo" label from the session debug line | [#39](https://github.com/poken-app/poken/issues/39) | [#40](https://github.com/poken-app/poken/pull/40) | [session](https://app.devin.ai/sessions/704fccc21e474541844d22634dd1a614) |
 
 ## Layout
 
