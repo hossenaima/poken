@@ -128,8 +128,10 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
   (empty audio is fine; the flag also rides on a real chunk), and sending `{"message_type":
   "commit"}` comes back as `input_error`. Under `commit_strategy=manual` the server emits
   *nothing but* `partial_transcript` until a commit lands, then
-  `committed_transcript_with_timestamps` (with `language_code`) **before** `committed_transcript`. Commit once per utterance, at the browser's speech_end: a timed mid-utterance commit makes the API throttle (`commit_throttled`) and splits words ("叶绿-叶绿素").5s) during speech as well as on
-  VAD already closed the teacher's entry and be dropped as a stale chunk.
+  `committed_transcript_with_timestamps` (with `language_code`) **before** `committed_transcript`.
+  Commit **once per utterance**, at the browser's `speech_end`: a timed mid-utterance commit makes
+  the API throttle (close code 1000 `commit_throttled`) and splits words ("sunlight-Mm-hmm",
+  "叶绿-叶绿素"), whereas one commit per utterance returns the whole sentence, punctuated.
 - `node scripts/audio-probe.mjs <16k-pcm.wav> [ws-base] [language]` streams real speech
   through the mic path — synthesize test audio with
   `say -v Tingting "…" -o zh.aiff && afconvert -f WAVE -d LEI16@16000 -c 1 zh.aiff zh.wav`.
