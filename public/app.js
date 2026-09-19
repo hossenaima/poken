@@ -344,6 +344,7 @@ const DIAGRAM_DRAW_WINDOW_MS = 4000;
 // Transcript
 let transcriptEntryId = 0;
 let currentTeacherEntry = null;
+let lastTeacherEntry    = null;   // the utterance most recently opened; a late final segment still lands in it
 let currentStudentEntry = null;
 let lastTeacherFinalizedAt = 0;
 let lastStudentFinalizedAt = 0;
@@ -1797,7 +1798,14 @@ async function startMic(existingStream = null) {
         const entryToClean = currentTeacherEntry;
         currentTeacherEntry = null;
         if (entryToClean && entryToClean.rawText.trim()) {
-          cleanupEntry(entryToClean, false).catch(() => {});
+          if (entryToClean.clean) {
+            rememberTranscriptContext(entryToClean.speaker, entryToClean.rawText);
+          } else if (entryToClean.preview) {
+            // The final Scribe segment lands shortly after speech_end; clean up only if it never comes.
+            setTimeout(() => { if (entryToClean.preview) { entryToClean.preview = false; cleanupEntry(entryToClean, false).catch(() => {}); } }, 3000);
+          } else {
+            cleanupEntry(entryToClean, false).catch(() => {});
+          }
         }
       }
     }
@@ -2348,7 +2356,7 @@ function beginClientHandover(token, reason) {
 }
 
 // Message types still worth applying from a socket that a handover has replaced.
-const STALE_SOCKET_OK = new Set(["audio", "transcript", "teacher_transcript", "turn_complete", "emotion", "coaching_tip", "student_diagram"]);
+const STALE_SOCKET_OK = new Set(["audio", "transcript", "teacher_transcript", "teacher_preview", "turn_complete", "emotion", "coaching_tip", "student_diagram"]);
 
 /**
  * Open the session socket. `opts.resume` reconnects with the held resume token:
@@ -2568,7 +2576,51 @@ async function connect(opts = {}) {
 
 
       // Teacher transcript: new teacher turn — close any open student entry first.
-      if (msg.type === "teacher_transcript" && msg.text) {
+      // Live preview of the utterance in progress (ElevenLabs Scribe): replaces the bubble text, never cleaned.
+      if (msg.type === "teacher_preview" && typeof msg.text === "string") {
+        resetIdleTimer();
+        if (!currentTeacherEntry) {
+          if (currentStudentEntry) {
+            const entry = currentStudentEntry;
+            currentStudentEntry = null;
+            lastStudentFinalizedAt = Date.now();
+            if (entry.rawText.trim()) cleanupEntry(entry, false).catch(() => {});
+          }
+          currentTeacherEntry = addTranscriptEntry("You", "teacher");
+          lastTeacherEntry = currentTeacherEntry;
+        }
+        currentTeacherEntry.preview = true;
+        currentTeacherEntry.rawText = msg.text;
+        currentTeacherEntry.textEl.textContent = msg.text;
+        transcriptBody.scrollTop = transcriptBody.scrollHeight;
+      }
+
+      // Final Scribe segment: the whole utterance, already clean — replace the preview, skip cleanup.
+      if (msg.type === "teacher_transcript" && msg.text && msg.replace) {
+        resetIdleTimer();
+        let entry = currentTeacherEntry;
+        if (!entry && lastTeacherEntry && lastTeacherEntry.preview && Date.now() - lastTeacherFinalizedAt < 8000) entry = lastTeacherEntry;
+        if (!entry) {
+          if (currentStudentEntry) {
+            const s = currentStudentEntry;
+            currentStudentEntry = null;
+            lastStudentFinalizedAt = Date.now();
+            if (s.rawText.trim()) cleanupEntry(s, false).catch(() => {});
+          }
+          entry = addTranscriptEntry("You", "teacher");
+          lastTeacherEntry = entry;
+          lastTeacherFinalizedAt = Date.now();
+        }
+        const t = liveCleanupTimers.get(entry.id);
+        if (t) { clearTimeout(t); liveCleanupTimers.delete(entry.id); }
+        entry.preview = false;
+        entry.clean = !!msg.clean;
+        entry.rawText = msg.text;
+        entry.textEl.textContent = msg.text;
+        entry.textEl.classList.remove("cleaning");
+        if (entry !== currentTeacherEntry) rememberTranscriptContext(entry.speaker, msg.text); // VAD already closed it
+        transcriptBody.scrollTop = transcriptBody.scrollHeight;
+      } else if (msg.type === "teacher_transcript" && msg.text) {
         resetIdleTimer();
         if (!currentTeacherEntry) {
           if (Date.now() - lastTeacherFinalizedAt < STALE_CHUNK_WINDOW_MS) {
@@ -2582,6 +2634,7 @@ async function connect(opts = {}) {
               if (entry.rawText.trim()) cleanupEntry(entry, false).catch(() => {});
             }
             currentTeacherEntry = addTranscriptEntry("You", "teacher");
+            lastTeacherEntry = currentTeacherEntry;
             appendToEntry(currentTeacherEntry, msg.text, { live: true, predict: true });
           }
         } else {

@@ -1327,7 +1327,7 @@ function buildServer(): http.Server {
     }
 
     /** Teacher ASR chunk: language-enforced, logged, relayed. */
-    function ingestTeacherTranscript(rawChunk: string) {
+    function ingestTeacherTranscript(rawChunk: string, opts: { final?: boolean } = {}) {
       if (!teacherHasSpoken) {
         pendingTeacherTranscript.push({ text: rawChunk, ts: Date.now() });
         if (pendingTeacherTranscript.length > 20) pendingTeacherTranscript.shift();
@@ -1337,7 +1337,9 @@ function buildServer(): http.Server {
       const chunk = enforceTranscriptLanguage(rawChunk, language);
       if (!chunk) { if (rawChunk.trim()) droppedRaw += rawChunk; return; }
       teacherTranscriptBuf = joinChunk(teacherTranscriptBuf, chunk);
-      sendJson({ type: 'teacher_transcript', text: chunk });
+      // A Scribe segment is the whole utterance, already clean: the client replaces its preview
+      // and skips the Gemini cleanup pass. Gemini's own chunks still append and get cleaned.
+      sendJson(opts.final ? { type: 'teacher_transcript', text: chunk, replace: true, clean: true } : { type: 'teacher_transcript', text: chunk });
 
     }
 
@@ -1535,7 +1537,11 @@ function buildServer(): http.Server {
       if (!ELEVENLABS_API_KEY || tearingDown) return;
       if (!scribe) {
         scribe = new ScribeTranscriber(ELEVENLABS_API_KEY, {
-          onTranscript: (text) => ingestTeacherTranscript(text),
+          onTranscript: (text) => ingestTeacherTranscript(text, { final: true }),
+          onPartial: (text) => {
+            autoDetectLanguage(text);   // switch as soon as the script is visible, not only at commit
+            sendJson({ type: 'teacher_preview', text });
+          },
           onLanguage: (next) => switchLanguage(next, 'detected'),
           onFallback: (reason) => {
             console.warn(`[Poken] Scribe unavailable (${reason}) — teacher transcription falls back to Gemini`);

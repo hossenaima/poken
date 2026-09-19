@@ -56,7 +56,7 @@ assert.equal(segmentDelta('I scream', 'ice cream'), '');
 assert.equal(segmentDelta('a rewritten', 'completely different'), '');
 // Scribe event parsing: only final/committed segments carry transcript, partials are dropped
 assert.deepEqual(parseScribeEvent('{"message_type":"session_started","session_id":"x"}'), { kind: 'started' });
-assert.deepEqual(parseScribeEvent('{"message_type":"partial_transcript","text":"the wa"}'), { kind: 'ignore' });
+assert.deepEqual(parseScribeEvent('{"message_type":"partial_transcript","text":"the wa"}'), { kind: 'partial', text: 'the wa' });
 assert.deepEqual(parseScribeEvent('{"message_type":"final_transcript","text":"the water cycle"}'),
   { kind: 'transcript', text: 'the water cycle', committed: false });
 assert.deepEqual(parseScribeEvent('{"message_type":"committed_transcript","text":"the water cycle."}'),

@@ -53,6 +53,7 @@ const PERMANENT_ERRORS = new Set(['auth_error', 'quota_exceeded', 'unaccepted_te
 export type ScribeEvent =
   | { kind: 'started' }
   | { kind: 'transcript'; text: string; committed: boolean }
+  | { kind: 'partial'; text: string }
   | { kind: 'language'; language: string }
   | { kind: 'error'; code: string; permanent: boolean }
   | { kind: 'ignore' };
@@ -65,6 +66,8 @@ export function parseScribeEvent(raw: string): ScribeEvent {
   switch (msg?.message_type) {
     case 'session_started':
       return { kind: 'started' };
+    case 'partial_transcript':   // the whole in-progress segment so far — a preview, never ingested
+      return { kind: 'partial', text: String(msg.text || '') };
     case 'final_transcript':
       return { kind: 'transcript', text: String(msg.text || ''), committed: false };
     case 'committed_transcript':
@@ -89,6 +92,8 @@ export function parseScribeEvent(raw: string): ScribeEvent {
 export type ScribeCallbacks = {
   /** A new stretch of teacher transcript, whole words, in order. */
   onTranscript: (text: string) => void;
+  /** The in-progress segment as Scribe currently hears it (replaces the previous preview). */
+  onPartial?: (text: string) => void;
   /** Scribe detected one of the session languages and it is not the current one. */
   onLanguage: (language: string) => void;
   /** Scribe is gone for this connection — the caller must use Gemini's transcription. Fires once. */
@@ -209,6 +214,9 @@ export class ScribeTranscriber {
     switch (event.kind) {
       case 'started':
         this.failures = 0;
+        return;
+      case 'partial':
+        if (event.text) this.cb.onPartial?.(event.text);
         return;
       case 'transcript':
         this.emitSegment(event.text, event.committed);

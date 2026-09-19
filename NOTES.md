@@ -132,6 +132,16 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
   Commit **once per utterance**, at the browser's `speech_end`: a timed mid-utterance commit makes
   the API throttle (close code 1000 `commit_throttled`) and splits words ("sunlight-Mm-hmm",
   "叶绿-叶绿素"), whereas one commit per utterance returns the whole sentence, punctuated.
+- **Scribe transcript wire format.** While the teacher speaks, Scribe's `partial_transcript`
+  frames go to the client as `{type:'teacher_preview', text}` (the whole in-progress utterance;
+  the client *replaces* the bubble text, never appends, and never cleans it). At `speech_end`
+  the server commits and the committed segment goes out as
+  `{type:'teacher_transcript', text, replace:true, clean:true}` — the client replaces the preview,
+  skips both Gemini cleanup passes (Scribe text is already clean), and if the final never
+  arrives (Scribe fell back mid-utterance) it cleans the preview after 3s. Gemini's own
+  `inputTranscription` chunks (no key / fallback) still arrive as plain `teacher_transcript`
+  and append + clean as before. Previews also feed `autoDetectLanguage`, so a spoken language
+  switch fires mid-sentence instead of at commit.
 - `node scripts/audio-probe.mjs <16k-pcm.wav> [ws-base] [language]` streams real speech
   through the mic path — synthesize test audio with
   `say -v Tingting "…" -o zh.aiff && afconvert -f WAVE -d LEI16@16000 -c 1 zh.aiff zh.wav`.
