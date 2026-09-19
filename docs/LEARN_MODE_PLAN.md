@@ -407,10 +407,23 @@ narrow.
 **Phase 3 — Web sources and the rest of the aids.** Two-pass grounding with citation chips,
 plus Simplify, Get images, key terms and suggested rabbit holes. Matches Learn About.
 
-**Phase 4 — Persistence and identity.** Supabase tables with RLS, anonymous sign-in,
-browser-direct access. The tree survives the tab. Supabase URL and anon key go through
-`cloudbuild.yaml` like `gemini-api-key` does. The anon key is public, but keep it config
-rather than hardcoding it.
+**Phase 4 — Persistence and identity.** Supabase tables with RLS, browser-direct access.
+*Built:* schema + RLS + `learn-diagrams` bucket (`supabase/migrations/20260919210000_learn_tree.sql`,
+applied to the hosted project 2026-09-19), `public/learn-store.js` (data layer), and the UI
+wiring in `learn.js` (autosave per explanation, "My topics", reopening a tree exactly as it
+was). The publishable key lives in `learn-store.js` — public by design; RLS is the security
+model, verified against the live project (reads and writes with the key alone are denied).
+
+**Accounts, not anonymous users (decided 2026-09-19).** Anonymous sign-in is **off**: with a
+public key in a public repo it lets anyone mint users, and the product wants people to have
+an account they can return to. So: signed out, a tree lives in memory only; the first finished
+explanation raises a "this topic isn't saved" banner, and leaving triggers the browser's
+generic *Leave site?* dialog (a page cannot show its own prompt or buttons on close — the
+custom-text API was removed years ago, so "prompt them to sign up as they close" is not
+possible; the banner is the honest substitute). Sign-in is **Google** (`signInWithOAuth`),
+which navigates away, so the tree is stashed in `sessionStorage` first and rebuilt on return,
+then written in one pass (`saveAll()`); a cancelled sign-in still gets the tree back. Saved
+state is tracked per node, so after a sign-out the warning doesn't claim saved work is lost.
 
 **Phase 5 — Teach → Learn return path.** Reflection gaps tagged by node id (the one server
 change), mastery updated in Supabase from the client, "Dig back into" on the reflection

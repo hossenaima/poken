@@ -38,7 +38,13 @@ learn something the next session would otherwise rediscover the hard way.
   request of a connection on the same instance — WebSockets die without it; `SESSION_TIMEOUT_S`
   is set to the same 3600 so the server can hand the client over before the platform cuts the
   socket. Change one, change both.
-- **Supabase** (for Learn Mode's knowledge tree; no schema yet): project `Poken`, ref
+- **Learn Mode accounts:** anonymous sign-in is **off** on the hosted project — keep it off
+  (public repo + publishable key = anyone could mint users). Signed out, a learn tree is
+  in-memory only; sign-in is Google, and because that navigates away the tree is stashed in
+  `sessionStorage` and rebuilt + saved on return. A page cannot show its own dialog on tab
+  close (browsers allow only the generic *Leave site?* box), so the in-page banner is the
+  warning. Google OAuth client ID/secret live in the Supabase dashboard, never in the repo.
+- **Supabase** (Learn Mode's knowledge tree; schema applied 2026-09-19): project `Poken`, ref
   `qdaqmtgfikkrtnjsjmnu`, `us-west-2`, in Jerry's Pro org. `supabase/config.toml` is committed;
   link state (`supabase/.temp`) is gitignored, so each machine links once:
   `supabase login` then `supabase link --project-ref qdaqmtgfikkrtnjsjmnu`. No database password

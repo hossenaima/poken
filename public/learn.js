@@ -1,7 +1,9 @@
-// ── Learn Mode (Phase 1) ─────────────────────────────────────────────────────
-// A knowledge tree kept in memory: the root is the topic's explanation; every
-// drag-select → "Go deeper" spawns a child node rendered right under the block
-// it came from. Nothing is persisted yet (Phase 4). See docs/LEARN_MODE_PLAN.md.
+// ── Learn Mode ───────────────────────────────────────────────────────────────
+// A knowledge tree: the root is the topic's explanation; every drag-select → "Go deeper"
+// (or Ask / Simplify / Show me) spawns a child node rendered right under the block it came
+// from. Trees are saved to Supabase through window.pokenStore (public/learn-store.js) when
+// it's present; without it, or while Supabase is unreachable, everything still works in
+// memory. See docs/LEARN_MODE_PLAN.md.
 (() => {
   const screen     = document.getElementById("learn-screen");
   const form       = document.getElementById("learnForm");
@@ -10,6 +12,8 @@
   const goBtn      = document.getElementById("learnGoBtn");
   const treeEl     = document.getElementById("learnTree");
   const hintEl     = document.getElementById("learnHint");
+  const topicsEl   = document.getElementById("learnTopics");
+  const topicsBtn  = document.getElementById("learnTopicsBtn");
   const toolbar    = document.getElementById("learnToolbar");
   const deeperBtn  = document.getElementById("learnDeeperBtn");
   const askBtn     = document.getElementById("learnAskBtn");
@@ -22,12 +26,27 @@
   const backBtn    = document.getElementById("learnBackBtn");
   const learnFirst = document.getElementById("learnFirstBtn");
   const landing    = document.getElementById("landing-screen");
+  const accountEl  = document.getElementById("learnAccount");
+  const bannerEl   = document.getElementById("learnSaveBanner");
+
+  // Persistence is optional: learn-store.js defines window.pokenStore (never throws).
+  // Saving needs a signed-in (Google) user; signed out, the tree lives in memory only.
+  // A store without the accounts API (onAuthChange etc., #25) is treated as absent.
+  const store = () => (typeof window.pokenStore?.onAuthChange === "function" ? window.pokenStore : null);
+  let user = null;               // { id, email, name, avatarUrl } while signed in
+  let bannerDismissed = false;   // per page load
+  let leavingForSignIn = false;  // suppress the leave warning during the Google redirect
 
   // ── Tree ────────────────────────────────────────────────────────────────
   let topic = "";
-  let nodes = [];          // { id, parentId, label, text, el, streaming, terms?, suggestEl? }  label = selection or question
-  let nextId = 1;
-  let pending = null;      // current selection: { nodeId, blockIdx, text }
+  // node: { id (uuid), seq, createdAt, parentId, kind, label, question, afterBlock, text, el, streaming,
+  //         terms?, suggestions?, suggestEl?, imagePath?, imageData? }   label = selection or question
+  // imageData = { base64, mimeType } of a diagram drawn while signed out, uploaded on sign-in.
+  let nodes = [];
+  let seq = 0;             // creation order ("oldest first" when trimming teaching notes)
+  let topicId = null;      // this tree's learn_topics row, once saved
+  let topicReady = null;   // Promise<topicId|null>; node saves wait on it
+  let pending = null;      // current selection: { nodeId, blockIdx, text, context }
   let askMode = false;     // toolbar shows the question input; ignore selection changes meanwhile
   let streamingCount = 0;
 
@@ -45,10 +64,67 @@
     .filter(Boolean);
 
   function reset() {
-    nodes = []; nextId = 1; pending = null; streamingCount = 0;
+    nodes = []; seq = 0; pending = null; streamingCount = 0;
+    topicId = null; topicReady = null;
     treeEl.innerHTML = "";
     hideToolbar();
     teachBtn.disabled = true;
+    updateBanner();
+  }
+
+  // ── Saving ──────────────────────────────────────────────────────────────
+  // Fire-and-forget: a failed save never interrupts learning (the store logs it).
+  // Only for a signed-in user; otherwise topicReady stays null and nothing is written.
+  function startSavedTopic(title, language) {
+    const s = store();
+    topicReady = null;
+    if (!s || !user) return;
+    topicReady = s.createTopic({ title, language }).then(id => (topicId = id));
+  }
+
+  // Per node, so the warning stays honest after a sign-out (what's already saved, stays saved).
+  const hasUnsavedWork = () => nodes.some(n => (n.text.trim() || n.imageData) && !n.saved);
+
+  // Signed in with a tree that isn't saved yet (made while signed out, or carried across the
+  // Google redirect): create the topic and write every node, parents first.
+  async function saveAll() {
+    const s = store();
+    if (!s || !user || topicReady || !nodes.length || !hasUnsavedWork()) return;
+    startSavedTopic(topic, langEl.value);
+    if (!(await topicReady)) return;
+    for (const node of [...nodes].sort((a, b) => a.seq - b.seq)) {
+      if (node.imageData && !node.imagePath) {
+        node.imagePath = await s.uploadDiagram(node.id, node.imageData.base64, node.imageData.mimeType);
+        if (node.imagePath) node.imageData = null;
+      }
+      await persist(node);
+    }
+    updateBanner();
+  }
+
+  async function persist(node) {
+    const s = store();
+    if (!s || !topicReady || !byId(node.id)) return;
+    if (!node.text.trim() && !node.imagePath) return;   // nothing worth saving (e.g. a failed branch)
+    const tid = await topicReady;
+    if (!tid || tid !== topicId) return;                 // not saved, or the tree was switched
+    const ok = await s.saveNode({
+      id: node.id,
+      topic_id: tid,
+      parent_id: node.parentId,
+      kind: node.kind,
+      label: node.label,
+      question: node.question,
+      after_block: node.afterBlock,
+      // Creation time, not first-save time: a quick branch finishes (and saves) before a slow
+      // sibling, and loadTree orders by created_at — siblings would come back swapped.
+      created_at: node.createdAt,
+      body: node.text,
+      extras: node.terms || node.suggestions ? { keyTerms: node.terms || [], suggestions: node.suggestions || [] } : null,
+      image_path: node.imagePath || null,
+    });
+    if (ok) node.saved = true;
+    updateBanner();
   }
 
   // ── Render ──────────────────────────────────────────────────────────────
@@ -62,7 +138,8 @@
     // Children hang off specific blocks; keep them attached across re-renders.
     const children = new Map();
     node.el.querySelectorAll(":scope > .learn-node.child").forEach(el => {
-      children.set(Number(el.dataset.afterBlock), el);
+      const i = Number(el.dataset.afterBlock);
+      children.set(i, [...(children.get(i) || []), el]);
     });
     node.el.querySelectorAll(":scope > .learn-block, :scope > .learn-node.child").forEach(el => el.remove());
     const usedTerms = new Set();   // gloss each key term once per node, at its first occurrence
@@ -73,8 +150,7 @@
       p.dataset.blockIdx = i;
       decorateTerms(p, text, node.terms, usedTerms);
       node.el.appendChild(p);
-      const child = children.get(i);
-      if (child) node.el.appendChild(child);
+      for (const child of children.get(i) || []) node.el.appendChild(child);
     });
     if (node.suggestEl) node.el.appendChild(node.suggestEl);   // suggestions stay last
   }
@@ -108,8 +184,38 @@
     p.append(text.slice(cursor));
   }
 
-  // After a node finishes: key-term glosses + "go deeper" suggestions. Optional —
-  // on any failure the explanation simply stays as it is.
+  // Key-term glosses + "go deeper" suggestion chips (fresh from the server or from a saved tree).
+  function applyExtras(node, { keyTerms = [], suggestions = [] }) {
+    node.terms = keyTerms;
+    node.suggestions = [...suggestions];
+    node.suggestEl = null;
+    if (node.suggestions.length) {
+      const row = document.createElement("div");
+      row.className = "learn-suggest";
+      const label = document.createElement("span");
+      label.className = "learn-suggest-label";
+      label.textContent = "Go deeper:";
+      row.append(label);
+      for (const s of node.suggestions) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = s;
+        b.addEventListener("click", () => {
+          b.remove();
+          node.suggestions = node.suggestions.filter(x => x !== s);
+          if (!row.querySelector("button")) { row.remove(); node.suggestEl = null; }
+          persist(node);   // a used suggestion stays used after reload
+          const blocks = blocksOf(node.text);
+          spawn({ nodeId: node.id, blockIdx: blocks.length - 1, text: s }, "deeper", "", node.text);
+        });
+        row.append(b);
+      }
+      node.suggestEl = row;
+    }
+    renderBlocks(node);
+  }
+
+  // After a node finishes. Optional — on any failure the explanation simply stays as it is.
   async function addExtras(node) {
     try {
       const res = await fetch("/api/learn/extras", {
@@ -118,36 +224,32 @@
         body: JSON.stringify({ topic, text: blocksOf(node.text).join("\n\n"), language: langEl.value }),
       });
       if (!res.ok) return;
-      const { keyTerms = [], suggestions = [] } = await res.json();
+      const extras = await res.json();
       if (!byId(node.id)) return;   // tree was reset meanwhile
-      node.terms = keyTerms;
-      if (suggestions.length) {
-        const row = document.createElement("div");
-        row.className = "learn-suggest";
-        const label = document.createElement("span");
-        label.className = "learn-suggest-label";
-        label.textContent = "Go deeper:";
-        row.append(label);
-        for (const s of suggestions) {
-          const b = document.createElement("button");
-          b.type = "button";
-          b.textContent = s;
-          b.addEventListener("click", () => {
-            b.remove();
-            if (!row.querySelector("button")) { row.remove(); node.suggestEl = null; }
-            const blocks = blocksOf(node.text);
-            spawn({ nodeId: node.id, blockIdx: blocks.length - 1, text: s }, "deeper", "", node.text);
-          });
-          row.append(b);
-        }
-        node.suggestEl = row;
-      }
-      renderBlocks(node);
+      applyExtras(node, extras);
+      persist(node);
     } catch (_) { /* extras are optional */ }
   }
 
-  function createNode(parentId, label, afterBlockIdx, question = "") {
-    const node = { id: nextId++, parentId, label, text: "", el: document.createElement("div"), streaming: true };
+  function showFigure(node, src, alt) {
+    const fig = document.createElement("figure");
+    fig.className = "learn-figure";
+    const img = document.createElement("img");
+    img.src = src;
+    img.alt = alt;
+    const cap = document.createElement("figcaption");
+    cap.textContent = "AI-generated diagram — check labels against the explanation.";
+    fig.append(img, cap);
+    node.el.appendChild(fig);
+  }
+
+  function createNode(parentId, label, afterBlockIdx, question = "", { id, kind, createdAt } = {}) {
+    const node = {
+      id: id || crypto.randomUUID(), seq: seq++, createdAt: createdAt || new Date().toISOString(),
+      parentId, kind: kind || (parentId == null ? "root" : "deeper"),
+      label, question, afterBlock: parentId == null ? null : afterBlockIdx,
+      text: "", el: document.createElement("div"), streaming: true,
+    };
     node.el.className = "learn-node" + (parentId != null ? " child" : "");
     node.el.dataset.nodeId = node.id;
     node.el.innerHTML = `<div class="learn-crumb">${crumbHtml(node)}</div>`
@@ -160,10 +262,14 @@
       node.el.dataset.afterBlock = afterBlockIdx;
       const parent = byId(parentId);
       const anchor = parent.el.querySelector(`:scope > .learn-block[data-block-idx="${afterBlockIdx}"]`);
-      // Insert after the anchor block and after any children already hanging off it.
-      let after = anchor;
-      while (after.nextElementSibling && after.nextElementSibling.classList.contains("child")) after = after.nextElementSibling;
-      after.insertAdjacentElement("afterend", node.el);
+      if (!anchor) {
+        parent.el.appendChild(node.el);   // saved tree whose paragraph count changed; keep it visible
+      } else {
+        // Insert after the anchor block and after any children already hanging off it.
+        let after = anchor;
+        while (after.nextElementSibling && after.nextElementSibling.classList.contains("child")) after = after.nextElementSibling;
+        after.insertAdjacentElement("afterend", node.el);
+      }
     }
     return node;
   }
@@ -205,8 +311,11 @@
         }
       }
       if (!node.text) throw new Error("No explanation came back. Try again.");
+      persist(node);
+      updateBanner();
       addExtras(node);   // not awaited: the explanation is usable now
     } catch (e) {
+      node.text = "";     // a half-written explanation isn't saved
       const err = document.createElement("p");
       err.className = "learn-error";
       err.textContent = (e instanceof TypeError ? "Couldn't reach the server — check your connection and try again." : e.message) || "Explanation failed.";
@@ -258,7 +367,7 @@
     const blockOf = (n) => (n.nodeType === 1 ? n : n.parentElement)?.closest(".learn-block");
     const anchor = blockOf(range.startContainer) || blockOf(range.endContainer);
     if (!anchor) return null;
-    const node = byId(Number(anchor.dataset.nodeId));
+    const node = byId(anchor.dataset.nodeId);
     if (!node) return null;
     const blocks = [...node.el.querySelectorAll(":scope > .learn-block")].filter(b => range.intersectsNode(b));
     // Character offset of a DOM boundary within the block's text (terms are nested spans).
@@ -296,14 +405,15 @@
   function spawn({ nodeId, blockIdx, text, context }, mode, question = "", parentTextOverride = "") {
     const parent = byId(nodeId);
     const parentText = parentTextOverride || context || blocksOf(parent.text)[blockIdx] || "";
-    // Breadcrumb label: a multi-paragraph selection would make an unreadable trail.
-    const flat = text.replace(/\s+/g, " ");
-    const short = flat.length > 90 ? `${flat.slice(0, 90).trimEnd()}…` : flat;
-    const label = mode === "ask" ? question
+    // Breadcrumb label: a multi-paragraph selection would make an unreadable trail. Also keeps
+    // labels inside the database's 400-char limit (a question's full text is saved separately).
+    const shorten = (s) => { const f = s.replace(/\s+/g, " "); return f.length > 90 ? `${f.slice(0, 90).trimEnd()}…` : f; };
+    const short = shorten(text);
+    const label = mode === "ask" ? shorten(question)
       : mode === "simplify" ? `In simpler words: ${short}`
       : mode === "visual" ? `Picture: ${short}`
       : short;
-    const node = createNode(nodeId, label, blockIdx, question);
+    const node = createNode(nodeId, label, blockIdx, question, { kind: mode });
     node.el.scrollIntoView({ behavior: "smooth", block: "nearest" });
     if (mode === "visual") return draw(node, { topic, selection: text, parentText });
     explain(node, {
@@ -335,15 +445,17 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.base64) throw new Error(data.error || `HTTP ${res.status}`);
-      const fig = document.createElement("figure");
-      fig.className = "learn-figure";
-      const img = document.createElement("img");
-      img.src = `data:${data.mimeType};base64,${data.base64}`;
-      img.alt = `Diagram: ${body.selection}`;
-      const cap = document.createElement("figcaption");
-      cap.textContent = "AI-generated diagram — check labels against the explanation.";
-      fig.append(img, cap);
-      node.el.appendChild(fig);
+      showFigure(node, `data:${data.mimeType};base64,${data.base64}`, `Diagram: ${body.selection}`);
+      // Save the picture too, so it's there when the tree is reopened. Signed out, keep the
+      // bytes so saveAll() can upload them after sign-in.
+      const s = store();
+      if (s && topicReady && await topicReady) {
+        node.imagePath = await s.uploadDiagram(node.id, data.base64, data.mimeType);
+        persist(node);
+      } else {
+        node.imageData = { base64: data.base64, mimeType: data.mimeType };
+      }
+      updateBanner();
     } catch (e) {
       const err = document.createElement("p");
       err.className = "learn-error";
@@ -389,13 +501,13 @@
     const depth = (n) => { let d = 0; for (let p = n; p.parentId != null; p = byId(p.parentId)) d++; return d; };
     // Document order: each deep-dive right after the paragraph it came from.
     const ordered = [...treeEl.querySelectorAll(".learn-node")]
-      .map(el => byId(Number(el.dataset.nodeId)))
+      .map(el => byId(el.dataset.nodeId))
       .filter(n => n && n.text.trim());
     if (!ordered.length) return "";
     const section = (n) => `## ${[topic, ...chainOf(n).map(c => c.selection)].join(" → ")}\n\n${blocksOf(n.text).join("\n\n")}`;
     const keep = new Set(ordered);
     const size = () => ordered.reduce((s, n) => s + (keep.has(n) ? section(n).length + 2 : 0), 0);
-    const droppable = ordered.filter(n => n.parentId != null).sort((a, b) => depth(b) - depth(a) || a.id - b.id);
+    const droppable = ordered.filter(n => n.parentId != null).sort((a, b) => depth(b) - depth(a) || a.seq - b.seq);
     while (size() > budget && droppable.length) keep.delete(droppable.shift());
     const dropped = ordered.length - keep.size;
     const header = `What the teacher studied in Learn Mode about "${topic}" (${keep.size} explanation${keep.size === 1 ? "" : "s"}`
@@ -406,6 +518,203 @@
   window.pokenLearnNotes = (sessionTopic, budget) =>
     topic && sessionTopic && sessionTopic.trim().toLowerCase() === topic.toLowerCase() ? compileNotes(budget) : "";
 
+  // ── Saved topics ────────────────────────────────────────────────────────
+  const ago = (iso) => {
+    const s = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (s < 60) return "just now";
+    if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+    return new Date(iso).toLocaleDateString();
+  };
+
+  async function showTopics() {
+    const s = store();
+    topicsEl.replaceChildren();
+    if (!s || !user) return;
+    const list = await s.listTopics();
+    if (nodes.length || !list.length) return;   // a tree opened meanwhile, or nothing saved yet
+    const h = document.createElement("div");
+    h.className = "learn-topics-title";
+    h.textContent = "Your topics";
+    topicsEl.append(h);
+    for (const t of list) {
+      const row = document.createElement("div");
+      row.className = "learn-topic";
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "learn-topic-open";
+      const title = document.createElement("span");
+      title.textContent = t.title;
+      const meta = document.createElement("small");
+      meta.textContent = `${t.language} · ${ago(t.updated_at)}`;
+      open.append(title, meta);
+      open.addEventListener("click", () => openTopic(t.id));
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "learn-topic-delete";
+      del.title = `Delete "${t.title}"`;
+      del.setAttribute("aria-label", `Delete ${t.title}`);
+      del.textContent = "×";
+      del.addEventListener("click", async () => {
+        if (!confirm(`Delete "${t.title}" and everything you explored in it?`)) return;
+        if (await s.deleteTopic(t.id)) row.remove();
+        if (!topicsEl.querySelector(".learn-topic")) topicsEl.replaceChildren();
+      });
+      row.append(open, del);
+      topicsEl.append(row);
+    }
+  }
+
+  // Rebuild a tree exactly as it was: same nesting, glosses, suggestions and diagrams.
+  // Rows use the learn_nodes column names, oldest first so a parent renders before its
+  // children. `image_data` (not a column) carries an unsaved diagram across the redirect.
+  function rebuild(title, language, rows, { saved = false } = {}) {
+    reset();
+    topicsEl.replaceChildren();
+    topic = title;
+    topicEl.value = title;
+    langEl.value = language;
+    for (const row of rows) {
+      if (row.parent_id && !byId(row.parent_id)) continue;   // orphan (shouldn't happen)
+      const node = createNode(row.parent_id, row.label, row.after_block, row.question, { id: row.id, kind: row.kind, createdAt: row.created_at });
+      node.el.querySelector(".learn-thinking")?.remove();
+      node.streaming = false;
+      node.saved = saved;            // from the database: already saved; from the stash: not yet
+      node.text = row.body || "";
+      renderBlocks(node);
+      if (row.extras) applyExtras(node, row.extras);
+      if (row.image_data) {
+        node.imageData = row.image_data;
+        showFigure(node, `data:${row.image_data.mimeType};base64,${row.image_data.base64}`, `Diagram: ${node.label}`);
+      } else if (row.image_path) {
+        node.imagePath = row.image_path;
+        store()?.diagramUrl(row.image_path).then(url => { if (url && byId(node.id)) showFigure(node, url, `Diagram: ${node.label}`); });
+      }
+    }
+    teachBtn.disabled = nodes.length === 0;
+    window.scrollTo(0, 0);
+  }
+
+  async function openTopic(id) {
+    if (streamingCount) return;
+    const s = store();
+    const data = s && await s.loadTree(id);
+    if (!data) return;
+    rebuild(data.topic.title, data.topic.language, data.nodes, { saved: true });
+    topicId = id;
+    topicReady = Promise.resolve(id);
+    updateBanner();
+  }
+
+  // ── Accounts ────────────────────────────────────────────────────────────
+  // Signing in leaves the page for Google, which would lose an unsaved tree, so it's stashed
+  // in sessionStorage first and rebuilt on return (then saved, now that there's a user).
+  const STASH_KEY = "poken_learn_stash";
+
+  function stashTree() {
+    // Even with no tree, stash so the return from Google lands back in Learn Mode.
+    const rows = [...nodes].sort((a, b) => a.seq - b.seq).map(n => ({
+      id: n.id, parent_id: n.parentId, kind: n.kind, label: n.label, question: n.question,
+      after_block: n.afterBlock, body: n.text, created_at: n.createdAt,
+      extras: n.terms || n.suggestions ? { keyTerms: n.terms || [], suggestions: n.suggestions || [] } : null,
+      image_data: n.imageData || null,
+    }));
+    const stash = { topic, language: langEl.value, rows };
+    try { sessionStorage.setItem(STASH_KEY, JSON.stringify(stash)); }
+    catch (_) {
+      // Over the ~5 MB quota (diagrams are big): keep the text, drop the pictures.
+      try { sessionStorage.setItem(STASH_KEY, JSON.stringify({ ...stash, rows: rows.map(r => ({ ...r, image_data: null })) })); }
+      catch (_) { /* can't stash; the leave warning was the last line of defence */ }
+    }
+  }
+
+  function takeStash() {
+    try {
+      const raw = sessionStorage.getItem(STASH_KEY);
+      sessionStorage.removeItem(STASH_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) { return null; }
+  }
+
+  async function signIn() {
+    const s = store();
+    if (!s) return;
+    stashTree();
+    leavingForSignIn = true;
+    if (!(await s.signInWithGoogle())) {
+      leavingForSignIn = false;
+      takeStash();   // didn't leave after all; the tree is still on screen
+      alert("Couldn't start Google sign-in. Please try again.");
+    }
+  }
+
+  function renderAccount() {
+    accountEl.replaceChildren();
+    if (!store()) return;
+    if (!user) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "learn-google";
+      b.textContent = "Sign in with Google";
+      b.addEventListener("click", signIn);
+      accountEl.append(b);
+      return;
+    }
+    const wrap = document.createElement("div");
+    wrap.className = "learn-user";
+    if (user.avatarUrl) {
+      const img = document.createElement("img");
+      img.src = user.avatarUrl;
+      img.alt = "";
+      img.referrerPolicy = "no-referrer";   // Google avatar URLs refuse some referrers
+      wrap.append(img);
+    }
+    const name = document.createElement("span");
+    name.textContent = user.name || user.email || "Signed in";
+    const out = document.createElement("button");
+    out.type = "button";
+    out.textContent = "Sign out";
+    out.addEventListener("click", () => store().signOut());
+    wrap.append(name, out);
+    accountEl.append(wrap);
+  }
+
+  // "Not saved" banner: signed out, with at least one finished explanation or diagram.
+  function updateBanner() {
+    bannerEl.hidden = !store() || !!user || bannerDismissed || !hasUnsavedWork();
+  }
+  document.getElementById("learnBannerSignIn").addEventListener("click", signIn);
+  document.getElementById("learnBannerClose").addEventListener("click", () => { bannerDismissed = true; updateBanner(); });
+
+  // Browsers only allow their own generic "Leave site?" dialog here — custom text is ignored.
+  window.addEventListener("beforeunload", (e) => {
+    if (leavingForSignIn || user || !hasUnsavedWork()) return;
+    e.preventDefault();
+    e.returnValue = "";
+  });
+
+  const stash = takeStash();
+  let firstAuthEvent = true;
+  store()?.onAuthChange((u) => {
+    const wasSignedIn = !!user;
+    user = u;
+    renderAccount();
+    topicsBtn.hidden = !user;
+    if (firstAuthEvent) {
+      firstAuthEvent = false;
+      // Back from Google: return to Learn Mode, rebuild the tree that was on screen, and save
+      // it if sign-in worked (saveAll below). A cancelled sign-in still gets the tree back.
+      if (stash) {
+        show();
+        if (stash.rows?.length) rebuild(stash.topic, stash.language, stash.rows);
+      }
+    }
+    if (user && !wasSignedIn) saveAll();
+    if (!user && wasSignedIn) { topicReady = null; topicId = null; }   // keep the tree on screen, stop saving
+    if (!nodes.length && screen.style.display === "block") showTopics();
+    updateBanner();
+  });
+
   // ── Start / navigation ──────────────────────────────────────────────────
   form.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -413,7 +722,9 @@
     if (!t || streamingCount) return;
     topic = t;
     reset();
+    topicsEl.replaceChildren();
     hintEl.style.display = "";
+    startSavedTopic(topic, langEl.value);
     explain(createNode(null, "", 0), { topic, language: langEl.value });
   });
 
@@ -423,13 +734,24 @@
     window.scrollTo(0, 0);
     // Match the setup screen's language if the user picked one there.
     const sessionLang = document.getElementById("sessionLanguage");
-    if (sessionLang?.value) langEl.value = sessionLang.value;
+    if (sessionLang?.value && !nodes.length) langEl.value = sessionLang.value;
+    if (!nodes.length) showTopics();
     topicEl.focus();
   }
   function hide() { hideToolbar(); screen.style.display = "none"; }
 
   learnFirst.addEventListener("click", show);
   backBtn.addEventListener("click", () => { hide(); landing.style.display = "flex"; });
+  // Leave the current tree (it's saved) and pick another.
+  topicsBtn.addEventListener("click", () => {
+    if (streamingCount) return;
+    reset();
+    topic = "";
+    topicEl.value = "";
+    showTopics();
+  });
+  topicsBtn.hidden = !user;   // onAuthChange keeps this in sync
+  renderAccount();
 
   // Hand off straight into a teaching session. connect() (app.js) reads the setup
   // fields, so fill them first, and pulls the compiled tree via pokenLearnNotes().

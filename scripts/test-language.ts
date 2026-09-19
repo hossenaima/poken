@@ -3,7 +3,8 @@
 // (server.ts throws at import unless GEMINI_API_KEY is non-empty; no network calls are made,
 //  so any placeholder value in .env is enough to run these.)
 import assert from 'node:assert/strict';
-import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage } from '../api/server.js';
+import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage, isDiagramRequest } from '../api/server.js';
+import { detectLanguageSwitchRequest, dominantScript, cleanupLooksBroken, joinChunk, enforceTranscriptLanguage, buildDiagramBrief } from '../api/server.js';
 
 // explicit requests, including Gemini's fragmented ASR and CJK phrasing
 assert.equal(detectLanguageSwitchRequest('Can we switch to Chinese now?'), 'Simplified Chinese');
@@ -39,4 +40,35 @@ assert.equal(enforceTranscriptLanguage('葉綠素 absorbs 陽光', 'Simplified C
 assert.equal(enforceTranscriptLanguage('the water cycle', 'English'), 'the water cycle');
 assert.equal(enforceTranscriptLanguage('photosynthesis needs 陽光', 'English'), 'photosynthesis needs');
 assert.equal(enforceTranscriptLanguage('', 'Simplified Chinese'), '');
+// Diagram request detection: explicit asks (clean or fragmented ASR) vs incidental visual words
+assert.equal(isDiagramRequest('Can you produce a diagram that shows this?'), true);
+assert.equal(isDiagramRequest('give me a sketch of that'), true);
+assert.equal(isDiagramRequest('could you please show us a flowchart'), true);
+assert.equal(isDiagramRequest('dia gram this for me'), true);
+assert.equal(isDiagramRequest('can you draw me a diagram'), true);
+assert.equal(isDiagramRequest("let's draw a conclusion from this"), false);
+assert.equal(isDiagramRequest('the picture on page 3 shows a cell'), false);
+assert.equal(isDiagramRequest("I'll illustrate my point"), false);
+// On-demand diagram brief: student's latest utterance(s) + teacher's explanation before it, never the request
+const t = (text: string) => ({ role: 'teacher' as const, name: 'Teacher', text, time: 0 });
+const s = (text: string) => ({ role: 'student' as const, name: 'Student', text, time: 0 });
+assert.equal(buildDiagramBrief([], 'Python functions'), 'Topic: Python functions.');
+assert.equal(
+  buildDiagramBrief([t('A function takes an input.'), t('def defines it.'), s('So input goes in, body runs, output comes out?')], 'Python functions'),
+  'Draw the concept the student just described: "So input goes in, body runs, output comes out?". The teacher explained: "A function takes an input. def defines it.". Topic: Python functions.',
+);
+// only the last two teacher turns before the student's utterance; consecutive student utterances are merged
+assert.equal(
+  buildDiagramBrief([t('old'), t('one'), t('two'), s('a'), s('b')], 'X'),
+  'Draw the concept the student just described: "a b". The teacher explained: "one two". Topic: X.',
+);
+// teacher-only log: no student clause
+assert.equal(buildDiagramBrief([t('just me')], 'X'), 'The teacher explained: "just me". Topic: X.');
+// the request sentence itself is sliced off by the caller, so a trailing teacher turn is not the request here
+assert.equal(buildDiagramBrief([s('the answer'), t('more')], 'X'), 'Draw the concept the student just described: "the answer". Topic: X.');
+// both clauses are capped at 400 chars
+const long = 'w'.repeat(500);
+const brief = buildDiagramBrief([t(long), s(long)], 'X');
+assert.ok(brief.includes(`"${'w'.repeat(400)}"`));
+assert.ok(!brief.includes('w'.repeat(401)));
 console.log('language + cleanup checks OK');
