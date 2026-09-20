@@ -2175,6 +2175,7 @@ function showReflection(data) {
   changeTopicBtn.textContent = L("changeTopic", "Change topic");
 
   reflectionSummary.textContent = data.summary || "";
+  setText("reflectionPokeyLine", pokeyReflectionLine((data.gaps || []).length, L));
   setText("reflectionRecapTopic", sessionTopic || "—");
   setText("reflectionRecapDuration", formatTime(sessionDuration) || "0:00");
 
@@ -2241,6 +2242,14 @@ function showReflection(data) {
       gapsList.appendChild(btn);
     });
   }
+}
+
+// Pokey's one line on the reflection, in the student's voice. Chosen from how many concepts
+// there are to revisit, so the same reflection always says the same thing.
+function pokeyReflectionLine(gapCount, L) {
+  if (gapCount === 0) return L("pokeyNoGaps", "Thanks a lot, teacher! I think I really get it now.");
+  if (gapCount <= 2) return L("pokeyFewGaps", "I think I followed most of that — I'll go over a couple of bits again.");
+  return L("pokeyManyGaps", "I got confused in places… can we go through those again?");
 }
 
 // Closing the loop: a concept from the reflection sends you back into Learn Mode to study it,

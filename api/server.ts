@@ -497,7 +497,7 @@ export interface Reflection {
   uiLabels?: Record<string, string>;
 }
 
-const REFLECTION_UI_LABEL_KEYS = ['title', 'topics', 'vocabulary', 'gaps', 'gapsEmpty', 'revisitCta', 'topicLabel', 'sessionLabel', 'teachAgain', 'backToLearning', 'changeTopic'];
+const REFLECTION_UI_LABEL_KEYS = ['title', 'topics', 'vocabulary', 'gaps', 'gapsEmpty', 'revisitCta', 'topicLabel', 'sessionLabel', 'teachAgain', 'backToLearning', 'changeTopic', 'pokeyNoGaps', 'pokeyFewGaps', 'pokeyManyGaps'];
 
 export function buildReflectionSchema(hasIndex: boolean, hasSeed: boolean = false): types.Schema {
   const T = types.Type;
@@ -693,7 +693,7 @@ async function generateReflection(
           `  Leave out only a question the teacher clearly and correctly answered. A student's paraphrase-for-confirmation ("so it is like a wanted poster, right?") counts as a question too, unless the teacher confirmed or corrected it.\n` +
           `  "reason" is a best guess and does not need to be right: "deferred" (said they would come back), "skipped" (moved on without engaging), "wrong" (answered, but incorrectly or misleadingly), "unanswered" (never got a reply). Never drop a question because no reason fits cleanly — pick the closest one and keep the question.\n` +
           `- "keyVocabulary": string[] — 4-6 key vocabulary terms or concepts that were central to this teaching session (short 1-2 word terms only, e.g. "Prime Number", "Composite", "Factors")\n` +
-          `- "uiLabels": object with translated section headers for the reflection page in ${language}. Keys: "title", "topics", "vocabulary", "gaps", "gapsEmpty", "revisitCta", "topicLabel", "sessionLabel", "teachAgain", "backToLearning", "changeTopic". Values must be the natural ${language} translation of these UI labels: "Session Reflection", "What You Covered", "Key Vocabulary", "Concepts to Revisit", "Mastery achieved! You explained every point clearly.", "Learn this", "Topic of Discussion", "Session", "Teach Again", "Back to learning", "Change topic".\n\n` +
+          `- "uiLabels": object with translated section headers for the reflection page in ${language}. Keys: "title", "topics", "vocabulary", "gaps", "gapsEmpty", "revisitCta", "topicLabel", "sessionLabel", "teachAgain", "backToLearning", "changeTopic", "pokeyNoGaps", "pokeyFewGaps", "pokeyManyGaps". Values must be the natural ${language} translation of these UI labels: "Session Reflection", "What You Covered", "Key Vocabulary", "Concepts to Revisit", "Mastery achieved! You explained every point clearly.", "Learn this", "Topic of Discussion", "Session", "Teach Again", "Back to learning", "Change topic", "Thanks a lot, teacher! I think I really get it now.", "I think I followed most of that — I'll go over a couple of bits again.", "I got confused in places… can we go through those again?". The last three are the student speaking to the teacher; keep them eager and kind.\n\n` +
           (language !== 'English' ? `IMPORTANT: Write ALL text content (summary, topicsCovered, gaps, gapNodes labels, keyVocabulary) in ${language}. Only the JSON keys stay in English.\n` : '') +
           (language === 'Simplified Chinese' ? `Use simplified Chinese characters (简体字) exclusively. Never use traditional Chinese characters.\n` : '') +
           (seedQuestion
