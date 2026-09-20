@@ -74,6 +74,7 @@ team's review are all on the PR.
 | Opaque buttons and cards on the grid screens; plain Teach Again | [#78](https://github.com/poken-app/poken/issues/78) | [#79](https://github.com/poken-app/poken/pull/79) | |
 | Opaque Upload button and signed-in account pill | [#80](https://github.com/poken-app/poken/issues/80) | [#81](https://github.com/poken-app/poken/pull/81) | |
 | Progress bar from upload to end of document analysis | [#82](https://github.com/poken-app/poken/issues/82) | [#83](https://github.com/poken-app/poken/pull/83) | |
+| Pre-session progress bar no longer snaps back to empty | [#84](https://github.com/poken-app/poken/issues/84) | [#85](https://github.com/poken-app/poken/pull/85) | |
 
 ## Layout
 
