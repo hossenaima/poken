@@ -1440,6 +1440,115 @@ function setupCameraDrag() {
   document.addEventListener("touchend", dragEnd);
 }
 
+// ── Uploaded-document viewer ─────────────────────────────────────────────────
+// Blob URLs of the Files shared this session: { name, mimeType, url }. Revoked on disconnect.
+const sessionDocs = [];
+const docViewer       = document.getElementById("docViewer");
+const docViewerBar    = document.getElementById("docViewerBar");
+const docViewerName   = document.getElementById("docViewerName");
+const docViewerBody   = document.getElementById("docViewerBody");
+const docViewerClose  = document.getElementById("docViewerClose");
+const viewMaterialBtn = document.getElementById("viewMaterialBtn");
+
+// Fixed-position drag; keeps at least `minVisible` px of the panel inside the viewport on every edge.
+function makeDraggable(panel, handle, minVisible = 80) {
+  let dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
+  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+  const dragStart = (clientX, clientY) => {
+    const r = panel.getBoundingClientRect();
+    panel.style.left = r.left + "px";
+    panel.style.top = r.top + "px";
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+    dragging = true;
+    startX = clientX; startY = clientY;
+    startLeft = r.left; startTop = r.top;
+  };
+  const dragMove = (clientX, clientY) => {
+    if (!dragging) return;
+    const left = clamp(startLeft + (clientX - startX), minVisible - panel.offsetWidth, window.innerWidth - minVisible);
+    const top  = clamp(startTop + (clientY - startY), 0, window.innerHeight - minVisible);
+    panel.style.left = left + "px";
+    panel.style.top = top + "px";
+  };
+  const dragEnd = () => { dragging = false; };
+
+  handle.addEventListener("mousedown", (e) => {
+    if (e.target.closest("button")) return;
+    e.preventDefault();
+    dragStart(e.clientX, e.clientY);
+  });
+  handle.addEventListener("touchstart", (e) => {
+    if (e.target.closest("button")) return;
+    const touch = e.touches?.[0];
+    if (!touch) return;
+    e.preventDefault();
+    dragStart(touch.clientX, touch.clientY);
+  }, { passive: false });
+  document.addEventListener("mousemove", (e) => dragMove(e.clientX, e.clientY));
+  document.addEventListener("mouseup", dragEnd);
+  document.addEventListener("touchmove", (e) => {
+    if (!dragging) return;
+    const touch = e.touches?.[0];
+    if (!touch) return;
+    e.preventDefault();
+    dragMove(touch.clientX, touch.clientY);
+  }, { passive: false });
+  document.addEventListener("touchend", dragEnd);
+}
+
+// Images get an <img>; everything else (PDF, text, Markdown, CSV) is left to the browser in an <iframe>.
+function renderDocInto(container, doc) {
+  container.innerHTML = "";
+  let el;
+  if (doc.mimeType.startsWith("image/")) {
+    el = document.createElement("img");
+    el.alt = doc.name;
+  } else {
+    el = document.createElement("iframe");
+    el.title = doc.name;
+  }
+  el.src = doc.url;
+  container.appendChild(el);
+}
+
+function openDocViewer(doc) {
+  if (!docViewer || !doc) return;
+  docViewerName.textContent = doc.name;
+  docViewerName.title = doc.name;
+  renderDocInto(docViewerBody, doc);
+  docViewer.hidden = false;
+  if (!docViewer.style.left) {
+    docViewer.style.left = Math.max(16, window.innerWidth - docViewer.offsetWidth - 24) + "px";
+    docViewer.style.top = "72px";
+  }
+}
+
+function closeDocViewer() {
+  if (!docViewer) return;
+  docViewer.hidden = true;
+  docViewerBody.innerHTML = "";
+}
+
+function clearSessionDocs() {
+  for (const doc of sessionDocs) { try { URL.revokeObjectURL(doc.url); } catch (_) {} }
+  sessionDocs.length = 0;
+  closeDocViewer();
+  if (docViewer) { docViewer.style.left = ""; docViewer.style.top = ""; }
+  if (viewMaterialBtn) viewMaterialBtn.hidden = true;
+}
+
+function setupDocViewer() {
+  if (!docViewer) return;
+  makeDraggable(docViewer, docViewerBar);
+  docViewerClose?.addEventListener("click", closeDocViewer);
+  viewMaterialBtn?.addEventListener("click", () => {
+    if (!sessionDocs.length) return;
+    if (!docViewer.hidden) closeDocViewer();
+    else openDocViewer(sessionDocs[sessionDocs.length - 1]);
+  });
+}
+
 // ── Media layout ─────────────────────────────────────────────────────────────
 const sessionCenter = document.querySelector(".session-center");
 
@@ -1581,6 +1690,8 @@ async function sendSessionMaterialFile(file) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     try {
       ws.send(JSON.stringify({ type: "material_file", name: file.name, mimeType: mimeType || "application/octet-stream", base64 }));
+      sessionDocs.push({ name: file.name, mimeType: mimeType || "application/octet-stream", url: URL.createObjectURL(file) });
+      if (viewMaterialBtn) viewMaterialBtn.hidden = false;
       materialAnalysesInFlight++;
       showSessionToast(`Analyzing "${file.name}"…`, "processing", true);
       updateActivity();
@@ -1621,6 +1732,7 @@ function setupSessionFileDrop() {
   }
 }
 setupSessionFileDrop();
+setupDocViewer();
 setupPanelResizers();
 setupCameraDrag();
 
@@ -2292,6 +2404,7 @@ function disconnect(keepScreen = false) {
   if (oldWs) { oldWs.onclose = null; try { oldWs.close(); } catch (_) {} oldWs = null; }
   if (resumeRetryTimer) { clearTimeout(resumeRetryTimer); resumeRetryTimer = null; }
   resetMaterialAnalyses();
+  clearSessionDocs();
   handoverInProgress = false;
   handoverQueue = [];
   resumeFailures = 0;
@@ -2581,6 +2694,10 @@ async function connect(opts = {}) {
         if (materialAnalysesInFlight === 0) {
           showSessionToast(msg.failed ? `Couldn't read "${msg.filename}"` : `Shared "${msg.filename}" with class`, msg.failed ? "error" : "success");
           setTimeout(() => hideSessionToast(), 2800);
+        }
+        if (!msg.failed) {
+          const doc = sessionDocs.find((d) => d.name === msg.filename) || sessionDocs[sessionDocs.length - 1];
+          openDocViewer(doc);
         }
       }
       if (msg.type === "session_state" && msg.resumeToken) { resumeToken = msg.resumeToken; storeSessionForResume(); }
