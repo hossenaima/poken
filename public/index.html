@@ -207,6 +207,15 @@
     .landing-cta:hover  { opacity: 0.85; }
     .landing-cta:active { transform: scale(0.98); }
 
+    /* ── Grid paper (teach, learn, open questions) ─── */
+    #setup-screen, #learn-screen, #questions-screen {
+      background-color: #fff;
+      background-image:
+        repeating-linear-gradient(0deg, rgba(17,24,39,0.045) 0 1px, transparent 1px 24px),
+        repeating-linear-gradient(90deg, rgba(17,24,39,0.045) 0 1px, transparent 1px 24px);
+      background-attachment: fixed;
+    }
+
     /* ── SETUP (Command Center) ───────────────────── */
     #setup-screen {
       display: none; width: 100%; min-height: 100vh;
@@ -1082,7 +1091,7 @@
     .landing-quiet-link[hidden] { display: none; }
 
     /* ── Open questions ─────────────────────────────────────────────── */
-    #questions-screen { display: none; min-height: 100vh; background: #fff; }
+    #questions-screen { display: none; min-height: 100vh; }
     .q-shell { max-width: 46rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
     .q-top { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.75rem; }
     .q-title { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; margin: 0; color: var(--poken-text); }
@@ -1130,7 +1139,7 @@
       border: 1px solid var(--poken-border-solid); border-radius: 8px; padding: 0.3rem 0.5rem; cursor: pointer;
     }
     .session-persona:focus { outline: none; border-color: #9CA3AF; }
-    #learn-screen { display: none; min-height: 100vh; background: #fff; }
+    #learn-screen { display: none; min-height: 100vh; }
     .learn-shell { max-width: 44rem; margin: 0 auto; padding: 2rem 1.25rem 6rem; }
     .learn-top { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
     .learn-back, .learn-teach {
