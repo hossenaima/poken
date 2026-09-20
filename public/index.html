@@ -1084,7 +1084,7 @@
     /* ── Open questions ─────────────────────────────────────────────── */
     #questions-screen { display: none; min-height: 100vh; background: #fff; }
     .q-shell { max-width: 46rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
-    .q-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.75rem; }
+    .q-top { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.75rem; }
     .q-title { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; margin: 0; color: var(--poken-text); }
     .q-sub { margin: 0.3rem 0 0; font-size: 0.9rem; color: var(--poken-text-secondary); }
     .q-back {
@@ -1279,10 +1279,16 @@
     .learn-node[data-mastery="solid"] > .learn-crumb::after { content: " · solid"; color: #047857; font-weight: 600; }
     @keyframes learnFocus { from { background: rgba(255,115,85,0.18); } to { background: transparent; } }
     .learn-node.focus > .learn-block { animation: learnFocus 2s ease-out; }
-    .learn-account { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
     .poken-account { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-top: 1.25rem; }
     .poken-account:empty { display: none; }
-    .learn-account + .learn-teach { margin-left: 0; }
+    /* One corner for the account control on the teach, learn and open-questions screens.
+       Each screen carries its own mount so the screen name travels with it; a hidden screen
+       hides its corner, so only the active screen's control is ever on screen. */
+    .poken-account-corner { position: fixed; top: 1rem; right: 1.25rem; z-index: 60; display: flex; align-items: center; gap: 0.5rem; }
+    .poken-account-corner:empty { display: none; }
+    @media (max-width: 64rem) {
+      .learn-shell, .q-shell { padding-top: 3.75rem; }
+    }
     .learn-google {
       display: inline-flex; align-items: center; gap: 0.45rem; font-family: inherit; font-size: 0.8125rem;
       font-weight: 500; color: var(--poken-text); background: #fff; cursor: pointer; white-space: nowrap;
@@ -1546,6 +1552,7 @@
 
   <!-- LEARN (Phase 1) -->
   <div id="learn-screen">
+    <div class="poken-account-corner" data-poken-account="learn"></div>
     <div class="learn-shell">
       <header class="learn-top">
         <button class="learn-back" id="learnBackBtn" type="button">&larr; Back</button>
@@ -1568,7 +1575,6 @@
           <input type="file" id="learnFile" accept=".pdf,.ppt,.pptx,.doc,.docx,.txt,.md,.csv,image/*" hidden />
           <span id="learnUploadText">Upload</span>
         </label>
-        <div class="learn-account" id="learnAccount" data-poken-account="learn"></div>
         <button class="learn-teach" id="learnTeachBtn" type="button" disabled>Teach this &rarr;</button>
       </header>
       <div class="learn-save-banner" id="learnSaveBanner" role="status" hidden>
@@ -1596,13 +1602,14 @@
 
   <!-- OPEN QUESTIONS -->
   <div id="questions-screen">
+    <div class="poken-account-corner" data-poken-account="questions"></div>
     <div class="q-shell">
       <header class="q-top">
+        <button type="button" class="q-back" id="questionsBackBtn">&larr; Back</button>
         <div>
           <h2 class="q-title">Open questions</h2>
           <p class="q-sub">Questions your students asked that you haven't answered yet.</p>
         </div>
-        <button type="button" class="q-back" id="questionsBackBtn">&larr; Back</button>
       </header>
       <div id="questionsList"></div>
     </div>
@@ -1610,6 +1617,7 @@
 
   <!-- SETUP (Command Center) -->
   <div id="setup-screen">
+    <div class="poken-account-corner" data-poken-account="setup"></div>
     <canvas id="ambientCanvas"></canvas>
     <div class="setup-container">
       <div class="setup-back-row">
@@ -1700,7 +1708,6 @@
       </div>
       <div class="debug-body" id="debugPanelBody"></div>
     </div>
-    <div class="poken-account" data-poken-account="setup"></div>
   </div>
 
   <!-- SESSION -->
