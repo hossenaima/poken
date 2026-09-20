@@ -111,6 +111,23 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
 - **Teacher transcription is Gemini Live's `inputTranscription`**; an ElevenLabs Scribe
   integration was tried and removed (2026-09-19) — its punctuation and segment timing caused
   more transcript bugs than it fixed.
+- **The transcript language filter drops a chunk whole or not at all.** `enforceTranscriptLanguage`
+  keeps only characters in the session's script, but it also allows `\p{Script=Common}` — and CJK
+  punctuation (`。，？！、`) is Common. So a Chinese reply in an English session had every Han
+  character stripped while the punctuation survived, surfacing as `", . ?"` — reported as "the
+  Chinese doesn't show up, random symbols show up instead" (fixed 2026-09-20). The guard: if
+  filtering removed every letter and number but the raw text had letters, return `''`. Keep that
+  invariant if you touch the filter — residual punctuation is worse than no transcript, because it
+  looks like corruption rather than a dropped line. Note the asymmetry it exposed: the teacher path
+  calls `autoDetectLanguage` before enforcement so a genuine language switch is caught (and replays
+  `droppedRaw`), while the student's `outputTranscription` has no such detection by design — the
+  student follows the teacher's language, so its drift into another script should be suppressed.
+- **Latin-script UI needs explicit CJK font fallbacks.** Inter — the only webfont — covers no CJK
+  (its Google Fonts `unicode-range`s are Latin, Greek, Cyrillic and Vietnamese only), and
+  `system-ui` is Segoe UI on Windows, which has none either. Chinese therefore rendered only if
+  the OS happened to font-link, so `PingFang SC` / `Microsoft YaHei` / `Noto Sans CJK SC` are now
+  named explicitly in both stacks in `public/index.html`. They are system faces, so this costs
+  zero bytes; do not "fix" it by adding a Noto Sans SC webfont, which is megabytes.
 - **The reflection page is a loop, not a report card.** It shows, in order: the session's topic and
   length, key vocabulary, a numbered list of what was covered (`topicsCovered`), and the concepts to
   revisit. Each concept is a button: it carries a short `label` (and, when the session was taught off

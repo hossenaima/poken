@@ -172,6 +172,13 @@ export function enforceTranscriptLanguage(text: string, language: string): strin
   for (const ch of text) {
     if (isAllowedCharForLanguage(ch, language)) out += ch;
   }
+  // Script-specific punctuation is Script=Common, so it survives the filter even when every
+  // letter it belonged to was stripped: a Chinese reply in an English session arrived as
+  // ", . ?". Punctuation with nothing left to punctuate is residue, not transcript — drop the
+  // chunk whole so the caller treats it as untranscribable (the teacher path re-emits it from
+  // droppedRaw once autoDetectLanguage switches the session language).
+  if (!/[\p{L}\p{N}]/u.test(out) && /\p{L}/u.test(text)) return '';
+
   out = out
     .replace(/\u200B|\u200C|\u200D|\uFEFF/g, '')
     .replace(/\s+/g, ' ')

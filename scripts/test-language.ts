@@ -47,6 +47,14 @@ assert.equal(enforceTranscriptLanguage('All right。Well，um，how do I…？',
 assert.equal(enforceTranscriptLanguage('… Wait！ Really： yes； no （maybe）', 'Spanish'), 'Wait! Really: yes; no (maybe)');
 assert.equal(enforceTranscriptLanguage('光合作用需要阳光。', 'Simplified Chinese'), '光合作用需要阳光。');
 assert.equal(enforceTranscriptLanguage('the water cycle.', 'English'), 'the water cycle.');
+// A reply in the wrong script is dropped whole, never reduced to its punctuation: CJK marks are
+// Script=Common, so "光合作用，就是阳光。对吗？" in an English session used to surface as ", . ?".
+assert.equal(enforceTranscriptLanguage('光合作用，就是阳光。对吗？', 'English'), '');
+assert.equal(enforceTranscriptLanguage('光合作用。', 'Spanish'), '');
+assert.equal(transcriptChunk('对吗？', 'English'), '');
+// …but punctuation that is merely unaccompanied in this chunk still streams normally.
+assert.equal(enforceTranscriptLanguage('123。', 'English'), '123.');
+assert.equal(enforceTranscriptLanguage('光合作用，对吗？', 'Simplified Chinese'), '光合作用，对吗？');
 assert.equal(transcriptChunk(' water', 'English'), ' water');
 assert.equal(transcriptChunk(' 光', 'Simplified Chinese'), '光');
 assert.equal(transcriptChunk(',', 'English'), ',');
