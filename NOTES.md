@@ -57,6 +57,23 @@ learn something the next session would otherwise rediscover the hard way.
   request of a connection on the same instance — WebSockets die without it; `SESSION_TIMEOUT_S`
   is set to the same 3600 so the server can hand the client over before the platform cuts the
   socket. Change one, change both.
+- **Auth lives in `public/auth.js`, and only there** (2026-09-19, PRs #42/#44/#46). It owns the
+  one Supabase client for the whole app and exposes `window.pokenAuth`: `client`, `currentUser`,
+  `onAuthChange`, `signIn`, `signOut`, `writeReturn`, `takeReturn`, `onAuthReset`. It loads before
+  `app.js` and `learn-store.js` (order matters — see the script tags at the bottom of
+  `index.html`). `learn-store.js` keeps its old surface (`signInWithGoogle`, `signOut`,
+  `onAuthChange`) as thin delegates so Learn Mode did not have to change; do not read that as
+  permission to put auth back there. Nothing in the module throws: every function has a documented
+  failure value, because a missing or misconfigured Supabase must still leave teaching and learning
+  usable. If you add a screen that needs identity, call `pokenAuth` — do not create a second
+  Supabase client, or you get two sessions racing over the same storage key.
+- **Sign-in returns you where you started.** Google navigates away and comes back to a cold page,
+  so the originating screen is written to `sessionStorage` under `poken_return` before leaving and
+  claimed once on return (`writeReturn` / `takeReturn`). It expires after 10 minutes: long enough
+  for a slow consent screen, short enough that a tab forgotten overnight does not hijack an
+  unrelated later visit. `takeReturn` deletes the record as it reads it, so a replayed or
+  bookmarked callback URL cannot re-route a second time. `scripts/test-auth-return.mjs` covers
+  this; run it if you touch the callback path.
 - **Learn Mode accounts:** anonymous sign-in is **off** on the hosted project — keep it off
   (public repo + publishable key = anyone could mint users). Signed out, a learn tree is
   in-memory only; sign-in is Google, and because that navigates away the tree is stashed in
