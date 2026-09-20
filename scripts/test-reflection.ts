@@ -180,6 +180,28 @@ const topic = 'Photosynthesis';
   for (const q of r.openQuestions) assert.ok(OPEN_QUESTION_REASONS.includes(q.reason));
 }
 {
+  // Speech-transcript artefacts seen in a real session probe.
+  const r = coerceReflection({
+    openQuestions: [
+      { question: 'I thought memory cells were actually*cells* that make antibodies?', reason: 'wrong' },
+      { question: '  Spaced   out   question?  ', reason: 'skipped' },
+      { question: '***', reason: 'deferred' },
+      { question: 'Does the *stress* land right at the end*?', reason: 'unanswered' },
+    ],
+  }, [], 'Topic');
+  assert.equal(r.openQuestions[0].question, 'I thought memory cells were actually cells that make antibodies?', 'emphasis asterisks stripped');
+  assert.equal(r.openQuestions[1].question, 'Spaced out question?', 'runs of whitespace collapsed');
+  assert.equal(r.openQuestions[2].question, 'Does the stress land right at the end?', 'no space left stranded before punctuation');
+  assert.equal(r.openQuestions.length, 3, 'a question that was only asterisks is dropped, not kept as empty');
+}
+{
+  // Contractions and names must survive: we do not touch apostrophes.
+  const r = coerceReflection({
+    openQuestions: [{ question: "Don't O'Brien's model say otherwise?", reason: 'wrong' }],
+  }, [], 'Topic');
+  assert.equal(r.openQuestions[0].question, "Don't O'Brien's model say otherwise?");
+}
+{
   const r = coerceReflection({ summary: 'ok' }, [], 'Topic');
   assert.deepEqual(r.openQuestions, [], 'a reflection with no openQuestions key yields an empty list, not undefined');
   assert.equal(r.seededAnswered, undefined, 'seededAnswered stays absent unless the model returned a boolean');

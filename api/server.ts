@@ -551,6 +551,25 @@ function fallbackReflection(summary: string): Reflection {
 /** Keeps only well-formed open questions: a non-empty question and one of the four allowed
  *  reasons. A model-invented reason is dropped rather than coerced, so the database check
  *  constraint never sees a value it would reject. */
+/** The question is copied out of a speech transcript, so it arrives with the artefacts of
+ *  one: emphasis asterisks the model wrote around a stressed word ("actually*cells*") and the
+ *  odd doubled space from joining chunks. Strip those — on the page they read as typos.
+ *
+ *  Deliberately NOT fixed here: a missing space before a quote ("the whole'getting sick' part").
+ *  Telling that apostrophe from a contraction needs a word list, and getting it wrong turns
+ *  "don't" into "don t" and "O'Brien" into "O Brien" — worse than the artefact it repairs. */
+function cleanQuestionText(raw: string): string {
+  return raw
+    // A space, not nothing: the asterisks are often the only boundary between the stressed
+    // word and its neighbour, so deleting them fuses "actually*cells*" into "actuallycells".
+    .replace(/\*+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .trim()
+    .slice(0, 1000)
+    .trim();
+}
+
 function openQuestionList(v: unknown): OpenQuestion[] {
   if (!Array.isArray(v)) return [];
   const allowed = new Set<string>(OPEN_QUESTION_REASONS);
@@ -559,7 +578,7 @@ function openQuestionList(v: unknown): OpenQuestion[] {
   for (const item of v) {
     if (!item || typeof item !== 'object') continue;
     const o = item as Record<string, unknown>;
-    const question = typeof o.question === 'string' ? o.question.trim().slice(0, 1000) : '';
+    const question = typeof o.question === 'string' ? cleanQuestionText(o.question) : '';
     const reason = typeof o.reason === 'string' ? o.reason.trim().toLowerCase() : '';
     if (!question || !allowed.has(reason)) continue;
     const key = question.toLowerCase();
