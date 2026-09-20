@@ -540,6 +540,7 @@ getStartedBtn.addEventListener("click", () => {
     setTimeout(() => setupScreen.classList.remove("fade-in"), 300);
     if (!ambientViz) ambientViz = new AmbientVisualizer("ambientCanvas");
     ambientViz.start();
+    loadRecentSessions();
     startSetupHardware();
     setProTip();
     proTipInterval = setInterval(setProTip, 10000);
@@ -1946,27 +1947,86 @@ const PRO_TIPS = [
   "Let silence sit for a moment; it gives them time to formulate questions.",
 ];
 
-function loadRecentSessions() {
-  const list = document.getElementById("recentSessionsList");
-  const empty = document.getElementById("recentSessionsEmpty");
-  if (!list || !empty) return;
+function readRecentTopics() {
   try {
     const raw = localStorage.getItem("poken_recent_topics");
     const topics = raw ? JSON.parse(raw) : [];
-    list.innerHTML = "";
-    if (topics.length === 0) {
-      empty.style.display = "block";
-      return;
-    }
-    empty.style.display = "none";
-    topics.slice(0, 3).forEach(t => {
-      const li = document.createElement("li");
-      li.textContent = t;
-      list.appendChild(li);
-    });
+    return Array.isArray(topics) ? topics.filter(t => typeof t === "string") : [];
   } catch (_) {
-    empty.style.display = "block";
+    return [];
   }
+}
+
+function writeRecentTopics(topics) {
+  try {
+    if (topics.length) localStorage.setItem("poken_recent_topics", JSON.stringify(topics));
+    else localStorage.removeItem("poken_recent_topics");
+  } catch (_) {}
+}
+
+function loadRecentSessions() {
+  const list = document.getElementById("recentSessionsList");
+  const empty = document.getElementById("recentSessionsEmpty");
+  const clearAll = document.getElementById("recentSessionsClear");
+  if (!list || !empty) return;
+  const topics = readRecentTopics();
+  list.innerHTML = "";
+  if (clearAll) clearAll.hidden = topics.length === 0;
+  if (topics.length === 0) {
+    empty.style.display = "block";
+    return;
+  }
+  empty.style.display = "none";
+  topics.slice(0, 3).forEach(t => {
+    const li = document.createElement("li");
+    const label = document.createElement("span");
+    label.textContent = t;
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "learn-topic-delete";
+    del.title = `Remove "${t}"`;
+    del.setAttribute("aria-label", `Remove ${t}`);
+    del.textContent = "×";
+    del.addEventListener("click", async () => {
+      const ok = await window.pokenConfirm({
+        danger: true,
+        title: "Remove this session?",
+        body: `Remove "${t}" from your recent sessions?`,
+        confirmLabel: "Remove",
+      });
+      if (!ok) return;
+      writeRecentTopics(readRecentTopics().filter(x => x !== t));
+      loadRecentSessions();
+    });
+    li.append(label, del);
+    list.appendChild(li);
+  });
+}
+
+const recentSessionsClearBtn = document.getElementById("recentSessionsClear");
+if (recentSessionsClearBtn) {
+  recentSessionsClearBtn.addEventListener("click", async () => {
+    const n = readRecentTopics().length;
+    if (!n) return;
+    const ok = await window.pokenConfirm({
+      danger: true,
+      title: `Clear all ${n} recent session${n === 1 ? "" : "s"}?`,
+      body: "This only clears the list in this browser. It can't be undone.",
+      confirmLabel: "Clear all",
+    });
+    if (!ok) return;
+    writeRecentTopics([]);
+    loadRecentSessions();
+  });
+}
+
+const setupBackBtn = document.getElementById("setupBackBtn");
+if (setupBackBtn) {
+  setupBackBtn.addEventListener("click", () => {
+    playButtonSound("click");
+    stopSetupHardware();
+    showLanding();
+  });
 }
 
 function pushRecentTopic(topic) {
