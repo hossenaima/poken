@@ -717,14 +717,9 @@
       flex-shrink: 0; padding: 0.5rem 1rem; background: #fff;
       border-top: 1.5px solid #E5E7EB;
     }
-    /* Matches .learn-back on the learn screen: the session had only the logo as an implicit
-       way out, which nobody reads as "leave". */
-    .session-back {
-      flex: none; font-family: inherit; font-size: 0.8rem; font-weight: 500; cursor: pointer;
-      background: none; border: 1px solid var(--poken-border-solid); border-radius: 8px;
-      padding: 0.3rem 0.6rem; color: var(--poken-text-secondary); margin-right: 0.5rem;
-    }
-    .session-back:hover { background: #F3F4F6; color: var(--poken-text); }
+    /* The session had only the wordmark as an implicit way out, which nobody reads as
+       "leave". Same control as the learn and setup screens, just spaced off the logo. */
+    #sessionBackBtn { flex: none; margin-right: 0.5rem; }
     .session-toolbar { display: flex; align-items: center; justify-content: center; gap: 0.4rem; margin-bottom: 0.4rem; }
     .toolbar-btn {
       display: flex; align-items: center; gap: 0.35rem;
@@ -1434,7 +1429,7 @@
     <!-- Top bar -->
     <div class="session-top-bar">
       <div class="session-top-left">
-        <button class="session-back" id="sessionBackBtn" type="button" title="Leave this session">&larr; Back</button>
+        <button class="learn-back" id="sessionBackBtn" type="button" title="Leave this session">&larr; Back</button>
         <button class="session-logo" id="sessionHomeBtn" type="button" title="Back to home">Poken</button>
         <span class="session-topic-badge" id="sessionTopicLabel"></span>
       </div>
