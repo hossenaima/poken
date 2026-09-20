@@ -4,7 +4,7 @@
 // (server.ts throws at import unless GEMINI_API_KEY is non-empty; no network calls are made,
 //  so any placeholder value in .env is enough to run these.)
 import assert from 'node:assert/strict';
-import { buildReflectionSchema, coerceReflection, parseLearnIndex, LEARN_INDEX_MAX_ENTRIES } from '../api/server.js';
+import { buildReflectionSchema, coerceReflection, parseLearnIndex, LEARN_INDEX_MAX_ENTRIES, OPEN_QUESTION_REASONS } from '../api/server.js';
 
 const ids = ['n-light', 'n-calvin', 'n-atp'];
 const topic = 'Photosynthesis';
@@ -159,6 +159,43 @@ const topic = 'Photosynthesis';
   assert.equal(capped.length, LEARN_INDEX_MAX_ENTRIES);
   assert.equal(capped[0].id, 'id-0');
   assert.equal(capped[59].id, 'id-59');
+}
+
+// ── openQuestions ───────────────────────────────────────────────────────────
+{
+  const r = coerceReflection({
+    openQuestions: [
+      { question: 'Are memory cells the antibodies themselves?', reason: 'deferred' },
+      { question: 'Why do boosters exist?', reason: 'WRONG' },
+      { question: '  ', reason: 'skipped' },
+      { question: 'Invented reason is dropped, never coerced', reason: 'confused' },
+      { question: 'Are memory cells the antibodies themselves?', reason: 'unanswered' },
+      { reason: 'skipped' },
+      'not an object',
+    ],
+  }, [], 'How vaccines work');
+  assert.equal(r.openQuestions.length, 2, 'blank, bad-reason, duplicate and malformed entries are dropped');
+  assert.deepEqual(r.openQuestions[0], { question: 'Are memory cells the antibodies themselves?', reason: 'deferred' });
+  assert.equal(r.openQuestions[1].reason, 'wrong', 'reason is lower-cased to match the db check constraint');
+  for (const q of r.openQuestions) assert.ok(OPEN_QUESTION_REASONS.includes(q.reason));
+}
+{
+  const r = coerceReflection({ summary: 'ok' }, [], 'Topic');
+  assert.deepEqual(r.openQuestions, [], 'a reflection with no openQuestions key yields an empty list, not undefined');
+  assert.equal(r.seededAnswered, undefined, 'seededAnswered stays absent unless the model returned a boolean');
+}
+{
+  const r = coerceReflection({ seededAnswered: true }, [], 'Topic');
+  assert.equal(r.seededAnswered, true);
+  const r2 = coerceReflection({ seededAnswered: 'yes' }, [], 'Topic');
+  assert.equal(r2.seededAnswered, undefined, 'a non-boolean seededAnswered is ignored');
+}
+{
+  const plain = JSON.stringify(buildReflectionSchema(false));
+  const seeded = JSON.stringify(buildReflectionSchema(false, true));
+  assert.ok(!plain.includes('seededAnswered'), 'seededAnswered is not offered when no question was seeded');
+  assert.ok(seeded.includes('seededAnswered'), 'seededAnswered is required when a question was seeded');
+  assert.ok(plain.includes('openQuestions'), 'openQuestions is always in the schema');
 }
 
 console.log('test-reflection: all assertions passed');

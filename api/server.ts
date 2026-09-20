@@ -477,18 +477,29 @@ export function parseLearnIndex(nodes: unknown): LearnIndexEntry[] {
 // it came from, when this session was taught off a tree.
 export interface ReflectionGapNode { text: string; label: string; nodeId: string | null }
 
+// A question the student asked that the teacher did not close out. `reason` is why it is still
+// open, and it is the honest distinction: a question waved away is not the same as one answered
+// wrongly. These become the Open Questions page, which is per topic and only ever closed by the
+// teacher — either by teaching it or by dismissing it. Studying it is not closing it.
+export type OpenQuestionReason = 'deferred' | 'skipped' | 'wrong' | 'unanswered';
+export const OPEN_QUESTION_REASONS: OpenQuestionReason[] = ['deferred', 'skipped', 'wrong', 'unanswered'];
+export interface OpenQuestion { question: string; reason: OpenQuestionReason }
+
 export interface Reflection {
   summary: string;
   topicsCovered: string[];
   gaps: string[];
   gapNodes: ReflectionGapNode[];
   keyVocabulary: string[];
+  openQuestions: OpenQuestion[];
+  // Only meaningful when the session was started to answer one specific open question.
+  seededAnswered?: boolean;
   uiLabels?: Record<string, string>;
 }
 
 const REFLECTION_UI_LABEL_KEYS = ['title', 'topics', 'vocabulary', 'gaps', 'gapsEmpty', 'revisitCta', 'topicLabel', 'sessionLabel', 'teachAgain', 'backToLearning', 'changeTopic'];
 
-export function buildReflectionSchema(hasIndex: boolean): types.Schema {
+export function buildReflectionSchema(hasIndex: boolean, hasSeed: boolean = false): types.Schema {
   const T = types.Type;
   const stringArray: types.Schema = { type: T.ARRAY, items: { type: T.STRING } };
   const gapNodeProps: Record<string, types.Schema> = { text: { type: T.STRING }, label: { type: T.STRING } };
@@ -504,21 +515,59 @@ export function buildReflectionSchema(hasIndex: boolean): types.Schema {
     gaps: stringArray,
     gapNodes: { type: T.ARRAY, items: { type: T.OBJECT, properties: gapNodeProps, required: gapNodeRequired } },
     keyVocabulary: stringArray,
+    openQuestions: {
+      type: T.ARRAY,
+      items: {
+        type: T.OBJECT,
+        properties: {
+          question: { type: T.STRING },
+          reason: { type: T.STRING, enum: OPEN_QUESTION_REASONS as unknown as string[] },
+        },
+        required: ['question', 'reason'],
+      },
+    },
     uiLabels: {
       type: T.OBJECT,
       properties: Object.fromEntries(REFLECTION_UI_LABEL_KEYS.map(k => [k, { type: T.STRING }])),
       required: REFLECTION_UI_LABEL_KEYS,
     },
   };
+  const required = ['summary', 'topicsCovered', 'gaps', 'gapNodes', 'keyVocabulary', 'openQuestions', 'uiLabels'];
+  if (hasSeed) {
+    properties.seededAnswered = { type: T.BOOLEAN };
+    required.push('seededAnswered');
+  }
   return {
     type: T.OBJECT,
     properties,
-    required: ['summary', 'topicsCovered', 'gaps', 'gapNodes', 'keyVocabulary', 'uiLabels'],
+    required,
   };
 }
 
 function fallbackReflection(summary: string): Reflection {
-  return { summary, topicsCovered: [], gaps: [], gapNodes: [], keyVocabulary: [] };
+  return { summary, topicsCovered: [], gaps: [], gapNodes: [], keyVocabulary: [], openQuestions: [] };
+}
+
+/** Keeps only well-formed open questions: a non-empty question and one of the four allowed
+ *  reasons. A model-invented reason is dropped rather than coerced, so the database check
+ *  constraint never sees a value it would reject. */
+function openQuestionList(v: unknown): OpenQuestion[] {
+  if (!Array.isArray(v)) return [];
+  const allowed = new Set<string>(OPEN_QUESTION_REASONS);
+  const out: OpenQuestion[] = [];
+  const seen = new Set<string>();
+  for (const item of v) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as Record<string, unknown>;
+    const question = typeof o.question === 'string' ? o.question.trim().slice(0, 1000) : '';
+    const reason = typeof o.reason === 'string' ? o.reason.trim().toLowerCase() : '';
+    if (!question || !allowed.has(reason)) continue;
+    const key = question.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ question, reason: reason as OpenQuestionReason });
+  }
+  return out.slice(0, 12);
 }
 
 function stringList(v: unknown): string[] {
@@ -563,7 +612,9 @@ export function coerceReflection(parsed: unknown, validIds: string[], topic: str
     gaps,
     gapNodes,
     keyVocabulary: stringList(p.keyVocabulary),
+    openQuestions: openQuestionList(p.openQuestions),
   };
+  if (typeof p.seededAnswered === 'boolean') out.seededAnswered = p.seededAnswered;
   const ul = p.uiLabels;
   if (ul && typeof ul === 'object' && !Array.isArray(ul)) {
     const labels: Record<string, string> = {};
@@ -579,6 +630,7 @@ async function generateReflection(
   sessionLog: SessionEntry[],
   language: string = 'English',
   learnIndex: LearnIndexEntry[] = [],
+  seedQuestion: string = '',
 ): Promise<Reflection> {
   if (sessionLog.length < 2) {
     return fallbackReflection('The session was too short to generate a meaningful reflection.');
@@ -589,13 +641,14 @@ async function generateReflection(
     .join('\n');
   const hasIndex = learnIndex.length > 0;
   const validIds = learnIndex.map(n => n.id);
+  const schema = buildReflectionSchema(hasIndex, !!seedQuestion);
 
   try {
     const result = await ai.models.generateContent({
       model: FAST_MODEL,
       config: {
         responseMimeType: 'application/json',
-        responseSchema: buildReflectionSchema(hasIndex),
+        responseSchema: schema,
       },
       contents: [{
         role: 'user',
@@ -615,10 +668,19 @@ async function generateReflection(
             ? `, "nodeId": the id of the studied explanation this gap belongs to, copied exactly from the list above, or null when none fits. Never invent an id`
             : '') +
           `}\n` +
+          `- "openQuestions": array — questions a STUDENT asked that the teacher did not actually close out. Copy the student's question as it was asked (lightly cleaned up, at most one sentence), and give the reason it is still open: "deferred" (the teacher said they would come back to it, e.g. "let me get back to that"), "skipped" (the teacher moved on or changed the subject without engaging), "wrong" (the teacher answered, but the answer was incorrect or misleading), "unanswered" (the question simply never got a reply). Each entry: {"question": string, "reason": one of deferred|skipped|wrong|unanswered}.\n` +
+          `  Be strict. Only include a question the teacher genuinely left hanging — if they answered it correctly, leave it out, even if the answer was brief. Do NOT include the student's rhetorical prompts, encouragements, or "can you say more about that?" follow-ups that the teacher then answered. An empty array is the correct answer for a session that went well, and is much better than padding the list.\n` +
           `- "keyVocabulary": string[] — 4-6 key vocabulary terms or concepts that were central to this teaching session (short 1-2 word terms only, e.g. "Prime Number", "Composite", "Factors")\n` +
           `- "uiLabels": object with translated section headers for the reflection page in ${language}. Keys: "title", "topics", "vocabulary", "gaps", "gapsEmpty", "revisitCta", "topicLabel", "sessionLabel", "teachAgain", "backToLearning", "changeTopic". Values must be the natural ${language} translation of these UI labels: "Session Reflection", "What You Covered", "Key Vocabulary", "Concepts to Revisit", "Mastery achieved! You explained every point clearly.", "Learn this", "Topic of Discussion", "Session", "Teach Again", "Back to learning", "Change topic".\n\n` +
           (language !== 'English' ? `IMPORTANT: Write ALL text content (summary, topicsCovered, gaps, gapNodes labels, keyVocabulary) in ${language}. Only the JSON keys stay in English.\n` : '') +
           (language === 'Simplified Chinese' ? `Use simplified Chinese characters (简体字) exclusively. Never use traditional Chinese characters.\n` : '') +
+          (seedQuestion
+            ? `
+This session was started so the teacher could answer one specific question they had left open: "${seedQuestion}".
+` +
+              `Also return "seededAnswered": boolean — true only if the teacher answered THAT question correctly and completely in this transcript. If they dodged it again, got it wrong, or never really addressed it, return false and include it in "openQuestions" with the appropriate reason.
+`
+            : '') +
           `Keep every item to at most one short sentence. Be concrete and useful — no filler, no praise.`
         }]
       }],
@@ -909,6 +971,10 @@ function buildServer(): http.Server {
     let materials = '';
     // Learn Mode explanations covered by this session (pre-session `learn_index` frame).
     let learnIndex: LearnIndexEntry[] = [];
+    // Set when this session was started from the Open Questions page to answer one specific
+    // question. Only the question text travels — never the old transcript, which would cost far
+    // more tokens than it is worth. The topic name alone re-establishes enough context.
+    let seedQuestion = '';
 
     // Resume state (set by a `resume` frame before ready_to_start)
     let resumeInfo: ResumeToken | null = null;
@@ -1361,7 +1427,9 @@ function buildServer(): http.Server {
               sendJson({ type: 'session_ready' });
               sendJson({ type: 'info', message: resumeInfo ? `Reconnected. Keep going: ${topic}` : `Your student is ready. Start explaining: ${topic}` });
             }
-            afterOpen(() => sess, 'solo', `Say a short greeting out loud in ${language} right now (e.g. "Hi, ready when you are!" or "Hey there!"). Say ONLY this greeting — nothing else. Do NOT ask a question. Do NOT mention the topic. Just greet and wait silently.`);
+            afterOpen(() => sess, 'solo', seedQuestion
+              ? `The teacher came back specifically to answer a question you asked them last time. Greet them in one short sentence in ${language}, then immediately ask this question again, in your own words, as the same curious student: "${seedQuestion}". Ask ONLY that one question and then wait silently for their answer. Do not preface it with a summary of last time, and do not ask anything else.`
+              : `Say a short greeting out loud in ${language} right now (e.g. "Hi, ready when you are!" or "Hey there!"). Say ONLY this greeting — nothing else. Do NOT ask a question. Do NOT mention the topic. Just greet and wait silently.`);
           },
           onmessage: (message: types.LiveServerMessage) => {
             handleSessionMeta('solo', message);
@@ -1425,6 +1493,10 @@ function buildServer(): http.Server {
           learnIndex = parseLearnIndex(parsed.nodes);
           return;
         }
+        if (parsed.type === 'seed_question' && typeof parsed.question === 'string') {
+          seedQuestion = parsed.question.trim().slice(0, 1000);
+          return;
+        }
         if (parsed.type === 'material_file' && parsed.base64 && parsed.name) {
           pendingMaterialFiles.push({ name: parsed.name, base64: parsed.base64, mimeType: parsed.mimeType || 'application/octet-stream' });
           return;
@@ -1485,7 +1557,7 @@ function buildServer(): http.Server {
         case 'request_reflection':
           if (reflectionRequested) return;
           reflectionRequested = true;
-          generateReflection(ai, topic, sessionLog, language, learnIndex).then(reflData => { sendJson({ type: 'reflection', data: reflData }); });
+          generateReflection(ai, topic, sessionLog, language, learnIndex, seedQuestion).then(reflData => { sendJson({ type: 'reflection', data: reflData }); });
           return;
         case 'text_input':
           if (typeof msg.text === 'string' && msg.text.trim()) onTextInput(msg.text.trim());
