@@ -2597,9 +2597,16 @@ async function connect(opts = {}) {
       if (msg.type === "material_progress" && msg.total > 0) {
         if (msg.status === "done") setupFilesDone = Math.min(msg.total, setupFilesDone + 1);
         const loadingText = document.querySelector("#setup-loading .setup-loading-text");
-        if (loadingText) loadingText.textContent = `Analyzing ${setupFilesDone} of ${msg.total} files…`;
+        if (loadingText) {
+          loadingText.textContent = msg.total === 1
+            ? `Analyzing "${msg.filename}"…`
+            : `Analyzing ${setupFilesDone} of ${msg.total} files…`;
+        }
+        // Only switch to a measured bar once a fraction actually exists: several files, at
+        // least one finished. A single file is one vision call that reports nothing in
+        // between, so the indeterminate sweep stays — it must never snap back to 0%.
         const bar = document.querySelector("#setup-loading .pk-progress");
-        if (bar) {
+        if (bar && msg.total > 1 && setupFilesDone > 0) {
           bar.classList.add("is-determinate");
           bar.style.setProperty("--pk-progress", Math.round((setupFilesDone / msg.total) * 100) + "%");
         }
