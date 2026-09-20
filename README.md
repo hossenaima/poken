@@ -72,6 +72,7 @@ team's review are all on the PR.
 | Floating polka dots on teach, learn and open questions | [#74](https://github.com/poken-app/poken/issues/74) | [#75](https://github.com/poken-app/poken/pull/75) | |
 | Visible float dots, emoji-free reflection buttons, pastel gradient | [#76](https://github.com/poken-app/poken/issues/76) | [#77](https://github.com/poken-app/poken/pull/77) | |
 | Opaque buttons and cards on the grid screens; plain Teach Again | [#78](https://github.com/poken-app/poken/issues/78) | [#79](https://github.com/poken-app/poken/pull/79) | |
+| Opaque Upload button and signed-in account pill | [#80](https://github.com/poken-app/poken/issues/80) | [#81](https://github.com/poken-app/poken/pull/81) | |
 
 ## Layout
 
