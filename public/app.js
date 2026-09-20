@@ -1550,8 +1550,10 @@ function hideSessionToast() {
   sessionToast.classList.remove("visible");
 }
 
-// In-session material analyses still awaiting the server's material_ready ack.
+// In-session material analyses still awaiting the server's material_processed ack.
 let materialAnalysesInFlight = 0;
+// Pre-session files whose material_progress 'done' frame has arrived.
+let setupFilesDone = 0;
 function resetMaterialAnalyses() {
   if (materialAnalysesInFlight === 0) return;
   materialAnalysesInFlight = 0;
@@ -2406,6 +2408,9 @@ async function connect(opts = {}) {
     const setupText = document.getElementById("setupLoadingText");
     if (setupLoading) { setupLoading.classList.add("visible"); setupLoading.style.display = "flex"; }
     if (setupText) setupText.textContent = resuming ? "Resuming your session…" : "Preparing your session…";
+    setupFilesDone = 0;
+    const setupBar = setupLoading && setupLoading.querySelector(".pk-progress");
+    if (setupBar) { setupBar.classList.remove("is-determinate"); setupBar.style.removeProperty("--pk-progress"); }
   } else {
     setStatus("Reconnecting…", "");
   }
@@ -2571,10 +2576,10 @@ async function connect(opts = {}) {
 
       // Handover / resume bookkeeping
       if (msg.type === "session_context") { materialsContext = msg.materialsContext || ""; }
-      if (msg.type === "material_ready") {
+      if (msg.type === "material_processed") {
         if (materialAnalysesInFlight > 0) materialAnalysesInFlight--;
         if (materialAnalysesInFlight === 0) {
-          showSessionToast(msg.failed ? `Couldn't read "${msg.name}"` : `Shared "${msg.name}" with class`, msg.failed ? "error" : "success");
+          showSessionToast(msg.failed ? `Couldn't read "${msg.filename}"` : `Shared "${msg.filename}" with class`, msg.failed ? "error" : "success");
           setTimeout(() => hideSessionToast(), 2800);
         }
       }
@@ -2588,10 +2593,15 @@ async function connect(opts = {}) {
       if (msg.type === "debug") { debugLog(msg.level || 'info', msg.message || ''); }
 
       // Material processing progress (pre-session vision analysis)
-      if (msg.type === "material_progress") {
+      // Files are analysed in parallel, so only the count of 'done' frames is real progress.
+      if (msg.type === "material_progress" && msg.total > 0) {
+        if (msg.status === "done") setupFilesDone = Math.min(msg.total, setupFilesDone + 1);
         const loadingText = document.querySelector("#setup-loading .setup-loading-text");
-        if (loadingText) {
-          loadingText.textContent = `Analyzing ${msg.filename} (${msg.current}/${msg.total})…`;
+        if (loadingText) loadingText.textContent = `Analyzing ${setupFilesDone} of ${msg.total} files…`;
+        const bar = document.querySelector("#setup-loading .pk-progress");
+        if (bar) {
+          bar.classList.add("is-determinate");
+          bar.style.setProperty("--pk-progress", Math.round((setupFilesDone / msg.total) * 100) + "%");
         }
       }
 

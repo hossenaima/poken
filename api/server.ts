@@ -1295,7 +1295,7 @@ function buildServer(): http.Server {
         if (content) return `[The teacher has shared a study material: "${name}".]\n\nContent:\n${content}`;
         return `[The teacher has shared a file: "${name}".]${error ? ` (${error})` : ''}`;
       } catch (e: any) {
-        sendJson({ type: 'material_processed', filename: name });
+        sendJson({ type: 'material_processed', filename: name, failed: true });
         return `[The teacher has shared a file: "${name}".] (analysis failed: ${e.message})`;
       }
     }
@@ -1621,11 +1621,10 @@ function buildServer(): http.Server {
             const mimeType = String(msg.mimeType || 'application/octet-stream');
             console.log(`[Poken] Received study material: ${name} (${mimeType})`);
             processMaterialFile(name, msg.base64, mimeType)
-              .then(message => { sendText(message); sendJson({ type: 'material_ready', name }); })
+              .then(message => sendText(message))
               .catch(e => {
                 console.error('[Poken] material_file extract failed', e);
                 sendText(`[The teacher has shared a file: "${name}".]`);
-                sendJson({ type: 'material_ready', name, failed: true });
               });
           }
           return;

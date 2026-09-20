@@ -891,6 +891,7 @@
       background: linear-gradient(90deg, #FFCB45, #A7C878, #93C5FD, #C4B5FD, #FF3D91, #FF7355);
       animation: pkProgressSweep 1.4s ease-in-out infinite;
     }
+    .pk-progress.is-determinate::after { animation: none; width: var(--pk-progress, 0%); transition: width 0.35s ease; }
     @keyframes pkProgressSweep {
       0%   { transform: translateX(-110%); }
       100% { transform: translateX(260%); }
