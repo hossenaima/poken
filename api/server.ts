@@ -1295,7 +1295,7 @@ function buildServer(): http.Server {
         if (content) return `[The teacher has shared a study material: "${name}".]\n\nContent:\n${content}`;
         return `[The teacher has shared a file: "${name}".]${error ? ` (${error})` : ''}`;
       } catch (e: any) {
-        sendJson({ type: 'material_processed', filename: name });
+        sendJson({ type: 'material_processed', filename: name, failed: true });
         return `[The teacher has shared a file: "${name}".] (analysis failed: ${e.message})`;
       }
     }
