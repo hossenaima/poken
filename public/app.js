@@ -283,9 +283,15 @@ const SPEECH_ENERGY_THRESHOLD = 0.006;
 // Use a higher threshold during playback so only real teacher speech triggers VAD,
 // not speaker echo. This prevents both false interruptions and hallucinated teacher turns.
 const ECHO_GUARD_MULTIPLIER   = 5; // 0.006 * 5 = 0.03 (echo ~0.01-0.02, real speech ~0.05+)
+// Speech is sustained; a tap, click or knock is not. Requiring two consecutive
+// 128 ms buffers above threshold rejects transients while costing ~256 ms of
+// barge-in latency. Raise to 3 if knocks still get through in a noisy room.
+const SPEECH_BUFFERS_BEFORE_START = 2;
 
 let vadInSpeech     = false;
 let vadSilenceCount = 0;
+let vadPendingCount  = 0;
+let vadPendingFrames = [];   // onset audio held until speech is confirmed
 
 // Whiteboard
 let currentTool  = "pen";
@@ -1860,10 +1866,18 @@ async function startMic(existingStream = null) {
       : SPEECH_ENERGY_THRESHOLD;
 
     if (rms > effectiveThreshold) {
-      resetIdleTimer();
-      lastSpeechFrameTime = Date.now();
       if (!vadInSpeech) {
+        // Convert now: `input` is a live view the browser reuses after this callback.
+        vadPendingFrames.push(float32ToPcm16(input));
+        vadPendingCount++;
+        if (vadPendingCount < SPEECH_BUFFERS_BEFORE_START) {
+          vadSilenceCount = 0;
+          return;                      // not speech yet — do not interrupt, do not send
+        }
         vadInSpeech = true;
+        vadPendingCount = 0;
+        resetIdleTimer();
+        lastSpeechFrameTime = Date.now();
         setMicActive(true);
         if (currentOrbState !== "speaking") setOrbState("listening");
         wsSend(JSON.stringify({ type: "speech_start" }));
@@ -1884,24 +1898,36 @@ async function startMic(existingStream = null) {
             suppressAudio = true;
           }
         }
-      }
-      vadSilenceCount = 0;
-    } else if (vadInSpeech) {
-      vadSilenceCount++;
-      if (vadSilenceCount >= SILENCE_BUFFERS_BEFORE_END) {
-        vadInSpeech = false;
+        // Flush the held onset so the teacher's first syllable is not clipped.
+        for (const frame of vadPendingFrames) wsSend(frame);
+        vadPendingFrames = [];
         vadSilenceCount = 0;
-        lastSpeechFrameTime = Date.now();
-        setMicActive(!micMuted);
-        if (currentOrbState !== "speaking") setOrbState("thinking");
-        suppressAudio = false; // teacher stopped — allow next student response
-        wsSend(JSON.stringify({ type: "speech_end", media: { camera: cameraEnabled, whiteboard: whiteboardEnabled, screen: screenEnabled } }));
+        return;                        // already sent this buffer above
+      }
+      resetIdleTimer();
+      lastSpeechFrameTime = Date.now();
+      vadSilenceCount = 0;
+    } else {
+      // Below threshold: whatever spiked was a transient, not the start of a turn.
+      vadPendingCount = 0;
+      vadPendingFrames = [];
+      if (vadInSpeech) {
+        vadSilenceCount++;
+        if (vadSilenceCount >= SILENCE_BUFFERS_BEFORE_END) {
+          vadInSpeech = false;
+          vadSilenceCount = 0;
+          lastSpeechFrameTime = Date.now();
+          setMicActive(!micMuted);
+          if (currentOrbState !== "speaking") setOrbState("thinking");
+          suppressAudio = false; // teacher stopped — allow next student response
+          wsSend(JSON.stringify({ type: "speech_end", media: { camera: cameraEnabled, whiteboard: whiteboardEnabled, screen: screenEnabled } }));
 
-        lastTeacherFinalizedAt = Date.now();
-        const entryToClean = currentTeacherEntry;
-        currentTeacherEntry = null;
-        if (entryToClean && entryToClean.rawText.trim()) {
-          cleanupEntry(entryToClean, false).catch(() => {});
+          lastTeacherFinalizedAt = Date.now();
+          const entryToClean = currentTeacherEntry;
+          currentTeacherEntry = null;
+          if (entryToClean && entryToClean.rawText.trim()) {
+            cleanupEntry(entryToClean, false).catch(() => {});
+          }
         }
       }
     }
@@ -2429,6 +2455,8 @@ function disconnect(keepScreen = false) {
   audioChunksReceived = 0;
   vadInSpeech = false;
   vadSilenceCount = 0;
+  vadPendingCount = 0;
+  vadPendingFrames = [];
   micMuted = false;
   muteBtn.innerHTML = '<span class="icon">&#x1F3A4;</span> Mute';
   muteBtn.classList.remove("muted");
@@ -2873,6 +2901,8 @@ muteBtn.addEventListener("click", () => {
     setMicActive(false);
     vadInSpeech = false;
     vadSilenceCount = 0;
+    vadPendingCount = 0;
+    vadPendingFrames = [];
   } else {
     setMicActive(!!micStream?.getAudioTracks?.().length);
   }
