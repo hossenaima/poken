@@ -1,8 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <!-- Aura rings — same color, fading outward via opacity -->
-  <circle cx="50" cy="50" r="48" fill="#A0A0A0" fill-opacity="0.08"/>
-  <circle cx="50" cy="50" r="39" fill="#A0A0A0" fill-opacity="0.18"/>
-  <circle cx="50" cy="50" r="30" fill="#A0A0A0" fill-opacity="0.38"/>
-  <!-- Core orb -->
-  <circle cx="50" cy="50" r="21" fill="#A0A0A0"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Pokey">
+  <!-- Pokey. The aura is the same silhouette scaled up and faded, so the glow follows the
+       body's shape instead of ringing it — the same trick the CSS mascot uses. -->
+  <defs>
+    <path id="pokey" d="M50 8
+      C72 8 92 25 92 48
+      C92 72 74 92 50 92
+      C27 92 8 74 8 51
+      C8 27 28 8 50 8 Z"/>
+  </defs>
+  <g transform="translate(50 50) scale(0.74) translate(-50 -50)">
+  <use href="#pokey" fill="#FFCB45" opacity="0.16" transform="translate(50 50) scale(1.30) translate(-50 -50)"/>
+  <use href="#pokey" fill="#FFCB45" opacity="0.26" transform="translate(50 50) scale(1.14) translate(-50 -50)"/>
+  <use href="#pokey" fill="#FFCB45"/>
+  <ellipse cx="40" cy="47" rx="5.2" ry="7.4" fill="#1A1A1A"/>
+  <ellipse cx="62" cy="47" rx="5.2" ry="7.4" fill="#1A1A1A"/>
+  </g>
 </svg>

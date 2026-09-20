@@ -95,9 +95,12 @@
       position: absolute; left: -14%; right: -14%; top: 38%; height: 42%; opacity: 0;
       border-top: calc(var(--size) * 2.6 / 104) solid var(--ink); border-radius: 50% 50% 0 0;
     }
+    /* Sits over one eye, not between them, and curves — a flat tilted line reads as a tick.
+       Eyes span 33.5–44% and 60–70.5% horizontally with their centres at 43% down. */
     .pk-blob__brow {
-      position: absolute; z-index: 2; opacity: 0; left: 51%; top: 24%; width: 12%; height: 0;
-      border-top: calc(var(--size) * 2.6 / 104) solid var(--ink); border-radius: 50%; rotate: -12deg;
+      position: absolute; z-index: 2; opacity: 0; left: 58%; top: 29%; width: 15%; height: 5%;
+      border-top: calc(var(--size) * 2.4 / 104) solid var(--ink);
+      border-radius: 50% 50% 0 0 / 100% 100% 0 0; rotate: -7deg;
     }
     .pk-blob__blush {
       position: absolute; inset: 0; z-index: 2; display: flex; align-items: center;
@@ -124,7 +127,7 @@
     .pk-blob.is-excited .pk-blob__arc   { opacity: 1; }
     .pk-blob.is-excited .pk-blob__blush { opacity: 0.62; }
     .pk-blob.is-curious .pk-blob__brow, .pk-blob.is-confused .pk-blob__brow { opacity: 1; }
-    .pk-blob.is-confused .pk-blob__brow { left: 37%; rotate: 12deg; }
+    .pk-blob.is-confused .pk-blob__brow { left: 31%; rotate: 7deg; }
     .pk-blob.is-curious .pk-blob__bubble, .pk-blob.is-confused .pk-blob__bubble { display: flex; }
     .pk-blob.is-curious .pk-blob__bubble::after, .pk-blob.is-confused .pk-blob__bubble::after { content: "?"; }
     .pk-blob.is-thinking .pk-blob__bubble { display: flex; }
