@@ -844,9 +844,16 @@
   // paragraph, "process" does not. A tie goes to the earlier block, and a zero score to the whole
   // node, because a wrong confident highlight is worse than none.
   function bestBlockFor(node, ...phrases) {
+    // A node means that explanation's own paragraphs; no node means the whole tree, which is
+    // what an open question needs — it knows its topic but not which explanation answers it.
+    const scope = node ? node.el : treeEl;
+    return bestBlockIn(scope, !node, phrases);
+  }
+
+  function bestBlockIn(scope, deep, phrases) {
     const want = new Set(phrases.flatMap(wordsOf));
     if (!want.size) return null;
-    const blocks = [...node.el.querySelectorAll(":scope > .learn-block")];
+    const blocks = [...scope.querySelectorAll(deep ? ".learn-block" : ":scope > .learn-block")];
     let best = null, bestScore = 0;
     for (const el of blocks) {
       const have = new Set(wordsOf(el.textContent));
@@ -870,6 +877,36 @@
       }
     }
   }
+
+  // Open Questions → Learn Mode, at the paragraph most likely to answer the question.
+  // Unlike a reflection concept, the tree usually is not loaded yet: an open question carries a
+  // saved topic id, so open that topic first and then search all of its explanations.
+  window.pokenLearnFromQuestion = async ({ topicId: tid, topicTitle, question } = {}) => {
+    show();
+    clearHighlight();
+    const q = String(question || "").trim();
+    if (tid) {
+      // Already open? Don't reload and lose scroll position or unsaved branches.
+      if (tid !== topicId) await openTopic(tid);
+      if (tid === topicId) {
+        const hit = bestBlockFor(null, q);
+        if (hit) {
+          revealAncestors(hit);
+          hit.classList.add("learn-hl");
+          hit.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+        return true;
+      }
+    }
+    // The question came from a teaching session with no Learn tree behind it. Offer its topic
+    // as a fresh explanation rather than dropping the user on an empty screen.
+    const t = String(topicTitle || "").trim();
+    if (!t) return false;
+    topicEl.value = t;
+    if (hasUnsavedWork()) { topicEl.focus(); return true; }
+    form.requestSubmit();
+    return true;
+  };
 
   // Reflection screen → Learn Mode, scrolled to the paragraph the concept came from.
   function digInto(nodeId, label = "", gapText = "") {

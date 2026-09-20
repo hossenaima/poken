@@ -125,6 +125,14 @@
     const actions = document.createElement("div");
     actions.className = "q-actions";
 
+    // Two ways out of a question, in the order you'd want them: go read about it, or go prove
+    // you can answer it. Learning about it deliberately does NOT close the question.
+    const learn = document.createElement("button");
+    learn.type = "button";
+    learn.className = "q-learn";
+    learn.textContent = "Learn about it";
+    learn.addEventListener("click", () => learnIt(q, learn));
+
     const teach = document.createElement("button");
     teach.type = "button";
     teach.className = "q-teach";
@@ -139,7 +147,7 @@
     x.textContent = "×";
     x.addEventListener("click", () => closeIt(q));
 
-    actions.append(teach, x);
+    actions.append(learn, teach, x);
     row.append(body, actions);
     return row;
   }
@@ -149,6 +157,26 @@
     rows = rows.filter(r => r.id !== q.id);   // optimistic: the row is gone either way
     render();
     if (s) await s.closeOpenQuestion(q.id);
+  }
+
+  // Read about it in Learn Mode, at the paragraph most likely to answer it. The question stays
+  // open: studying is not answering, which is the whole distinction this page is built on.
+  async function learnIt(q, btn) {
+    btn.disabled = true;
+    const was = btn.textContent;
+    btn.textContent = "Opening…";
+    try {
+      const ok = await window.pokenLearnFromQuestion?.({
+        topicId: q.topicId, topicTitle: q.topicTitle, question: q.question,
+      });
+      if (ok) { hide(); return; }
+      btn.textContent = "No saved notes";
+      setTimeout(() => { btn.textContent = was; btn.disabled = false; }, 2500);
+    } catch (err) {
+      console.warn("[Poken] learn from question failed:", err);
+      btn.textContent = was;
+      btn.disabled = false;
+    }
   }
 
   // Straight into a teaching session whose student opens by asking this question. Only the

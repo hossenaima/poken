@@ -1122,7 +1122,23 @@
     .q-reason.skipped    { background: #E0E7FF; color: #3730A3; }
     .q-reason.wrong      { background: #FEE2E2; color: #991B1B; }
     .q-reason.unanswered { background: #F3F4F6; color: #374151; }
-    .q-actions { display: flex; align-items: center; gap: 0.4rem; flex: none; }
+    .q-actions { display: flex; align-items: center; gap: 0.4rem; flex: none; flex-wrap: wrap; justify-content: flex-end; }
+    /* Three controls plus the question text do not fit one row on a phone: stack them and let
+       the buttons sit under the question rather than squeezing it into a column of single words. */
+    @media (max-width: 640px) {
+      .q-item { flex-direction: column; align-items: stretch; }
+      .q-actions { justify-content: flex-start; }
+      .q-learn, .q-teach { flex: 1 1 auto; }
+    }
+    /* Secondary to "I can answer this now": reading about it is the softer of the two moves,
+       and only one of them closes the question. */
+    .q-learn {
+      font-family: inherit; font-size: 0.8rem; font-weight: 500; cursor: pointer; white-space: nowrap;
+      background: #fff; color: var(--poken-text-secondary);
+      border: 1px solid var(--poken-border-solid); border-radius: 8px; padding: 0.45rem 0.7rem;
+    }
+    .q-learn:hover:not(:disabled) { background: #F9FAFB; color: var(--poken-text); border-color: var(--poken-accent); }
+    .q-learn:disabled { opacity: 0.6; cursor: default; }
     .q-teach {
       font-family: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap;
       background: var(--poken-accent); color: #fff; border: 0; border-radius: 8px; padding: 0.45rem 0.7rem;
