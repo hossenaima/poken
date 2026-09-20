@@ -2576,8 +2576,8 @@ async function connect(opts = {}) {
 
       // Handover / resume bookkeeping
       if (msg.type === "session_context") { materialsContext = msg.materialsContext || ""; }
-      if (msg.type === "material_processed") {
-        if (materialAnalysesInFlight > 0) materialAnalysesInFlight--;
+      if (msg.type === "material_processed" && materialAnalysesInFlight > 0) {
+        materialAnalysesInFlight--;
         if (materialAnalysesInFlight === 0) {
           showSessionToast(msg.failed ? `Couldn't read "${msg.filename}"` : `Shared "${msg.filename}" with class`, msg.failed ? "error" : "success");
           setTimeout(() => hideSessionToast(), 2800);
