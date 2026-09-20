@@ -71,6 +71,7 @@ team's review are all on the PR.
 | Learn page: saved topics rendered twice (race in showTopics) | [#72](https://github.com/poken-app/poken/issues/72) | [#73](https://github.com/poken-app/poken/pull/73) | |
 | Floating polka dots on teach, learn and open questions | [#74](https://github.com/poken-app/poken/issues/74) | [#75](https://github.com/poken-app/poken/pull/75) | |
 | Visible float dots, emoji-free reflection buttons, pastel gradient | [#76](https://github.com/poken-app/poken/issues/76) | [#77](https://github.com/poken-app/poken/pull/77) | |
+| Opaque buttons and cards on the grid screens; plain Teach Again | [#78](https://github.com/poken-app/poken/issues/78) | [#79](https://github.com/poken-app/poken/pull/79) | |
 
 ## Layout
 
