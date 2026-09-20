@@ -178,8 +178,23 @@ export function enforceTranscriptLanguage(text: string, language: string): strin
     .trim();
 
   if (language === 'Simplified Chinese') out = toSimplified(out);
+  else if (scriptOfLanguage(language) === 'Latin') out = normalizeLatinPunctuation(out);
 
   return out;
+}
+
+const FULLWIDTH_PUNCTUATION: Record<string, string> = {
+  '。': '. ', '，': ', ', '？': '?', '！': '!', '：': ':', '；': ';', '（': '(', '）': ')',
+};
+
+// Scribe and Gemini punctuate by their own language guess, so Latin-script transcripts can
+// arrive with CJK punctuation and a leading "…" continuation marker.
+function normalizeLatinPunctuation(text: string): string {
+  return text
+    .replace(/^(?:…|\.\.\.)+\s*/, '')
+    .replace(/[。，？！：；（）]/g, (ch) => FULLWIDTH_PUNCTUATION[ch])
+    .replace(/ {2,}/g, ' ')
+    .trim();
 }
 
 const LANGUAGE_SWITCH_RULE = `If the teacher asks to switch to another language, or clearly starts speaking another language, switch immediately and stay in it until asked again. Never refuse a language switch. You will also receive a [SYSTEM] note confirming the new language.`;

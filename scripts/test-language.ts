@@ -40,6 +40,13 @@ assert.equal(enforceTranscriptLanguage('葉綠素 absorbs 陽光', 'Simplified C
 assert.equal(enforceTranscriptLanguage('the water cycle', 'English'), 'the water cycle');
 assert.equal(enforceTranscriptLanguage('photosynthesis needs 陽光', 'English'), 'photosynthesis needs');
 assert.equal(enforceTranscriptLanguage('', 'Simplified Chinese'), '');
+// Latin-script sessions: full-width punctuation becomes ASCII, a leading continuation ellipsis is dropped
+assert.equal(enforceTranscriptLanguage('... Awesome。So let\'s talk about functions。', 'English'), 'Awesome. So let\'s talk about functions.');
+assert.equal(enforceTranscriptLanguage('All right。Well，um，how do I？', 'English'), 'All right. Well, um, how do I?');
+assert.equal(enforceTranscriptLanguage('All right。Well，um，how do I…？', 'English'), 'All right. Well, um, how do I…?');
+assert.equal(enforceTranscriptLanguage('… Wait！ Really： yes； no （maybe）', 'Spanish'), 'Wait! Really: yes; no (maybe)');
+assert.equal(enforceTranscriptLanguage('光合作用需要阳光。', 'Simplified Chinese'), '光合作用需要阳光。');
+assert.equal(enforceTranscriptLanguage('the water cycle.', 'English'), 'the water cycle.');
 assert.equal(transcriptChunk(' water', 'English'), ' water');
 assert.equal(transcriptChunk(' 光', 'Simplified Chinese'), '光');
 assert.equal(transcriptChunk(',', 'English'), ',');
