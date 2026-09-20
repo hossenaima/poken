@@ -12,6 +12,8 @@ import type { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { Modality, Type } from '@google/genai';
 import type { GoogleGenAI } from '@google/genai';
+import { extractFromBuffer } from './materials-extract.js';
+import { analyzePdfWithVision, analyzeImageWithVision, formatForContext } from './materials-vision.js';
 
 const LEARN_MODEL = 'gemini-2.5-flash';
 // Nano Banana 2. Compared on the same Calvin-cycle prompt (2026-09-19): 2.5-flash-image garbled
@@ -22,6 +24,12 @@ const MAX_SELECTION_CHARS = 2_000;   // a highlight can span a few paragraphs
 const MAX_LABEL_CHARS = 300;         // breadcrumb entries and questions
 const MAX_CHAIN = 12;
 const MAX_CONTEXT_CHARS = 6_000;
+// Upload limits, both chosen for latency rather than capability. 8 MB is a long slide deck or a
+// phone photo at full resolution; past that, vision analysis starts costing tens of seconds and
+// the learner is left staring at a spinner before they have read a word. MAX_MATERIAL_CHARS then
+// bounds what rides along on EVERY later explain call, so a big deck cannot slow the whole session.
+const MAX_MATERIAL_BYTES = 8 * 1024 * 1024;
+const MAX_MATERIAL_CHARS = 24_000;
 
 type ChainLink = { selection: string };
 type Source = { title: string; extract: string };
@@ -81,6 +89,19 @@ export async function wikipediaSources(query: string, language: string): Promise
     console.warn('[Poken][Learn] Wikipedia lookup failed:', err?.message ?? err);
     return [];   // explanations still work without sources
   }
+}
+
+// The learner's own upload. Unlike the Wikipedia block this is theirs, so it is authoritative
+// about what they need to know: it sets the scope and vocabulary, and where it disagrees with
+// general knowledge the explanation should follow it and say so rather than silently correcting.
+function materialBlock(material: string): string {
+  if (!material) return '';
+  return `
+
+The learner uploaded this material and wants to understand it:
+${material}
+
+Ground the explanation in this. Use its scope, its vocabulary and its notation, and explain the parts of it that matter rather than the topic in general. If it is incomplete, fill the gaps from your own knowledge. If something in it looks wrong, explain it the way the material has it and then say plainly what the accepted account is. Never mention "the material", "the upload", "the slides" or "the document" — the learner knows what they gave you; just explain the content.`;
 }
 
 // Background only: the learner never sees sources or links (product decision). That makes
@@ -182,6 +203,9 @@ export function registerLearnRoutes(app: Hono, ai: GoogleGenAI, normalizeLanguag
     const parentText = typeof body?.parentText === 'string' ? body.parentText.trim().slice(0, MAX_CONTEXT_CHARS) : '';
     const question = clean(body?.question, MAX_LABEL_CHARS * 2);
     const simplify = body?.mode === 'simplify';
+    // Text pulled out of an uploaded slide deck, PDF or photo by /api/learn/material. The
+    // client holds it and sends it back, so the server stays stateless like the rest of Learn.
+    const material = typeof body?.material === 'string' ? body.material.trim().slice(0, MAX_MATERIAL_CHARS) : '';
     if (chain.length && !selection) return c.json({ error: 'selection required when chain is non-empty' }, 400);
     if ((question || simplify) && !chain.length) return c.json({ error: 'question/simplify require a selection' }, 400);
 
@@ -200,7 +224,7 @@ export function registerLearnRoutes(app: Hono, ai: GoogleGenAI, normalizeLanguag
 
         const result = await ai.models.generateContentStream({
           model: LEARN_MODEL,
-          contents: [{ role: 'user', parts: [{ text: userPrompt(topic, chain, selection, parentText, question, simplify) + sourcesBlock(sources) }] }],
+          contents: [{ role: 'user', parts: [{ text: userPrompt(topic, chain, selection, parentText, question, simplify) + materialBlock(material) + sourcesBlock(sources) }] }],
           config: { systemInstruction: systemInstruction(language) },
         });
         for await (const chunk of result) {
@@ -243,6 +267,53 @@ Style: clean flat-vector textbook illustration on a white background, simple sha
 
   // Key terms (hover glosses) + suggested rabbit holes for a finished explanation.
   // POST { topic, text, language } → { keyTerms: [{term, gloss}], suggestions: [string] }
+  // Upload a slide deck, PDF or photo and get its content back as text. One call per file; the
+  // client keeps the text and passes it to /explain, so Learn Mode stays stateless.
+  app.post('/api/learn/material', async (c) => {
+    let body: any;
+    try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+
+    const name = clean(body?.name, 200) || 'upload';
+    const mimeType = clean(body?.mimeType, 100) || 'application/octet-stream';
+    const base64 = typeof body?.base64 === 'string' ? body.base64 : '';
+    if (!base64) return c.json({ error: 'file required' }, 400);
+
+    // Check the size before decoding: base64 is ~4/3 of the bytes it encodes, so this rejects an
+    // oversized upload without ever materialising it in memory.
+    const approxBytes = Math.floor(base64.length * 3 / 4);
+    if (approxBytes > MAX_MATERIAL_BYTES) {
+      return c.json({ error: `That file is ${(approxBytes / 1024 / 1024).toFixed(1)} MB. The limit is ${MAX_MATERIAL_BYTES / 1024 / 1024} MB, so reading it doesn't hold up your first explanation.` }, 413);
+    }
+
+    let buf: Buffer;
+    try { buf = Buffer.from(base64, 'base64'); } catch { return c.json({ error: 'Could not read that file' }, 400); }
+    if (!buf.length) return c.json({ error: 'That file is empty' }, 400);
+
+    const isPdf = mimeType === 'application/pdf' || /\.pdf$/i.test(name);
+    const isImage = mimeType.startsWith('image/');
+    const started = Date.now();
+    try {
+      let text = '';
+      if (isPdf) {
+        text = formatForContext(await analyzePdfWithVision(ai, buf, name));
+      } else if (isImage) {
+        text = formatForContext(await analyzeImageWithVision(ai, buf, mimeType, name));
+      } else {
+        // Slides, docs and plain text: the same extractor the teaching session uses.
+        const { text: extracted, error } = await extractFromBuffer(buf, mimeType, name);
+        if (!extracted.trim() && error) return c.json({ error }, 422);
+        text = extracted;
+      }
+      const trimmed = text.trim().slice(0, MAX_MATERIAL_CHARS);
+      if (!trimmed) return c.json({ error: 'Nothing readable in that file' }, 422);
+      console.log(`[Poken][Learn] material ${name} (${(approxBytes / 1024).toFixed(0)}KB) -> ${trimmed.length} chars in ${Date.now() - started}ms`);
+      return c.json({ name, chars: trimmed.length, truncated: text.trim().length > MAX_MATERIAL_CHARS, text: trimmed });
+    } catch (e: any) {
+      console.error(`[Poken][Learn] material ${name} failed:`, e?.message);
+      return c.json({ error: 'Could not read that file' }, 422);
+    }
+  });
+
   app.post('/api/learn/extras', async (c) => {
     let body: any;
     try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }

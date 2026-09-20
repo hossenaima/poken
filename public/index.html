@@ -536,9 +536,12 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     }
     .wb-toolbar.visible { display: flex; }
+    /* Text labels, not icons: the toolbar used to mix colour emoji, one hand-drawn SVG and a
+       bare letter, which read as three different design languages in one row. */
     .wb-btn {
-      width: 30px; height: 30px; border: none; border-radius: 6px;
-      background: transparent; color: #374151; font-size: 0.8rem; cursor: pointer;
+      min-width: 30px; height: 30px; padding: 0 0.5rem; border: none; border-radius: 6px;
+      background: transparent; color: #374151; cursor: pointer;
+      font-family: inherit; font-size: 0.72rem; font-weight: 500; letter-spacing: -0.01em;
       display: flex; align-items: center; justify-content: center; transition: background 0.15s;
     }
     .wb-btn:hover { background: #F3F4F6; }
@@ -575,10 +578,6 @@
       box-shadow: 0 0 2px rgba(0,0,0,0.2);
     }
     .wb-size-label { font-size: 0.6rem; color: #9CA3AF; min-width: 18px; text-align: center; }
-    .wb-tool-icon {
-      display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center;
-    }
-    .wb-tool-icon svg { width: 16px; height: 16px; }
     .wb-fullscreen-btn {
       width: 30px; height: 30px; border: none; border-radius: 6px;
       background: transparent; color: #374151; font-size: 0.75rem; cursor: pointer;
@@ -1139,6 +1138,14 @@
       border-radius: 10px; background: var(--poken-accent); color: #fff; cursor: pointer;
     }
     #learnGoBtn:disabled { opacity: 0.5; cursor: default; }
+    .learn-upload {
+      flex: none; font-family: inherit; font-size: 0.8rem; font-weight: 500; cursor: pointer;
+      background: none; border: 1px solid var(--poken-border-solid); border-radius: 10px;
+      padding: 0.5rem 0.8rem; color: var(--poken-text-secondary); white-space: nowrap;
+    }
+    .learn-upload:hover { background: #F9FAFB; color: var(--poken-text); }
+    .learn-upload.has-file { border-color: var(--poken-accent); color: var(--poken-accent); }
+    .learn-upload.busy { opacity: 0.6; cursor: progress; }
     .learn-hint { margin: 1.25rem 0 0; font-size: 0.8125rem; color: #9CA3AF; }
     .learn-node { margin-top: 1.25rem; }
     .learn-node.child { margin: 0.75rem 0 1rem 0.25rem; padding-left: 1rem; border-left: 2px solid var(--poken-accent); }
@@ -1483,6 +1490,10 @@
           </select>
           <button type="submit" id="learnGoBtn">Learn</button>
         </form>
+        <label class="learn-upload" id="learnUploadLabel" title="Upload slides, a PDF or a photo to learn from">
+          <input type="file" id="learnFile" accept=".pdf,.ppt,.pptx,.doc,.docx,.txt,.md,.csv,image/*" hidden />
+          <span id="learnUploadText">Upload</span>
+        </label>
         <div class="learn-account" id="learnAccount" data-poken-account="learn"></div>
         <button class="learn-teach" id="learnTeachBtn" type="button" disabled>Teach this &rarr;</button>
       </header>
@@ -1691,18 +1702,11 @@
 
           <!-- Whiteboard toolbar -->
           <div class="wb-toolbar" id="wbToolbar">
-            <button class="wb-btn active" data-tool="pen" title="Pen">&#x270F;&#xFE0F;</button>
-            <button class="wb-btn" data-tool="eraser" title="Eraser">
-              <span class="wb-tool-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none">
-                  <path d="M6.1 14.3 13.9 6.4a2.1 2.1 0 0 1 3 0l2.7 2.7a2.1 2.1 0 0 1 0 3l-5.8 5.8a2.7 2.7 0 0 1-1.9.8H8.7l-2.6-2.6a1.3 1.3 0 0 1 0-1.8Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M4 20h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                </svg>
-              </span>
-            </button>
-            <button class="wb-btn" data-tool="text" title="Text">T</button>
-            <button class="wb-btn" data-tool="pan" title="Pan / Move">&#x1F590;</button>
-            <button class="wb-btn" data-tool="clear" title="Clear">&#x1F5D1;&#xFE0F;</button>
+            <button class="wb-btn active" data-tool="pen" title="Pen">Pen</button>
+            <button class="wb-btn" data-tool="eraser" title="Eraser">Erase</button>
+            <button class="wb-btn" data-tool="text" title="Text">Text</button>
+            <button class="wb-btn" data-tool="pan" title="Pan / Move">Move</button>
+            <button class="wb-btn" data-tool="clear" title="Clear">Clear</button>
             <div class="wb-sep"></div>
             <div class="wb-color active" data-color="#000000" style="background:#222" title="Black"></div>
             <div class="wb-color" data-color="#FFFFFF" style="background:#fff; border-color:#ccc" title="White"></div>

@@ -28,6 +28,9 @@
   const landing    = document.getElementById("landing-screen");
   const accountEl  = document.getElementById("learnAccount");
   const bannerEl   = document.getElementById("learnSaveBanner");
+  const fileInput  = document.getElementById("learnFile");
+  const uploadEl   = document.getElementById("learnUploadLabel");
+  const uploadText = document.getElementById("learnUploadText");
 
   // Persistence is optional: learn-store.js defines window.pokenStore (never throws).
   // Saving needs a signed-in (Google) user; signed out, the tree lives in memory only.
@@ -178,6 +181,73 @@
     teachBtn.disabled = true;
     updateBanner();
   }
+
+  // ── Uploaded material ───────────────────────────────────────────────────
+  // Slides, a PDF or a photo, read once on the server and kept here as text. It is not part of
+  // the saved tree: the explanations it produced are what's worth keeping, not the raw file.
+  const MAX_UPLOAD_MB = 8;
+  let materialText = "";
+
+  function setUpload(state, label) {
+    uploadEl.classList.toggle("busy", state === "busy");
+    uploadEl.classList.toggle("has-file", state === "ready");
+    uploadText.textContent = label;
+    fileInput.disabled = state === "busy";
+  }
+
+  function clearUpload() {
+    materialText = "";
+    fileInput.value = "";
+    setUpload("empty", "Upload");
+  }
+
+  async function onFilePicked() {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    // Checked here as well as on the server so an oversized file fails instantly instead of
+    // after the upload; the server check is the one that actually enforces it.
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      setUpload("empty", `Too big (max ${MAX_UPLOAD_MB} MB)`);
+      fileInput.value = "";
+      setTimeout(() => { if (!materialText) setUpload("empty", "Upload"); }, 4000);
+      return;
+    }
+    setUpload("busy", "Reading…");
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result).split(",")[1] || "");
+        r.onerror = () => reject(new Error("read failed"));
+        r.readAsDataURL(file);
+      });
+      const res = await fetch("/api/learn/material", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: file.name, mimeType: file.type, base64 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.text) throw new Error(data.error || `HTTP ${res.status}`);
+      materialText = data.text;
+      const short = file.name.length > 22 ? file.name.slice(0, 20) + "…" : file.name;
+      setUpload("ready", `${short} ✕`);
+      uploadEl.title = `Using ${file.name}${data.truncated ? " (truncated)" : ""} — click to remove`;
+      // Nothing to learn about yet: offer the filename as the topic so Learn is one click away.
+      if (!topicEl.value.trim()) topicEl.value = file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
+    } catch (err) {
+      console.warn("[Poken][Learn] upload failed:", err);
+      setUpload("empty", err.message?.slice(0, 40) || "Couldn't read that");
+      fileInput.value = "";
+      setTimeout(() => { if (!materialText) setUpload("empty", "Upload"); }, 5000);
+    }
+  }
+
+  fileInput?.addEventListener("change", onFilePicked);
+  // Once a file is attached the control becomes its own remove button.
+  uploadEl?.addEventListener("click", (e) => {
+    if (!materialText) return;              // no file yet: let the label open the picker
+    e.preventDefault();
+    clearUpload();
+  });
 
   // ── Saving ──────────────────────────────────────────────────────────────
   // Fire-and-forget: a failed save never interrupts learning (the store logs it).
@@ -482,7 +552,9 @@
       const res = await fetch("/api/learn/explain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        // The upload rides along on every explanation, root and rabbit hole alike, so going
+        // deeper stays anchored to the learner's own slides rather than drifting to the topic.
+        body: JSON.stringify(materialText ? { ...body, material: materialText } : body),
       });
       if (!res.ok || !res.body) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
       const reader = res.body.getReader();
