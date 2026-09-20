@@ -1064,17 +1064,19 @@
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
       transform: translateY(-1px);
     }
+    /* The whole mascot palette, warm through cool. Ink stays dark: white would fail
+       against the yellow and green stops even though it passes over the coral one. */
     .reflection-btn.primary {
-      background: rgba(255, 115, 85, 0.35);
-      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-      color: #c2410c; border: 1px solid rgba(255, 115, 85, 0.3);
+      background: linear-gradient(100deg, #FFCB45 0%, #A7C878 22%, #93C5FD 44%, #C4B5FD 64%, #FF3D91 84%, #FF7355 100%);
+      color: #2A2118; border: 0;
       font-weight: 800; font-size: 1.15rem; padding: 1rem 3rem;
-      box-shadow: 0 4px 20px rgba(255, 115, 85, 0.12), inset 0 1px 0 rgba(255,255,255,0.4);
+      box-shadow: 0 4px 20px rgba(42, 33, 24, 0.14), inset 0 1px 0 rgba(255,255,255,0.45);
       display: flex; align-items: center; gap: 0.5rem;
     }
     .reflection-btn.primary:hover {
-      background: rgba(255, 115, 85, 0.5);
-      box-shadow: 0 6px 24px rgba(255, 115, 85, 0.2), inset 0 1px 0 rgba(255,255,255,0.5);
+      /* keep the gradient — overriding background here would flatten it back to one colour */
+      filter: saturate(1.12) brightness(1.03);
+      box-shadow: 0 6px 24px rgba(42, 33, 24, 0.2), inset 0 1px 0 rgba(255,255,255,0.55);
       transform: translateY(-1px);
     }
 
@@ -2017,7 +2019,6 @@
         </div>
       </div>
 
-      <div class="poken-account" data-poken-account="reflection"></div>
       <div class="reflection-actions">
         <button class="reflection-btn primary" id="teachAgainBtn" type="button">&#x1F393; Teach Again</button>
         <button class="reflection-btn" id="backToLearnBtn" type="button">&#x1F4DA; Back to learning</button>
