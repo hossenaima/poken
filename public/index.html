@@ -45,7 +45,7 @@
 
     /* ── LANDING ─────────────────────────────────── */
     #landing-screen {
-      position: fixed; inset: 0; background: #fff;
+      position: fixed; inset: 0; background: #FAF9F5;
       display: flex; flex-direction: column; align-items: center;
       justify-content: center; gap: 2.75rem; z-index: 100;
     }
@@ -129,9 +129,8 @@
     .pk-blob.is-excited .pk-blob__dot   { opacity: 0; animation: none; }
     .pk-blob.is-excited .pk-blob__arc   { opacity: 1; }
     .pk-blob.is-excited .pk-blob__blush { opacity: 0.62; }
-    .pk-blob.is-curious .pk-blob__brow, .pk-blob.is-confused .pk-blob__brow { opacity: 1; }
-    .pk-blob.is-confused .pk-blob__brow { left: 31%; rotate: 7deg; }
-    .pk-blob.is-curious .pk-blob__bubble, .pk-blob.is-confused .pk-blob__bubble { display: flex; }
+    .pk-blob.is-curious .pk-blob__brow { opacity: 1; }   /* curious raises a brow; confused just asks */
+        .pk-blob.is-curious .pk-blob__bubble, .pk-blob.is-confused .pk-blob__bubble { display: flex; }
     .pk-blob.is-curious .pk-blob__bubble::after, .pk-blob.is-confused .pk-blob__bubble::after { content: "?"; }
     .pk-blob.is-thinking .pk-blob__bubble { display: flex; }
     .pk-blob.is-thinking .pk-blob__bubble b { display: block; animation: pkDots 1.2s ease-in-out infinite; }
