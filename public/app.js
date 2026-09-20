@@ -2067,6 +2067,28 @@ function showLanding() {
   landingScreen.classList.remove("fade-out");
 }
 
+// ── Returning from Google sign-in ───────────────────────────────────────────
+// The OAuth redirect reloads the page, so the screen the user was on is gone. auth.js
+// recorded which one it was; each screen says here how to re-open itself.
+const screenRestorers = new Map();
+window.pokenScreens = {
+  register(name, restore) { screenRestorers.set(name, restore); },
+};
+
+function restoreScreenAfterSignIn() {
+  const screen = window.pokenAuth?.takeReturn?.();
+  if (!screen) return;
+  const restore = screenRestorers.get(screen);
+  if (!restore) return;
+  try { restore(); } catch (e) { console.warn("[Poken] restoring after sign-in failed:", e); }
+}
+
+window.pokenScreens.register("landing", () => showLanding());
+window.pokenScreens.register("setup", () => {
+  landingScreen.style.display = "none";
+  setupScreen.style.display = "block";
+});
+
 function showReflection(data) {
   // Learn Mode marks the explanations behind any gaps as shaky, so the tree shows what to dig into.
   try { window.pokenLearnReflection?.(data); } catch (e) { console.warn("[Poken] learn reflection hook:", e); }
@@ -2821,3 +2843,6 @@ function captureAndSendScreenshot() {
   const base64 = shotCanvas.toDataURL("image/jpeg", 0.7).split(",")[1];
   try { ws.send(JSON.stringify({ type: "vision_screenshot", base64 })); } catch (_) {}
 }
+
+// learn.js registers its own restorer when it loads, and it loads after this file.
+window.addEventListener("DOMContentLoaded", restoreScreenAfterSignIn);
