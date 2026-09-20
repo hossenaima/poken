@@ -114,4 +114,4 @@ Typecheck and `node --check` catch nothing about auth, so the checks are behavio
 2. Sign in from Learn with an unsaved tree: the tree is still there and gets saved.
 3. Cancel at Google's consent screen: return to the same screen, still signed out, nothing lost.
 4. Sign out from each mount point: stays on the screen, no redirect.
-5. With Supabase unconfigured: no account control anywhere, and both modes work.
+5. With Supabase unconfigured: the control still renders (the client is lazy, so nothing knows it is broken until used), a click logs one warning, and both modes keep working. No unhandled rejection, no dead screen.
