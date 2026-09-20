@@ -214,6 +214,103 @@
     return bytes;
   }
 
+  // ── Open questions ───────────────────────────────────────────────────────
+  // Questions a student asked that the teacher left hanging. Grouped per topic by
+  // topic_title, which is the one key present whether or not the session was taught off a
+  // Learn Mode tree. Closing is a timestamp, never a delete.
+  const OPEN_QUESTION_REASONS = ["deferred", "skipped", "wrong", "unanswered"];
+  const OPEN_QUESTION_LIST_LIMIT = 200;
+
+  // Exported for the tests; snake_case in the database, camelCase in the API.
+  function toOpenQuestion(row) {
+    if (!row || typeof row !== "object") return null;
+    return {
+      id: row.id,
+      topicId: row.topic_id ?? null,
+      topicTitle: row.topic_title || "",
+      language: row.language || "English",
+      question: row.question || "",
+      reason: row.reason,
+      createdAt: row.created_at || null,
+      closedAt: row.closed_at ?? null,
+    };
+  }
+
+  // Rejects anything the table's check constraints would reject, so a bad model output
+  // fails here with a warning instead of as an opaque 400 from PostgREST.
+  function toOpenQuestionRow(q, topic, userId) {
+    if (!q || typeof q !== "object") return null;
+    const question = typeof q.question === "string" ? q.question.trim() : "";
+    const title = typeof topic?.title === "string" ? topic.title.trim() : "";
+    if (!q.id || !question || question.length > 1000) return null;
+    if (!OPEN_QUESTION_REASONS.includes(q.reason)) return null;
+    if (!title || title.length > 200) return null;
+    return {
+      id: q.id,
+      user_id: userId,
+      topic_id: topic.id || null,
+      topic_title: title,
+      language: (topic.language || "English").slice(0, 40),
+      question,
+      reason: q.reason,
+    };
+  }
+
+  async function listOpenQuestions({ includeClosed = false } = {}) {
+    try {
+      const ctx = await authed();
+      if (!ctx) return [];
+      let q = ctx.sb
+        .from("open_questions")
+        .select("id, topic_id, topic_title, language, question, reason, created_at, closed_at")
+        .order("created_at", { ascending: false })
+        .limit(OPEN_QUESTION_LIST_LIMIT);
+      if (!includeClosed) q = q.is("closed_at", null);
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data || []).map(toOpenQuestion).filter(Boolean);
+    } catch (err) {
+      warn("listOpenQuestions failed", err);
+      return [];
+    }
+  }
+
+  async function saveOpenQuestions(topic, questions) {
+    try {
+      const ctx = await authed();
+      if (!ctx) return 0;
+      const rows = (Array.isArray(questions) ? questions : [])
+        .map(q => toOpenQuestionRow(q, topic || {}, ctx.userId))
+        .filter(Boolean);
+      if (!rows.length) return 0;
+      const { error } = await ctx.sb.from("open_questions").upsert(rows, { onConflict: "id" });
+      if (error) throw error;
+      return rows.length;
+    } catch (err) {
+      warn("saveOpenQuestions failed", err);
+      return 0;
+    }
+  }
+
+  async function setOpenQuestionClosed(id, closedAt) {
+    try {
+      const ctx = await authed();
+      if (!ctx || !id) return false;
+      const { error } = await ctx.sb
+        .from("open_questions")
+        .update({ closed_at: closedAt })
+        .eq("id", id);
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      warn("setOpenQuestionClosed failed", err);
+      return false;
+    }
+  }
+
+  const closeOpenQuestion  = (id) => setOpenQuestionClosed(id, new Date().toISOString());
+  const reopenOpenQuestion = (id) => setOpenQuestionClosed(id, null);
+
   window.pokenStore = {
     ready,
     currentUser: (...a) => auth().currentUser(...a),
@@ -221,5 +318,7 @@
     signOut: (...a) => auth().signOut(...a),
     onAuthChange: (...a) => auth().onAuthChange(...a),
     listTopics, createTopic, saveNode, loadTree, deleteTopic, uploadDiagram, diagramUrl,
+    listOpenQuestions, saveOpenQuestions, closeOpenQuestion, reopenOpenQuestion,
+    _openQuestions: { toOpenQuestion, toOpenQuestionRow, OPEN_QUESTION_REASONS },
   };
 })();
