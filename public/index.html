@@ -1219,7 +1219,7 @@
     #learnGoBtn:disabled { opacity: 0.5; cursor: default; }
     .learn-upload {
       flex: none; font-family: inherit; font-size: 0.8rem; font-weight: 500; cursor: pointer;
-      background: none; border: 1px solid var(--poken-border-solid); border-radius: 10px;
+      background: #fff; border: 1px solid var(--poken-border-solid); border-radius: 10px;
       padding: 0.5rem 0.8rem; color: var(--poken-text-secondary); white-space: nowrap;
     }
     .learn-upload:hover { background: #F9FAFB; color: var(--poken-text); }
@@ -1371,7 +1371,10 @@
       background: conic-gradient(from -45deg, #EA4335 0 25%, #FBBC05 0 50%, #34A853 0 75%, #4285F4 0);
       -webkit-background-clip: text; background-clip: text; color: transparent;
     }
-    .learn-user { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8125rem; color: var(--poken-text-secondary); }
+    .learn-user {
+      display: flex; align-items: center; gap: 0.4rem; font-size: 0.8125rem; color: var(--poken-text-secondary);
+      background: #fff; border: 1px solid var(--poken-border-solid); border-radius: 10px; padding: 0.4rem 0.7rem;
+    }
     .learn-user img { width: 26px; height: 26px; border-radius: 50%; }
     .learn-user button {
       background: none; border: none; font-family: inherit; font-size: 0.75rem; color: #9CA3AF; cursor: pointer; padding: 0;
