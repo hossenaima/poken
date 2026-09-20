@@ -79,6 +79,9 @@
     .pk-blob__skin {
       box-shadow: 0 0 calc(var(--size) * 34 / 104) calc(var(--size) * 3 / 104) var(--glow);
       animation: pkMorph var(--beat) ease-in-out infinite;
+      /* The state class swaps --fill and --glow at once; ease between them so the student
+         changes mood rather than blinking. The old orb did this and the mascot lost it. */
+      transition: background-color 0.55s ease, box-shadow 0.55s ease;
     }
     .pk-blob__aura { opacity: 0; pointer-events: none; animation: pkMorph var(--beat) ease-in-out infinite, pkHalo 4.1s ease-in-out infinite; }
     .pk-blob__aura + .pk-blob__aura { animation-delay: 0s, -2.05s; }

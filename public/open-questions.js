@@ -52,6 +52,8 @@
   function show() {
     if (landing) landing.style.display = "none";
     screenEl.style.display = "block";
+    screenEl.classList.add("fade-in");
+    setTimeout(() => screenEl.classList.remove("fade-in"), 300);
     render();
     load();
   }

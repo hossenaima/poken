@@ -1144,6 +1144,8 @@
   function show() {
     landing.style.display = "none";
     screen.style.display = "block";
+    screen.classList.add("fade-in");
+    setTimeout(() => screen.classList.remove("fade-in"), 300);
     window.scrollTo(0, 0);
     // Match the setup screen's language if the user picked one there.
     const sessionLang = document.getElementById("sessionLanguage");
