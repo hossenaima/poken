@@ -55,6 +55,7 @@ team's review are all on the PR.
 | Drop the leftover "solo" label from the session debug line | [#39](https://github.com/poken-app/poken/issues/39) | [#40](https://github.com/poken-app/poken/pull/40) | [session](https://app.devin.ai/sessions/704fccc21e474541844d22634dd1a614) |
 | App-wide auth 1/3: Supabase auth moved into its own module | [#41](https://github.com/poken-app/poken/issues/41) | [#42](https://github.com/poken-app/poken/pull/42) | |
 | App-wide auth 2/3: return to the screen sign-in started from | [#43](https://github.com/poken-app/poken/issues/43) | [#44](https://github.com/poken-app/poken/pull/44) | |
+| App-wide auth 3/3: one account control on every screen that wants one | [#45](https://github.com/poken-app/poken/issues/45) | [#46](https://github.com/poken-app/poken/pull/46) | |
 
 ## Layout
 
