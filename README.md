@@ -62,6 +62,9 @@ team's review are all on the PR.
 | One mascot 1/3: extract the shared blob component | [#54](https://github.com/poken-app/poken/issues/54) | [#55](https://github.com/poken-app/poken/pull/55) | |
 | One mascot 2/3: the two loading screens | [#56](https://github.com/poken-app/poken/issues/56) | [#57](https://github.com/poken-app/poken/pull/57) | |
 | One mascot 3/3: the session student and the pill | [#58](https://github.com/poken-app/poken/issues/58) | [#59](https://github.com/poken-app/poken/pull/59) | |
+| Teach page: drop branding and stats, student choice moves left | [#60](https://github.com/poken-app/poken/issues/60) | [#61](https://github.com/poken-app/poken/pull/61) | |
+| Account control in one fixed corner on every screen | [#62](https://github.com/poken-app/poken/issues/62) | [#63](https://github.com/poken-app/poken/pull/63) | |
+| Grid-paper background on teach, learn and open questions | [#64](https://github.com/poken-app/poken/issues/64) | [#65](https://github.com/poken-app/poken/pull/65) | |
 
 ## Layout
 
