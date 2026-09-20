@@ -70,6 +70,7 @@ team's review are all on the PR.
 | Persona cards: Pokey instead of emoji, coloured selection | [#70](https://github.com/poken-app/poken/issues/70) | [#71](https://github.com/poken-app/poken/pull/71) | |
 | Learn page: saved topics rendered twice (race in showTopics) | [#72](https://github.com/poken-app/poken/issues/72) | [#73](https://github.com/poken-app/poken/pull/73) | |
 | Floating polka dots on teach, learn and open questions | [#74](https://github.com/poken-app/poken/issues/74) | [#75](https://github.com/poken-app/poken/pull/75) | |
+| Visible float dots, emoji-free reflection buttons, pastel gradient | [#76](https://github.com/poken-app/poken/issues/76) | [#77](https://github.com/poken-app/poken/pull/77) | |
 
 ## Layout
 
