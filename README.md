@@ -68,6 +68,8 @@ team's review are all on the PR.
 | Learn and open questions: content on a white card | [#66](https://github.com/poken-app/poken/issues/66) | [#67](https://github.com/poken-app/poken/pull/67) | |
 | Reflection: grid paper, neutral palette, Pokey with a line | [#68](https://github.com/poken-app/poken/issues/68) | [#69](https://github.com/poken-app/poken/pull/69) | |
 | Persona cards: Pokey instead of emoji, coloured selection | [#70](https://github.com/poken-app/poken/issues/70) | [#71](https://github.com/poken-app/poken/pull/71) | |
+| Learn page: saved topics rendered twice (race in showTopics) | [#72](https://github.com/poken-app/poken/issues/72) | [#73](https://github.com/poken-app/poken/pull/73) | |
+| Floating polka dots on teach, learn and open questions | [#74](https://github.com/poken-app/poken/issues/74) | [#75](https://github.com/poken-app/poken/pull/75) | |
 
 ## Layout
 
