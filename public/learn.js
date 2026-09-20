@@ -26,7 +26,6 @@
   const backBtn    = document.getElementById("learnBackBtn");
   const learnFirst = document.getElementById("learnFirstBtn");
   const landing    = document.getElementById("landing-screen");
-  const accountEl  = document.getElementById("learnAccount");
   const bannerEl   = document.getElementById("learnSaveBanner");
   const fileInput  = document.getElementById("learnFile");
   const uploadEl   = document.getElementById("learnUploadLabel");

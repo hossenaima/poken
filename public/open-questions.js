@@ -195,10 +195,18 @@
   backBtn?.addEventListener("click", toLanding);
 
   // The entry point exists only for signed-in users: signed out, nothing was ever saved.
+  // Only an actual sign-out leaves the screen: the first (signed-out) auth event must not
+  // undo a restore that just re-opened it after the Google redirect.
   window.pokenAuth?.onAuthChange((u) => {
+    const wasSignedIn = !!user;
     user = u;
     linkEl.hidden = !u;
-    if (!u) { rows = []; hide(); }
+    if (!u) {
+      rows = [];
+      if (wasSignedIn && screenEl.style.display === "block") toLanding();
+    } else if (screenEl.style.display === "block") {
+      load();
+    }
   });
 
   window.pokenScreens?.register("questions", () => show());
