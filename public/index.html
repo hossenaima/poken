@@ -1133,7 +1133,10 @@
       background: none; border: 0; color: #9CA3AF; padding: 0.25rem 0.35rem; border-radius: 6px;
     }
     .q-x:hover { background: #FEF2F2; color: #DC2626; }
-    .q-empty { border: 1px dashed var(--poken-border-solid); border-radius: 12px; padding: 1.5rem; text-align: center; color: var(--poken-text-secondary); font-size: 0.9rem; }
+    .q-empty { text-align: center; color: var(--poken-text-secondary); font-size: 0.9rem; }
+    .q-card { padding: 1.5rem; }
+    .q-card > .q-topic:last-child { margin-bottom: 0; }
+    .q-card .q-item:last-child { margin-bottom: 0; }
     .session-persona {
       font-family: inherit; font-size: 0.8rem; font-weight: 500; color: #374151; background: #fff;
       border: 1px solid var(--poken-border-solid); border-radius: 8px; padding: 0.3rem 0.5rem; cursor: pointer;
@@ -1171,6 +1174,10 @@
     .learn-upload.has-file { border-color: var(--poken-accent); color: var(--poken-accent); }
     .learn-upload.busy { opacity: 0.6; cursor: progress; }
     .learn-hint { margin: 1.25rem 0 0; font-size: 0.8125rem; color: #9CA3AF; }
+    .learn-card { padding: 1.5rem; margin-top: 1.25rem; }
+    .learn-card:not(:has(.learn-node, .learn-topics-title)) { display: none; }
+    .learn-card > .learn-topics { margin-top: 0; }
+    .learn-card > #learnTree > .learn-node:first-child { margin-top: 0; }
     .learn-node { margin-top: 1.25rem; }
     .learn-node.child { margin: 0.75rem 0 1rem 0.25rem; padding-left: 1rem; border-left: 2px solid var(--poken-accent); }
     .learn-crumb { font-size: 0.75rem; color: var(--poken-text-secondary); margin-bottom: 0.5rem; letter-spacing: 0.01em; }
@@ -1297,6 +1304,9 @@
     .poken-account-corner:empty { display: none; }
     @media (max-width: 64rem) {
       .learn-shell, .q-shell { padding-top: 3.75rem; }
+    }
+    @media (max-width: 40rem) {
+      .learn-card, .q-card { padding: 1rem; }
     }
     .learn-google {
       display: inline-flex; align-items: center; gap: 0.45rem; font-family: inherit; font-size: 0.8125rem;
@@ -1592,8 +1602,10 @@
         <button type="button" class="learn-banner-close" id="learnBannerClose" aria-label="Dismiss">&times;</button>
       </div>
       <p class="learn-hint" id="learnHint">Select any words in the explanation to go deeper on exactly that.</p>
-      <div class="learn-topics" id="learnTopics"></div>
-      <div id="learnTree"></div>
+      <div class="glass-card learn-card">
+        <div class="learn-topics" id="learnTopics"></div>
+        <div id="learnTree"></div>
+      </div>
     </div>
     <div class="learn-toolbar" id="learnToolbar" hidden>
       <div class="learn-toolbar-actions" id="learnToolbarActions">
@@ -1620,7 +1632,7 @@
           <p class="q-sub">Questions your students asked that you haven't answered yet.</p>
         </div>
       </header>
-      <div id="questionsList"></div>
+      <div class="glass-card q-card" id="questionsList"></div>
     </div>
   </div>
 
