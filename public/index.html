@@ -322,10 +322,13 @@
       transition: transform 0.2s, border-color 0.2s, background 0.2s, box-shadow 0.2s;
       background: rgba(255,255,255,0.5);
     }
-    .persona-card:hover { transform: scale(1.02); border-color: var(--poken-accent); background: rgba(255,115,85,0.06); box-shadow: 0 4px 12px var(--poken-accent-shadow); }
+    .persona-card[data-persona="eager"]    { --persona-color: #A7C878; }
+    .persona-card[data-persona="skeptic"]  { --persona-color: #FDA4AF; }
+    .persona-card[data-persona="confused"] { --persona-color: #C4B5FD; }
+    .persona-card:hover { transform: scale(1.02); border-color: var(--persona-color); background: color-mix(in srgb, var(--persona-color) 10%, transparent); box-shadow: 0 4px 12px color-mix(in srgb, var(--persona-color) 35%, transparent); }
     .persona-card:active { transform: scale(0.98); }
-    .persona-card.selected { border-color: var(--poken-accent); background: rgba(255,115,85,0.1); box-shadow: 0 0 0 2px var(--poken-accent-shadow); }
-    .persona-card .emoji { font-size: 1.375rem; display: block; margin-bottom: 0.35rem; }
+    .persona-card.selected { border-color: var(--persona-color); background: color-mix(in srgb, var(--persona-color) 18%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--persona-color) 45%, transparent); }
+    .persona-card .pk-blob { --size: 44px; margin: 0 auto 0.5rem; }
     .persona-card .pname { font-size: 0.75rem; font-weight: 600; color: var(--poken-text); }
     .persona-card .pdesc { font-size: 0.65rem; color: var(--poken-text-secondary); margin-top: 0.15rem; line-height: 1.3; }
 
@@ -1693,13 +1696,46 @@
           <h3>Choose your student</h3>
           <div class="persona-grid">
             <div class="persona-card selected" data-persona="eager">
-              <span class="emoji">&#x1F64B;</span><div class="pname">Eager</div><div class="pdesc">Lots of questions</div>
+              <div class="pk-blob is-curious" aria-hidden="true">
+                <div class="pk-blob__aura"></div><div class="pk-blob__aura"></div>
+                <div class="pk-blob__skin"></div>
+                <div class="pk-blob__blush"><b></b><b></b></div>
+                <div class="pk-blob__eyes">
+                  <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
+                  <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
+                </div>
+                <span class="pk-blob__brow"></span>
+                <span class="pk-blob__bubble"><b></b><b></b><b></b></span>
+              </div>
+              <div class="pname">Eager</div><div class="pdesc">Lots of questions</div>
             </div>
             <div class="persona-card" data-persona="skeptic">
-              <span class="emoji">&#x1F928;</span><div class="pname">Skeptic</div><div class="pdesc">Needs convincing</div>
+              <div class="pk-blob is-thinking" aria-hidden="true">
+                <div class="pk-blob__aura"></div><div class="pk-blob__aura"></div>
+                <div class="pk-blob__skin"></div>
+                <div class="pk-blob__blush"><b></b><b></b></div>
+                <div class="pk-blob__eyes">
+                  <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
+                  <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
+                </div>
+                <span class="pk-blob__brow"></span>
+                <span class="pk-blob__bubble"><b></b><b></b><b></b></span>
+              </div>
+              <div class="pname">Skeptic</div><div class="pdesc">Needs convincing</div>
             </div>
             <div class="persona-card" data-persona="confused">
-              <span class="emoji">&#x1F615;</span><div class="pname">Confused</div><div class="pdesc">Needs examples</div>
+              <div class="pk-blob is-confused" aria-hidden="true">
+                <div class="pk-blob__aura"></div><div class="pk-blob__aura"></div>
+                <div class="pk-blob__skin"></div>
+                <div class="pk-blob__blush"><b></b><b></b></div>
+                <div class="pk-blob__eyes">
+                  <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
+                  <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
+                </div>
+                <span class="pk-blob__brow"></span>
+                <span class="pk-blob__bubble"><b></b><b></b><b></b></span>
+              </div>
+              <div class="pname">Confused</div><div class="pdesc">Needs examples</div>
             </div>
           </div>
         </div>
