@@ -709,35 +709,12 @@
     }
   }
 
+  // Any sign-in anywhere may navigate away, so the tree has to be stashed first.
+  window.pokenStashForSignIn = () => { stashTree(); leavingForSignIn = true; };
+
+  // The control itself is rendered by app.js for every [data-poken-account] mount.
   function renderAccount() {
-    accountEl.replaceChildren();
-    if (!store()) return;
-    if (!user) {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "learn-google";
-      b.textContent = "Sign in with Google";
-      b.addEventListener("click", signIn);
-      accountEl.append(b);
-      return;
-    }
-    const wrap = document.createElement("div");
-    wrap.className = "learn-user";
-    if (user.avatarUrl) {
-      const img = document.createElement("img");
-      img.src = user.avatarUrl;
-      img.alt = "";
-      img.referrerPolicy = "no-referrer";   // Google avatar URLs refuse some referrers
-      wrap.append(img);
-    }
-    const name = document.createElement("span");
-    name.textContent = user.name || user.email || "Signed in";
-    const out = document.createElement("button");
-    out.type = "button";
-    out.textContent = "Sign out";
-    out.addEventListener("click", () => store().signOut());
-    wrap.append(name, out);
-    accountEl.append(wrap);
+    if (typeof window.renderAccountControls === "function") window.renderAccountControls(user);
   }
 
   // "Not saved" banner: signed out, with at least one finished explanation or diagram.
