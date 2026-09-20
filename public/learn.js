@@ -673,7 +673,7 @@
   const STASH_KEY = "poken_learn_stash";
 
   function stashTree() {
-    // Even with no tree, stash so the return from Google lands back in Learn Mode.
+    // Only the tree's contents; app.js decides which screen the return from Google opens.
     const rows = [...nodes].sort((a, b) => a.seq - b.seq).map(n => ({
       id: n.id, parent_id: n.parentId, kind: n.kind, label: n.label, question: n.question,
       after_block: n.afterBlock, body: n.text, created_at: n.createdAt,
@@ -754,6 +754,8 @@
     e.returnValue = "";
   });
 
+  window.pokenScreens?.register("learn", () => show());
+
   const stash = takeStash();
   let firstAuthEvent = true;
   store()?.onAuthChange((u) => {
@@ -763,12 +765,9 @@
     topicsBtn.hidden = !user;
     if (firstAuthEvent) {
       firstAuthEvent = false;
-      // Back from Google: return to Learn Mode, rebuild the tree that was on screen, and save
-      // it if sign-in worked (saveAll below). A cancelled sign-in still gets the tree back.
-      if (stash) {
-        show();
-        if (stash.rows?.length) rebuild(stash.topic, stash.language, stash.rows);
-      }
+      // Back from Google: rebuild the tree that was on screen. Which screen to open is the
+      // return intent's job (app.js), so a sign-in started elsewhere doesn't land in Learn Mode.
+      if (stash?.rows?.length) rebuild(stash.topic, stash.language, stash.rows);
     }
     if (user && !wasSignedIn) saveAll();
     if (!user && wasSignedIn) { topicReady = null; topicId = null; }   // keep the tree on screen, stop saving
