@@ -26,7 +26,9 @@ Cloud Run, via Cloud Build:
 gcloud builds submit --config cloudbuild.yaml --project poken-app-260919
 ```
 
-Production: https://poken-7skula3n3a-uc.a.run.app (GCP project `poken-app-260919`).
+Production: https://poken.live (also `www.poken.live`; the Cloud Run URL
+https://poken-7skula3n3a-uc.a.run.app still serves the same service).
+GCP project `poken-app-260919`.
 Needs the Secret Manager secret `gemini-api-key` in the project. `cloudbuild.yaml` sets the
 60-minute request timeout, session affinity (required for WebSockets), and
 `SESSION_TIMEOUT_S` to match the timeout.

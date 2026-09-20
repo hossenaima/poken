@@ -7,7 +7,7 @@ learn something the next session would otherwise rediscover the hard way.
 
 ## Where things run
 
-- **Production:** https://poken-7skula3n3a-uc.a.run.app — Cloud Run service `poken`,
+- **Production:** https://poken.live — Cloud Run service `poken`,
   `us-central1`, in its own GCP project **`poken-app-260919`** (project number 619178789674,
   billing "My Billing Account"). Deploys are manual:
   `gcloud builds submit --config cloudbuild.yaml --project poken-app-260919`
@@ -21,6 +21,25 @@ learn something the next session would otherwise rediscover the hard way.
   put a stale copy live for ~4 minutes (`poken-00005`) and silently rolled back a fix that was
   already on `main`. To see what any revision actually shipped, its source tarball is kept in
   `gs://poken-app-260919_cloudbuild/source/`.
+- **Custom domain `poken.live`** (Namecheap, bought 2026-09-19): two Cloud Run *domain
+  mappings* on service `poken`, apex + `www`, both in `us-central1`. Apex is 4 A + 4 AAAA
+  records at Google's `216.239.3{2,4,6,8}.21` / `2001:4860:4802:3{2,4,6,8}::15`; `www` is a
+  CNAME to `ghs.googlehosted.com`. The `TXT @ google-site-verification=...` record must stay
+  — deleting it un-verifies the domain in Search Console and the mappings break. Cert
+  provisioning took ~2h, not the ~15 min the docs suggest; `DomainRoutable: True` with
+  `CertificateProvisioned: Unknown` just means "waiting", not "broken".
+- **Domain mappings are a Preview feature** Google explicitly calls "not production-ready",
+  which mattered here because Live sessions hold a WebSocket for up to 60 minutes. Tested
+  after setup: `wss://poken.live/ws/live` upgraded in 140ms and held open cleanly, so the
+  frontend passes WebSockets fine. If Live sessions ever start dropping on `poken.live` but
+  *not* on the `run.app` URL, that's the mapping — the fix is a global external Application
+  Load Balancer (~$20/mo), not application code. Check that before debugging the server.
+- **Changing the domain means changing Supabase, not Google Cloud.** Nothing in the Cloud Run
+  service or `cloudbuild.yaml` names a URL, and the Google OAuth client points at
+  `poken.supabase.co/auth/v1/callback`, so it is untouched by a new app domain. What does
+  need updating is Supabase → Authentication → URL Configuration: **Site URL** and the
+  **Redirect URLs** allow-list (`https://poken.live/**`). `learn-store.js` builds `redirectTo`
+  from `location.origin`, so sign-in silently fails on any origin missing from that list.
 - **Project setup that was needed (once):** enable `run`, `cloudbuild`, `secretmanager`,
   `containerregistry`, `artifactregistry`; create secret `gemini-api-key`; grant both
   `619178789674-compute@developer.gserviceaccount.com` and

@@ -5,7 +5,7 @@
 //        and the timeout handover only fires after 60 min — expect 'NO HANDOVER within 300 s')
 import WebSocket from 'ws';
 
-const BASE = process.env.BASE || 'wss://poken-7skula3n3a-uc.a.run.app';
+const BASE = process.env.BASE || 'wss://poken.live';
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
 function connect(query, { resume, notes } = {}) {
