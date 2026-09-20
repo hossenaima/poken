@@ -239,31 +239,7 @@
       color: var(--poken-text-secondary); margin-bottom: 0.75rem;
     }
     .setup-back-row { grid-column: 1 / -1; }
-    .setup-card-head {
-      display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.75rem;
-    }
-    .setup-sidebar-card .setup-card-head h3 { margin-bottom: 0; }
-    .recent-sessions-list { list-style: none; padding: 0; }
-    .recent-sessions-list li {
-      display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
-      font-size: 0.8125rem; color: var(--poken-text); padding: 0.4rem 0;
-      border-bottom: 1px solid var(--poken-border-solid);
-    }
-    .recent-sessions-list li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .recent-sessions-list li:last-child { border-bottom: none; }
-    .setup-empty-state {
-      text-align: center; padding: 1.5rem 0.5rem; color: var(--poken-text-secondary);
-      font-size: 0.8125rem; line-height: 1.5;
-    }
-    .setup-empty-state .empty-icon { font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.6; }
-    .setup-stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-    .setup-stat { padding: 0.6rem; background: rgba(255,255,255,0.5); border-radius: 0.5rem; text-align: center; }
-    .setup-stat-value { font-size: 1.1rem; font-weight: 700; color: var(--poken-accent); }
-    .setup-stat-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--poken-text-secondary); }
     .setup-lab-inner { padding: 1.5rem; }
-    .setup-lab .logo { text-align: center; margin-bottom: 1.5rem; }
-    .setup-lab .logo h1 { font-size: 1.75rem; font-weight: 600; letter-spacing: -0.04em; color: var(--poken-text); }
-    .setup-lab .logo p { font-size: 0.8125rem; color: var(--poken-text-secondary); margin-top: 0.25rem; }
     .setup-form { display: flex; flex-direction: column; gap: 1.25rem; }
     .field-label { display: block; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--poken-text-secondary); margin-bottom: 0.45rem; }
     select, input[type="text"] {
@@ -1617,23 +1593,17 @@
       </div>
       <!-- Left: Growth Column -->
       <aside class="setup-growth">
-        <div class="glass-card setup-sidebar-card">
-          <div class="setup-card-head">
-            <h3>Recent sessions</h3>
-            <button type="button" class="learn-topics-clear" id="recentSessionsClear" hidden>Clear all</button>
-          </div>
-          <ul class="recent-sessions-list" id="recentSessionsList"></ul>
-          <div class="setup-empty-state" id="recentSessionsEmpty">
-            <span class="empty-icon" aria-hidden="true">&#x1F4DA;</span>
-            <p>Your teaching journey starts here.</p>
-          </div>
-        </div>
-        <div class="glass-card setup-sidebar-card">
-          <h3>Teaching stats</h3>
-          <div class="setup-stats-grid">
-            <div class="setup-stat" style="grid-column: 1 / -1;">
-              <div class="setup-stat-value" id="statTotalHours">0h</div>
-              <div class="setup-stat-label">Total hours</div>
+        <div class="glass-card setup-sidebar-card" id="soloSection">
+          <h3>Choose your student</h3>
+          <div class="persona-grid">
+            <div class="persona-card selected" data-persona="eager">
+              <span class="emoji">&#x1F64B;</span><div class="pname">Eager</div><div class="pdesc">Lots of questions</div>
+            </div>
+            <div class="persona-card" data-persona="skeptic">
+              <span class="emoji">&#x1F928;</span><div class="pname">Skeptic</div><div class="pdesc">Needs convincing</div>
+            </div>
+            <div class="persona-card" data-persona="confused">
+              <span class="emoji">&#x1F615;</span><div class="pname">Confused</div><div class="pdesc">Needs examples</div>
             </div>
           </div>
         </div>
@@ -1642,11 +1612,6 @@
       <!-- Center: The Lab -->
       <main class="setup-lab">
         <div class="glass-card setup-lab-inner">
-          <div class="logo">
-            <img src="/logo.svg" alt="Poken" width="48" height="48" style="margin-bottom:0.5rem;" />
-            <h1>Poken</h1>
-            <p>Learn by teaching &mdash; your AI student is listening.</p>
-          </div>
           <div class="setup-form">
             <div>
               <label class="field-label" for="customTopic">What are you teaching?</label>
@@ -1675,21 +1640,6 @@
               <div class="materials-divider">or paste notes</div>
               <textarea id="materials" placeholder="Paste notes or a reading you'd expect your students to have studied&hellip;"></textarea>
             </div>
-            <div id="soloSection">
-              <label class="field-label">Choose your student</label>
-              <div class="persona-grid">
-                <div class="persona-card selected" data-persona="eager">
-                  <span class="emoji">&#x1F64B;</span><div class="pname">Eager</div><div class="pdesc">Lots of questions</div>
-                </div>
-                <div class="persona-card" data-persona="skeptic">
-                  <span class="emoji">&#x1F928;</span><div class="pname">Skeptic</div><div class="pdesc">Needs convincing</div>
-                </div>
-                <div class="persona-card" data-persona="confused">
-                  <span class="emoji">&#x1F615;</span><div class="pname">Confused</div><div class="pdesc">Needs examples</div>
-                </div>
-              </div>
-            </div>
-
             <!-- Camera/Whiteboard toggles removed — available in-session toolbar -->
             <input type="checkbox" id="useCamera" style="display:none" />
             <input type="checkbox" id="useWhiteboard" style="display:none" />
