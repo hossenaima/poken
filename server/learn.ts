@@ -4,8 +4,9 @@
  * in the background (never shown); /visual draws diagrams; /extras adds key terms and
  * suggested rabbit holes.
  *
- * Blocks are paragraphs: the model writes prose separated by blank lines and the
- * client splits on them — addressable enough for drag-select, so no structuring pass.
+ * Blocks are paragraphs, `###` subheads or lists: the model separates them with blank
+ * lines and the client splits on those, then parses a closed allowlist of markdown
+ * (bold, subheads, lists) — addressable enough for drag-select, so no structuring pass.
  */
 import type { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
@@ -108,8 +109,11 @@ Rules:
 - Write in ${language}.
 
 Format (strict):
-- Plain prose paragraphs separated by one blank line. Aim for 4–7 paragraphs, each 2–5 sentences.
-- No markdown: no headings, no bullet lists, no bold, no code fences.
+- Paragraphs separated by one blank line. Aim for 4–7 paragraphs, each 2–3 sentences.
+- Bold the single most important phrase or figure in the first paragraph with **asterisks**, so the learner can scan the core idea in two seconds. At most two bolded phrases in the whole explanation.
+- Use a "### " subheading only when the explanation runs past six paragraphs. Never a heading level other than ###.
+- Use "- " bullets only when the content is genuinely a list of non-sequential items, and "1. " numbers only when the order strictly matters. At most one list per explanation. Never a list of one item.
+- Nothing else: no tables, no emoji, no code fences, no links, no blockquotes.
 - No preamble and no closing summary line.`;
 }
 

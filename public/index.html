@@ -1094,8 +1094,13 @@
     .learn-node.child.collapsed > .learn-crumb-row > .learn-crumb::before { content: "… "; }
     .learn-crumb b { color: var(--poken-text); font-weight: 600; }
     .learn-block { font-size: 1rem; line-height: 1.65; color: var(--poken-text); margin: 0 0 0.9rem; }
-    .learn-block::selection { background: rgba(255, 115, 85, 0.3); }
-    .learn-node.streaming .learn-block:last-of-type::after {
+    .learn-block::selection, .learn-block *::selection { background: rgba(255, 115, 85, 0.3); }
+    .learn-block strong { font-weight: 600; }
+    h4.learn-block { font-size: 1rem; font-weight: 600; line-height: 1.4; margin: 1.4rem 0 0.5rem; }
+    ul.learn-block, ol.learn-block { padding-left: 1.4rem; }
+    .learn-block > li { margin: 0 0 0.35rem; }
+    .learn-block > li::marker { color: var(--poken-text-secondary); }
+    .learn-node.streaming .learn-block:not(:has(~ .learn-block))::after {
       content: ''; display: inline-block; width: 0.5em; height: 1em; margin-left: 2px; vertical-align: text-bottom;
       background: var(--poken-accent); animation: learnBlink 0.9s steps(2) infinite;
     }

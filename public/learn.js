@@ -56,12 +56,93 @@
     for (let n = node; n && n.parentId != null; n = byId(n.parentId)) out.unshift({ selection: n.label });
     return out;
   };
-  // Paragraphs are the blocks. The prompt forbids markdown and citations, but the model
-  // sometimes emphasizes with *asterisks* or adds [1]-style markers anyway; strip both so
-  // they never show (or reach the teaching notes).
-  const blocksOf = (text) => text.split(/\n\s*\n/)
-    .map(s => s.replace(/\*{1,2}([^*\n]+?)\*{1,2}/g, "$1").replace(/\s?\[\d+(?:\s*,\s*\d+)*\]/g, "").trim())
-    .filter(Boolean);
+  // Blocks are chunks separated by blank lines, each a paragraph, a "###" subhead or a list.
+  // The prompt allows exactly that plus **bold**; everything else the model may emit anyway
+  // (links, code, tables, blockquotes, emoji, [1]-style citations, *emphasis*) is stripped
+  // so it never shows or reaches the teaching notes. A chunk with no markdown lines stays one
+  // paragraph with the exact text the old paragraph-only splitter produced — saved trees
+  // address children by block index, so markdown-free text must split identically.
+  const LINE = {
+    fence: /^\s*(`{3,}|~{3,})/,
+    heading: /^\s*#{1,6}\s+(.*)$/,
+    bullet: /^\s*[-*•]\s+(.*)$/,
+    numbered: /^\s*\d{1,3}[.)]\s+(.*)$/,
+    quote: /^\s*>\s?/,
+    tableRule: /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/,
+    tableRow: /^\s*\|.*\|\s*$/,
+  };
+  const EMOJI = / ?(?:[\u{1F1E6}-\u{1F1FF}\u{1F3FB}-\u{1F3FF}\u{FE0F}\u{200D}\u{20E3}]|(?![©®])\p{Extended_Pictographic})+/gu;
+
+  // Inline pass: plain text plus the ranges of it that were **bold**. Bold is the only inline
+  // markup kept; the rest is flattened to its visible text before the bold scan.
+  function parseInline(raw) {
+    const flat = raw
+      .replace(/\[([^\]\n]*)\]\([^)\n]*\)/g, "$1")   // [label](url) → label
+      .replace(/`([^`\n]*)`/g, "$1")
+      .replace(EMOJI, "");
+    let text = "";
+    const bold = [];
+    const re = /\*\*([^*\n]+?)\*\*|\*{1,2}([^*\n]+?)\*{1,2}/g;
+    let last = 0, m;
+    while ((m = re.exec(flat))) {
+      text += flat.slice(last, m.index);
+      if (m[1] != null) bold.push([text.length, text.length + m[1].length]);
+      text += m[1] ?? m[2];
+      last = m.index + m[0].length;
+    }
+    text += flat.slice(last);
+    // Citation markers, then trim — offsets shift with the removals, so recompute them through
+    // a position map rather than re-parsing.
+    const keep = [];
+    let cursor = 0;
+    for (const c of text.matchAll(/\s?\[\d+(?:\s*,\s*\d+)*\]/g)) { keep.push([cursor, c.index]); cursor = c.index + c[0].length; }
+    keep.push([cursor, text.length]);
+    const removedBefore = (i) => { let r = 0, end = 0; for (const [s, e] of keep) { if (i <= s) break; r += s - end; end = e; if (i <= e) break; } return r; };
+    const stripped = keep.map(([s, e]) => text.slice(s, e)).join("");
+    const lead = stripped.length - stripped.trimStart().length;
+    const out = stripped.trim();
+    const segs = bold
+      .map(([s, e]) => [s - removedBefore(s) - lead, e - removedBefore(e) - lead])
+      .map(([s, e]) => [Math.max(0, s), Math.min(out.length, e)])
+      .filter(([s, e]) => e > s);
+    return { text: out, bold: segs };
+  }
+
+  function blocksOf(text) {
+    const blocks = [];
+    for (const chunk of text.split(/\n\s*\n/)) {
+      let para = [], list = null;
+      const flush = () => {
+        if (para.length) {
+          const inline = parseInline(para.join("\n"));
+          if (inline.text) blocks.push({ kind: "paragraph", ...inline });
+        }
+        if (list?.items.length) blocks.push({ ...list, text: list.items.map(i => i.text).join("\n") });
+        para = []; list = null;
+      };
+      for (const line of chunk.split("\n")) {
+        if (LINE.fence.test(line) || LINE.tableRule.test(line)) continue;
+        let m;
+        if ((m = LINE.heading.exec(line))) {
+          flush();
+          const inline = parseInline(m[1]);
+          if (inline.text) blocks.push({ kind: "subhead", ...inline });
+        } else if ((m = LINE.bullet.exec(line)) || (m = LINE.numbered.exec(line))) {
+          const ordered = !LINE.bullet.test(line);
+          if (para.length || (list && list.ordered !== ordered)) flush();
+          list ??= { kind: "list", ordered, items: [] };
+          const item = parseInline(m[1]);
+          if (item.text) list.items.push(item);
+        } else {
+          if (list) flush();
+          para.push(LINE.tableRow.test(line) ? line.replace(/\|/g, " ").replace(/\s+/g, " ").trim() : line.replace(LINE.quote, ""));
+        }
+      }
+      flush();
+    }
+    return blocks;
+  }
+  const plainBlocksOf = (text) => blocksOf(text).map(b => b.text);
 
   function reset() {
     nodes = []; seq = 0; pending = null; streamingCount = 0;
@@ -144,22 +225,50 @@
     });
     node.el.querySelectorAll(":scope > .learn-block, :scope > .learn-node.child").forEach(el => el.remove());
     const usedTerms = new Set();   // gloss each key term once per node, at its first occurrence
-    blocksOf(node.text).forEach((text, i) => {
-      const p = document.createElement("p");
+    blocksOf(node.text).forEach((block, i) => {
+      const tag = block.kind === "subhead" ? "h4" : block.kind === "list" ? (block.ordered ? "ol" : "ul") : "p";
+      const p = document.createElement(tag);
       p.className = "learn-block";
       p.dataset.nodeId = node.id;
       p.dataset.blockIdx = i;
-      decorateTerms(p, text, node.terms, usedTerms);
+      if (block.kind === "list") {
+        // Newlines between items so textContent (what selection and context read) keeps them apart.
+        block.items.forEach((item, j) => {
+          if (j) p.append("\n");
+          const li = document.createElement("li");
+          decorateTerms(li, item, node.terms, usedTerms);
+          p.append(li);
+        });
+      } else {
+        decorateTerms(p, block, node.terms, usedTerms);
+      }
       node.el.appendChild(p);
       for (const child of children.get(i) || []) node.el.appendChild(child);
     });
     if (node.suggestEl) node.el.appendChild(node.suggestEl);   // suggestions stay last
   }
 
+  // Append text[from, to) to el, wrapping the parts that fall inside a bold range in <strong>.
+  function appendRich(el, { text, bold }, from, to) {
+    let cursor = from;
+    for (const [s, e] of bold) {
+      const bs = Math.max(s, from), be = Math.min(e, to);
+      if (be <= bs) continue;
+      if (bs > cursor) el.append(text.slice(cursor, bs));
+      const strong = document.createElement("strong");
+      strong.textContent = text.slice(bs, be);
+      el.append(strong);
+      cursor = be;
+    }
+    if (to > cursor) el.append(text.slice(cursor, to));
+  }
+
   // Wrap the first occurrence of each key term in a span that shows its gloss on hover/focus.
   // Text-only DOM (textContent/createElement), so model output is never parsed as HTML.
-  function decorateTerms(p, text, terms, used) {
-    if (!terms?.length) { p.append(text); return; }
+  // Terms are matched on the plain text, so a term inside a bolded phrase is still glossed.
+  function decorateTerms(p, inline, terms, used) {
+    const { text } = inline;
+    if (!terms?.length) { appendRich(p, inline, 0, text.length); return; }
     const lower = text.toLowerCase();
     const hits = [];
     for (const t of terms) {
@@ -172,17 +281,17 @@
     let cursor = 0;
     for (const h of hits) {
       if (h.at < cursor) continue;   // overlaps a term already wrapped
-      p.append(text.slice(cursor, h.at));
+      appendRich(p, inline, cursor, h.at);
       const span = document.createElement("span");
       span.className = "learn-term";
       span.tabIndex = 0;
       span.dataset.gloss = h.t.gloss;
-      span.textContent = text.slice(h.at, h.end);
+      appendRich(span, inline, h.at, h.end);
       p.append(span);
       cursor = h.end;
       used.add(h.key);
     }
-    p.append(text.slice(cursor));
+    appendRich(p, inline, cursor, text.length);
   }
 
   // Key-term glosses + "go deeper" suggestion chips (fresh from the server or from a saved tree).
@@ -222,7 +331,7 @@
       const res = await fetch("/api/learn/extras", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, text: blocksOf(node.text).join("\n\n"), language: langEl.value }),
+        body: JSON.stringify({ topic, text: plainBlocksOf(node.text).join("\n\n"), language: langEl.value }),
       });
       if (!res.ok) return;
       const extras = await res.json();
@@ -434,7 +543,7 @@
   // Branch off a selection. mode: "deeper" | "ask" (with question) | "simplify" | "visual".
   function spawn({ nodeId, blockIdx, text, context }, mode, question = "", parentTextOverride = "") {
     const parent = byId(nodeId);
-    const parentText = parentTextOverride || context || blocksOf(parent.text)[blockIdx] || "";
+    const parentText = parentTextOverride || context || plainBlocksOf(parent.text)[blockIdx] || "";
     // Breadcrumb label: a multi-paragraph selection would make an unreadable trail. Also keeps
     // labels inside the database's 400-char limit (a question's full text is saved separately).
     const shorten = (s) => { const f = s.replace(/\s+/g, " "); return f.length > 90 ? `${f.slice(0, 90).trimEnd()}…` : f; };
@@ -534,7 +643,7 @@
       .map(el => byId(el.dataset.nodeId))
       .filter(n => n && n.text.trim());
     if (!ordered.length) return "";
-    const section = (n) => `## ${[topic, ...chainOf(n).map(c => c.selection)].join(" → ")}\n\n${blocksOf(n.text).join("\n\n")}`;
+    const section = (n) => `## ${[topic, ...chainOf(n).map(c => c.selection)].join(" → ")}\n\n${plainBlocksOf(n.text).join("\n\n")}`;
     const keep = new Set(ordered);
     const size = () => ordered.reduce((s, n) => s + (keep.has(n) ? section(n).length + 2 : 0), 0);
     const droppable = ordered.filter(n => n.parentId != null).sort((a, b) => depth(b) - depth(a) || a.seq - b.seq);
