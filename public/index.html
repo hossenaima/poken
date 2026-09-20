@@ -1081,9 +1081,11 @@
     /* Key vocabulary — pills */
     .rcard-vocab-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; }
     .rcard-vocab-tag {
+      --vocab: #93C5FD;
       padding: 0.4rem 0.85rem; border-radius: 999px;
-      background: var(--poken-bg); border: 1px solid var(--poken-border-solid);
-      font-size: 0.875rem; font-weight: 600; color: var(--poken-text);
+      background: color-mix(in srgb, var(--vocab) 22%, #fff);
+      border: 1px solid color-mix(in srgb, var(--vocab) 55%, #fff);
+      font-size: 0.875rem; font-weight: 600; color: #1E3A5F;
     }
 
     /* What you covered — numbered list */
@@ -1097,9 +1099,16 @@
     .rcard-topics li::before {
       content: counter(rtopic); position: absolute; left: 0; top: 0.55rem;
       width: 1.5rem; height: 1.5rem; border-radius: 999px;
-      background: var(--poken-bg); border: 1px solid var(--poken-border-solid); color: var(--poken-text-secondary);
+      background: var(--rnum, var(--poken-bg)); border: 0; color: #2A2118;
       box-sizing: border-box; font-size: 0.75rem; font-weight: 800; display: flex; align-items: center; justify-content: center;
     }
+    .rcard-topics li:nth-child(7n+1) { --rnum: #FFCB45; }
+    .rcard-topics li:nth-child(7n+2) { --rnum: #A7C878; }
+    .rcard-topics li:nth-child(7n+3) { --rnum: #93C5FD; }
+    .rcard-topics li:nth-child(7n+4) { --rnum: #C4B5FD; }
+    .rcard-topics li:nth-child(7n+5) { --rnum: #FDA4AF; }
+    .rcard-topics li:nth-child(7n+6) { --rnum: #FF7355; }
+    .rcard-topics li:nth-child(7n+7) { --rnum: #FF3D91; }
 
     /* Concepts to revisit — each one is a way back into learning */
     .rcard-gap-hint { margin: -0.5rem 0 1rem; font-size: 0.875rem; color: #64748b; }
