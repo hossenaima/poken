@@ -1010,11 +1010,14 @@
     ? window.pokenConfirm({ danger: true, ...opts })
     : Promise.resolve(confirm(opts.body || opts.title));
 
+  let topicsRun = 0;
   async function showTopics() {
+    const run = ++topicsRun;
     const s = store();
-    topicsEl.replaceChildren();
-    if (!s || !user) return;
+    if (!s || !user) { topicsEl.replaceChildren(); return; }
     const list = await s.listTopics();
+    if (run !== topicsRun) return;               // a newer call owns the list now
+    topicsEl.replaceChildren();
     if (nodes.length || !list.length) return;   // a tree opened meanwhile, or nothing saved yet
     const h = document.createElement("div");
     h.className = "learn-topics-title";
