@@ -62,17 +62,19 @@
       --ink: #1a1a1a;
       position: relative; width: var(--size); height: var(--size);
     }
-    .pk-blob.is-idle      { --fill: #FFCB45; --glow: rgba(255,203,69,0.45);  --beat: 6.5s;  --amp: 0.05; --lean: 0deg; }
-    .pk-blob.is-listening { --fill: #93C5FD; --glow: rgba(147,197,253,0.45); --beat: 2.2s;  --amp: 0.06; --lean: 3deg; }
-    .pk-blob.is-thinking  { --fill: #FDA4AF; --glow: rgba(253,164,175,0.5);  --beat: 2.6s;  --amp: 0.04; --lean: -4deg; }
-    .pk-blob.is-speaking  { --fill: #FF7355; --glow: rgba(255,115,85,0.5);   --beat: 0.85s; --amp: 0.09; --lean: 0deg; }
-    .pk-blob.is-curious   { --fill: #A7C878; --glow: rgba(167,200,120,0.45); --beat: 1.6s;  --amp: 0.07; --lean: 6deg; }
-    .pk-blob.is-confused  { --fill: #C4B5FD; --glow: rgba(196,181,253,0.45); --beat: 2.9s;  --amp: 0.04; --lean: -6deg; }
-    .pk-blob.is-excited   { --fill: #FF3D91; --glow: rgba(255,61,145,0.65);  --beat: 0.65s; --amp: 0.10; --lean: 0deg; }
+    /* Each state also sets --fill on an .orb-wrap holding that blob, so the session rings share it */
+    .pk-blob.is-idle,      .orb-wrap:has(> .pk-blob.is-idle)      { --fill: #FFCB45; --glow: rgba(255,203,69,0.45);  --beat: 6.5s;  --amp: 0.05; --lean: 0deg; }
+    .pk-blob.is-listening, .orb-wrap:has(> .pk-blob.is-listening) { --fill: #93C5FD; --glow: rgba(147,197,253,0.45); --beat: 2.2s;  --amp: 0.06; --lean: 3deg; }
+    .pk-blob.is-thinking,  .orb-wrap:has(> .pk-blob.is-thinking)  { --fill: #FDA4AF; --glow: rgba(253,164,175,0.5);  --beat: 2.6s;  --amp: 0.04; --lean: -4deg; }
+    .pk-blob.is-speaking,  .orb-wrap:has(> .pk-blob.is-speaking)  { --fill: #FF7355; --glow: rgba(255,115,85,0.5);   --beat: 0.85s; --amp: 0.09; --lean: 0deg; }
+    .pk-blob.is-curious,   .orb-wrap:has(> .pk-blob.is-curious)   { --fill: #A7C878; --glow: rgba(167,200,120,0.45); --beat: 1.6s;  --amp: 0.07; --lean: 6deg; }
+    .pk-blob.is-confused,  .orb-wrap:has(> .pk-blob.is-confused)  { --fill: #C4B5FD; --glow: rgba(196,181,253,0.45); --beat: 2.9s;  --amp: 0.04; --lean: -6deg; }
+    .pk-blob.is-excited,   .orb-wrap:has(> .pk-blob.is-excited)   { --fill: #FF3D91; --glow: rgba(255,61,145,0.65);  --beat: 0.65s; --amp: 0.10; --lean: 0deg; }
 
     .pk-blob__skin, .pk-blob__aura {
       position: absolute; inset: 0; background: var(--fill); rotate: var(--lean);
       border-radius: 62% 38% 44% 56% / 40% 60% 54% 46%;
+      transition: background 0.55s ease;
     }
     .pk-blob__skin {
       box-shadow: 0 0 calc(var(--size) * 34 / 104) calc(var(--size) * 3 / 104) var(--glow);
@@ -132,12 +134,18 @@
 
     .pk-blob--bare .pk-blob__eyes, .pk-blob--bare .pk-blob__blush,
     .pk-blob--bare .pk-blob__brow, .pk-blob--bare .pk-blob__bubble { display: none; }
+    /* Bare is for 20px: a morphing outline reads as jitter there, so the silhouette
+       holds still and only breathes (scale), leaving colour to carry the state */
+    .pk-blob--bare .pk-blob__skin { animation: pkBreath var(--beat) ease-in-out infinite; }
+    .pk-blob--bare .pk-blob__aura { animation: pkBreath var(--beat) ease-in-out infinite, pkHalo 4.1s ease-in-out infinite; }
+    .pk-blob--bare.is-excited { animation: none; }
 
     @keyframes pkMorph {
       0%,100% { border-radius: 62% 38% 44% 56% / 40% 60% 54% 46%; scale: 1 1; }
       33%     { border-radius: 40% 60% 58% 42% / 58% 42% 44% 56%; scale: calc(1 + var(--amp)) calc(1 - var(--amp)); }
       66%     { border-radius: 56% 44% 36% 64% / 46% 56% 62% 38%; scale: calc(1 - var(--amp) * 0.8) calc(1 + var(--amp) * 0.8); }
     }
+    @keyframes pkBreath { 0%,100% { scale: 1; } 50% { scale: calc(1 + var(--amp)); } }
     @keyframes pkHalo   { 0%,100% { scale: 1.12; opacity: 0.22; } 50% { scale: 1.32; opacity: 0.10; } }
     @keyframes pkBlink  { 0%,93%,100% { scale: 1 1; } 96% { scale: 1 0.1; } }
     @keyframes pkDotOff { 0%,64%,86%,100% { opacity: 1; } 69%,82% { opacity: 0; } }
@@ -747,14 +755,7 @@
       border: 1px solid #E5E7EB; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     }
     .orb-pill.visible { display: flex; }
-    .orb-pill-dot {
-      width: 20px; height: 20px; border-radius: 50%;
-      background: var(--orb-color, #9CA3AF);
-      box-shadow: 0 0 8px 1px var(--orb-glow, rgba(156,163,175,0.4));
-      transition: background 0.55s, box-shadow 0.55s;
-      animation: orbBreath var(--orb-speed, 3.5s) ease-in-out infinite;
-      flex-shrink: 0;
-    }
+    .orb-pill .pk-blob { --size: 20px; flex-shrink: 0; }
     .orb-pill-label { font-size: 0.65rem; font-weight: 500; color: #6B7280; min-width: 2.5rem; }
 
     /* Full orb (no media mode) */
@@ -771,7 +772,7 @@
     }
     .ring {
       position: absolute; inset: 0; border-radius: 50%;
-      border: 1.5px solid var(--orb-color, #555);
+      border: 1.5px solid var(--fill, #555);
       opacity: 0; pointer-events: none; transform: scale(0.85);
     }
     .rings-on .ring              { animation: ripple 2s ease-out infinite; }
@@ -781,18 +782,7 @@
       0%   { transform: scale(0.85); opacity: 0.5; }
       100% { transform: scale(1.55); opacity: 0; }
     }
-    #orb {
-      width: 120px; height: 120px; border-radius: 50%;
-      background: var(--orb-color, #555);
-      box-shadow: 0 0 40px 4px var(--orb-glow, rgba(85,85,85,0.4));
-      transition: background 0.55s ease, box-shadow 0.55s ease;
-      animation: orbBreath var(--orb-speed, 3.5s) ease-in-out infinite;
-      will-change: transform;
-    }
-    @keyframes orbBreath {
-      0%, 100% { transform: scale(1); }
-      50%       { transform: scale(1.05); }
-    }
+    .orb-wrap .pk-blob { --size: 120px; }
     #orbLabel {
       font-size: 0.75rem; color: #9CA3AF; margin-top: 0.75rem;
       font-weight: 400; min-height: 1.2em;
@@ -1826,7 +1816,10 @@
 
           <!-- Orb pill (student state indicator) -->
           <div class="orb-pill" id="orbPill">
-            <div class="orb-pill-dot" id="orbPillDot"></div>
+            <div class="pk-blob pk-blob--bare is-idle" id="orbPillDot">
+              <div class="pk-blob__aura"></div><div class="pk-blob__aura"></div>
+              <div class="pk-blob__skin"></div>
+            </div>
             <span class="orb-pill-label" id="orbPillLabel"></span>
           </div>
         </div>
@@ -1846,7 +1839,17 @@
         <div class="orb-area" id="orbArea">
           <div class="orb-wrap" id="orbWrap">
             <div class="ring"></div><div class="ring"></div><div class="ring"></div>
-            <div id="orb"></div>
+            <div class="pk-blob is-idle" id="orb">
+              <div class="pk-blob__aura"></div><div class="pk-blob__aura"></div>
+              <div class="pk-blob__skin"></div>
+              <div class="pk-blob__blush"><b></b><b></b></div>
+              <div class="pk-blob__eyes">
+                <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
+                <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
+              </div>
+              <span class="pk-blob__brow"></span>
+              <span class="pk-blob__bubble"><b></b><b></b><b></b></span>
+            </div>
           </div>
           <div id="orbLabel"></div>
           <div id="speakerLabel"></div>
