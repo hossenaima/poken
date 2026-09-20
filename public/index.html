@@ -196,8 +196,28 @@
       33%     { border-radius: 40% 60% 58% 42% / 58% 42% 44% 56%; translate: var(--x) var(--y); scale: 1.06 0.94; }
       66%     { border-radius: 56% 44% 36% 64% / 46% 56% 62% 38%; translate: var(--x) var(--y); scale: 0.95 1.05; }
     }
+    /* ── Float field (teach, learn, open questions) ─────────────────────
+       The landing dots bloom; these are already in place and only drift a
+       few pixels, each on its own beat and phase. They hug the margins
+       beside the content and never take input. Below 64rem the margins
+       close up, so only the edge-hugging .fd-edge dots stay.             */
+    .float-field { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: -1; }
+    .float-field i {
+      position: absolute; left: var(--x); top: var(--y); width: var(--d); height: var(--d);
+      background: var(--c); opacity: var(--o);
+      border-radius: 62% 38% 44% 56% / 40% 60% 54% 46%;
+      animation: fdDrift var(--beat) ease-in-out infinite var(--delay);
+    }
+    @keyframes fdDrift {
+      0%,100% { translate: 0 0;      scale: 1;         opacity: var(--o); }
+      30%     { translate: 5px -6px; scale: 1.05 0.95; opacity: calc(var(--o) * 0.7); }
+      65%     { translate: -4px 4px; scale: 0.95 1.05; opacity: var(--o); }
+    }
+    @media (max-width: 64rem) { .float-field i:not(.fd-edge) { display: none; } }
+
     @media (prefers-reduced-motion: reduce) {
       .landing-field i { animation: none; translate: var(--x) var(--y); scale: 1; opacity: var(--o); }
+      .float-field i { animation: none; }
       .pk-blob, .pk-blob * { animation: none !important; }
     }
 
@@ -225,7 +245,7 @@
     #setup-screen {
       display: none; width: 100%; min-height: 100vh;
       padding: 2rem 1rem; transition: opacity 0.3s ease-in-out;
-      position: relative; overflow: hidden;
+      position: relative; overflow: hidden; isolation: isolate;
     }
     #setup-screen.show { display: block; }
     #ambientCanvas {
@@ -1122,7 +1142,7 @@
     .landing-quiet-link[hidden] { display: none; }
 
     /* ── Open questions ─────────────────────────────────────────────── */
-    #questions-screen { display: none; min-height: 100vh; }
+    #questions-screen { display: none; min-height: 100vh; position: relative; isolation: isolate; }
     .q-shell { max-width: 46rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
     .q-top { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.75rem; }
     .q-title { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; margin: 0; color: var(--poken-text); }
@@ -1189,7 +1209,7 @@
       border: 1px solid var(--poken-border-solid); border-radius: 8px; padding: 0.3rem 0.5rem; cursor: pointer;
     }
     .session-persona:focus { outline: none; border-color: #9CA3AF; }
-    #learn-screen { display: none; min-height: 100vh; }
+    #learn-screen { display: none; min-height: 100vh; position: relative; isolation: isolate; }
     .learn-shell { max-width: 44rem; margin: 0 auto; padding: 2rem 1.25rem 6rem; }
     .learn-top { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
     .learn-back, .learn-teach {
@@ -1546,6 +1566,22 @@
 
   <!-- LEARN (Phase 1) -->
   <div id="learn-screen">
+    <div class="float-field" aria-hidden="true">
+      <i class="fd-edge" style="--x:1.5%;--y:12vh;--d:1.42vmin;--c:#FFCB45;--beat:13.0s;--delay:-11.27s;--o:0.48"></i>
+      <i class="fd-edge" style="--x:2.2%;--y:46vh;--d:1.38vmin;--c:#93C5FD;--beat:8.5s;--delay:-7.44s;--o:0.59"></i>
+      <i class="fd-edge" style="--x:1.8%;--y:82vh;--d:1.11vmin;--c:#FDA4AF;--beat:11.5s;--delay:-9.22s;--o:0.51"></i>
+      <i class="fd-edge" style="--x:97.4%;--y:20vh;--d:1.07vmin;--c:#FF7355;--beat:8.5s;--delay:-2.66s;--o:0.51"></i>
+      <i class="fd-edge" style="--x:97.8%;--y:58vh;--d:0.90vmin;--c:#A7C878;--beat:13.0s;--delay:-0.58s;--o:0.59"></i>
+      <i class="fd-edge" style="--x:97.2%;--y:90vh;--d:1.04vmin;--c:#C4B5FD;--beat:8.5s;--delay:-8.1s;--o:0.5"></i>
+      <i style="--x:5.8%;--y:7vh;--d:1.72vmin;--c:#FF3D91;--beat:11.5s;--delay:-0.0s;--o:0.6"></i>
+      <i style="--x:8.4%;--y:29vh;--d:2.43vmin;--c:#FFCB45;--beat:8.5s;--delay:-4.82s;--o:0.55"></i>
+      <i style="--x:6.1%;--y:63vh;--d:2.26vmin;--c:#93C5FD;--beat:10.0s;--delay:-0.43s;--o:0.42"></i>
+      <i style="--x:9.0%;--y:93vh;--d:2.41vmin;--c:#FDA4AF;--beat:7.0s;--delay:-2.77s;--o:0.52"></i>
+      <i style="--x:91.6%;--y:9vh;--d:2.26vmin;--c:#FF7355;--beat:8.5s;--delay:-5.93s;--o:0.53"></i>
+      <i style="--x:94.3%;--y:38vh;--d:2.34vmin;--c:#A7C878;--beat:11.5s;--delay:-5.32s;--o:0.49"></i>
+      <i style="--x:92.1%;--y:72vh;--d:1.52vmin;--c:#C4B5FD;--beat:8.5s;--delay:-7.78s;--o:0.43"></i>
+      <i style="--x:4.3%;--y:38vh;--d:2.41vmin;--c:#FF3D91;--beat:8.5s;--delay:-4.01s;--o:0.45"></i>
+    </div>
     <div class="poken-account-corner" data-poken-account="learn"></div>
     <div class="learn-shell">
       <header class="learn-top">
@@ -1598,6 +1634,22 @@
 
   <!-- OPEN QUESTIONS -->
   <div id="questions-screen">
+    <div class="float-field" aria-hidden="true">
+      <i class="fd-edge" style="--x:1.5%;--y:15vh;--d:1.08vmin;--c:#FFCB45;--beat:7.0s;--delay:-2.02s;--o:0.55"></i>
+      <i class="fd-edge" style="--x:2.2%;--y:49vh;--d:1.08vmin;--c:#93C5FD;--beat:10.0s;--delay:-3.2s;--o:0.49"></i>
+      <i class="fd-edge" style="--x:1.8%;--y:85vh;--d:0.97vmin;--c:#FDA4AF;--beat:13.0s;--delay:-11.63s;--o:0.54"></i>
+      <i class="fd-edge" style="--x:97.4%;--y:23vh;--d:1.11vmin;--c:#FF7355;--beat:8.5s;--delay:-5.44s;--o:0.48"></i>
+      <i class="fd-edge" style="--x:97.8%;--y:61vh;--d:1.43vmin;--c:#A7C878;--beat:7.0s;--delay:-4.16s;--o:0.46"></i>
+      <i class="fd-edge" style="--x:97.2%;--y:90vh;--d:1.27vmin;--c:#C4B5FD;--beat:10.0s;--delay:-2.89s;--o:0.45"></i>
+      <i style="--x:5.8%;--y:10vh;--d:2.24vmin;--c:#FF3D91;--beat:13.0s;--delay:-8.09s;--o:0.53"></i>
+      <i style="--x:8.4%;--y:32vh;--d:2.22vmin;--c:#FFCB45;--beat:10.0s;--delay:-4.79s;--o:0.49"></i>
+      <i style="--x:6.1%;--y:66vh;--d:2.44vmin;--c:#93C5FD;--beat:7.0s;--delay:-4.92s;--o:0.58"></i>
+      <i style="--x:9.0%;--y:93vh;--d:1.63vmin;--c:#FDA4AF;--beat:11.5s;--delay:-5.64s;--o:0.6"></i>
+      <i style="--x:91.6%;--y:12vh;--d:2.18vmin;--c:#FF7355;--beat:13.0s;--delay:-5.79s;--o:0.59"></i>
+      <i style="--x:94.3%;--y:41vh;--d:1.57vmin;--c:#A7C878;--beat:10.0s;--delay:-7.5s;--o:0.47"></i>
+      <i style="--x:92.1%;--y:75vh;--d:2.07vmin;--c:#C4B5FD;--beat:11.5s;--delay:-2.24s;--o:0.53"></i>
+      <i style="--x:4.3%;--y:41vh;--d:1.62vmin;--c:#FF3D91;--beat:8.5s;--delay:-6.84s;--o:0.54"></i>
+    </div>
     <div class="poken-account-corner" data-poken-account="questions"></div>
     <div class="q-shell">
       <header class="q-top">
@@ -1613,6 +1665,21 @@
 
   <!-- SETUP (Command Center) -->
   <div id="setup-screen">
+    <div class="float-field" aria-hidden="true">
+      <i class="fd-edge" style="--x:1.0%;--y:9vh;--d:1.43vmin;--c:#FFCB45;--beat:11.5s;--delay:-8.49s;--o:0.47"></i>
+      <i class="fd-edge" style="--x:1.6%;--y:31vh;--d:1.06vmin;--c:#93C5FD;--beat:13.0s;--delay:-5.01s;--o:0.51"></i>
+      <i class="fd-edge" style="--x:1.1%;--y:54vh;--d:1.26vmin;--c:#FDA4AF;--beat:7.0s;--delay:-5.5s;--o:0.6"></i>
+      <i class="fd-edge" style="--x:1.7%;--y:76vh;--d:0.99vmin;--c:#FF7355;--beat:7.0s;--delay:-0.91s;--o:0.49"></i>
+      <i class="fd-edge" style="--x:1.2%;--y:94vh;--d:1.05vmin;--c:#A7C878;--beat:11.5s;--delay:-2.42s;--o:0.58"></i>
+      <i class="fd-edge" style="--x:97.8%;--y:14vh;--d:1.36vmin;--c:#C4B5FD;--beat:7.0s;--delay:-1.18s;--o:0.46"></i>
+      <i class="fd-edge" style="--x:98.2%;--y:41vh;--d:1.30vmin;--c:#FF3D91;--beat:7.0s;--delay:-4.71s;--o:0.59"></i>
+      <i class="fd-edge" style="--x:97.6%;--y:64vh;--d:1.46vmin;--c:#FFCB45;--beat:10.0s;--delay:-8.75s;--o:0.49"></i>
+      <i class="fd-edge" style="--x:98.3%;--y:86vh;--d:1.22vmin;--c:#93C5FD;--beat:13.0s;--delay:-4.63s;--o:0.45"></i>
+      <i style="--x:2.3%;--y:20vh;--d:1.62vmin;--c:#FDA4AF;--beat:13.0s;--delay:-10.68s;--o:0.52"></i>
+      <i style="--x:2.4%;--y:68vh;--d:2.42vmin;--c:#FF7355;--beat:11.5s;--delay:-0.78s;--o:0.46"></i>
+      <i style="--x:96.9%;--y:28vh;--d:1.43vmin;--c:#A7C878;--beat:7.0s;--delay:-4.83s;--o:0.56"></i>
+      <i style="--x:97.0%;--y:76vh;--d:2.12vmin;--c:#C4B5FD;--beat:11.5s;--delay:-4.7s;--o:0.51"></i>
+    </div>
     <div class="poken-account-corner" data-poken-account="setup"></div>
     <canvas id="ambientCanvas"></canvas>
     <div class="setup-container">
