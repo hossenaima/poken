@@ -58,6 +58,10 @@ team's review are all on the PR.
 | App-wide auth 3/3: one account control on every screen that wants one | [#45](https://github.com/poken-app/poken/issues/45) | [#46](https://github.com/poken-app/poken/pull/46) | |
 | In-app confirm dialog, and Delete all for Learn history | [#47](https://github.com/poken-app/poken/issues/47) | [#48](https://github.com/poken-app/poken/pull/48) | |
 | Teaching history: delete one or all, and a way back to the landing page | [#49](https://github.com/poken-app/poken/issues/49) | [#50](https://github.com/poken-app/poken/pull/50) | |
+| Learn Mode: bold, subheads and lists in explanations | [#52](https://github.com/poken-app/poken/issues/52) | [#53](https://github.com/poken-app/poken/pull/53) | |
+| One mascot 1/3: extract the shared blob component | [#54](https://github.com/poken-app/poken/issues/54) | [#55](https://github.com/poken-app/poken/pull/55) | |
+| One mascot 2/3: the two loading screens | [#56](https://github.com/poken-app/poken/issues/56) | [#57](https://github.com/poken-app/poken/pull/57) | |
+| One mascot 3/3: the session student and the pill | [#58](https://github.com/poken-app/poken/issues/58) | [#59](https://github.com/poken-app/poken/pull/59) | |
 
 ## Layout
 
