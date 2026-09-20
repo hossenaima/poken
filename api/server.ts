@@ -687,18 +687,17 @@ async function generateReflection(
             ? `, "nodeId": the id of the studied explanation this gap belongs to, copied exactly from the list above, or null when none fits. Never invent an id`
             : '') +
           `}\n` +
-          `- "openQuestions": array — questions a STUDENT asked that the teacher did not actually close out. Copy the student's question as it was asked (lightly cleaned up, at most one sentence), and give the reason it is still open: "deferred" (the teacher said they would come back to it, e.g. "let me get back to that"), "skipped" (the teacher moved on or changed the subject without engaging), "wrong" (the teacher answered, but the answer was incorrect or misleading), "unanswered" (the question simply never got a reply). Each entry: {"question": string, "reason": one of deferred|skipped|wrong|unanswered}.\n` +
-          `  Be strict. Only include a question the teacher genuinely left hanging — if they answered it correctly, leave it out, even if the answer was brief. Do NOT include the student's rhetorical prompts, encouragements, or "can you say more about that?" follow-ups that the teacher then answered. An empty array is the correct answer for a session that went well, and is much better than padding the list.\n` +
+          `- "openQuestions": array — EVERY question a student asked that the teacher did not resolve. Copy the question as the student asked it (lightly cleaned up, at most one sentence). Each entry: {"question": string, "reason": one of deferred|skipped|wrong|unanswered}.\n` +
+          `  Completeness matters far more than precision here. Include a question if the teacher ignored it, changed the subject, promised to come back to it and did not, answered it incorrectly or misleadingly, half-answered it, or brushed past it. When you are unsure whether it was really resolved, INCLUDE it. Missing a question the teacher left hanging is the one bad outcome; an extra entry costs the reader a moment.\n` +
+          `  Leave out only a question the teacher clearly and correctly answered. A student's paraphrase-for-confirmation ("so it is like a wanted poster, right?") counts as a question too, unless the teacher confirmed or corrected it.\n` +
+          `  "reason" is a best guess and does not need to be right: "deferred" (said they would come back), "skipped" (moved on without engaging), "wrong" (answered, but incorrectly or misleadingly), "unanswered" (never got a reply). Never drop a question because no reason fits cleanly — pick the closest one and keep the question.\n` +
           `- "keyVocabulary": string[] — 4-6 key vocabulary terms or concepts that were central to this teaching session (short 1-2 word terms only, e.g. "Prime Number", "Composite", "Factors")\n` +
           `- "uiLabels": object with translated section headers for the reflection page in ${language}. Keys: "title", "topics", "vocabulary", "gaps", "gapsEmpty", "revisitCta", "topicLabel", "sessionLabel", "teachAgain", "backToLearning", "changeTopic". Values must be the natural ${language} translation of these UI labels: "Session Reflection", "What You Covered", "Key Vocabulary", "Concepts to Revisit", "Mastery achieved! You explained every point clearly.", "Learn this", "Topic of Discussion", "Session", "Teach Again", "Back to learning", "Change topic".\n\n` +
           (language !== 'English' ? `IMPORTANT: Write ALL text content (summary, topicsCovered, gaps, gapNodes labels, keyVocabulary) in ${language}. Only the JSON keys stay in English.\n` : '') +
           (language === 'Simplified Chinese' ? `Use simplified Chinese characters (简体字) exclusively. Never use traditional Chinese characters.\n` : '') +
           (seedQuestion
-            ? `
-This session was started so the teacher could answer one specific question they had left open: "${seedQuestion}".
-` +
-              `Also return "seededAnswered": boolean — true only if the teacher answered THAT question correctly and completely in this transcript. If they dodged it again, got it wrong, or never really addressed it, return false and include it in "openQuestions" with the appropriate reason.
-`
+            ? `\nThis session was started so the teacher could answer one specific question they had left open: "${seedQuestion}".\n` +
+              `Also return "seededAnswered": boolean — true only if the teacher answered THAT question correctly and completely in this transcript. If they dodged it again, got it wrong, or never really addressed it, return false and include it in "openQuestions" with the appropriate reason.\n`
             : '') +
           `Keep every item to at most one short sentence. Be concrete and useful — no filler, no praise.`
         }]
