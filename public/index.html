@@ -105,11 +105,18 @@
       font-size: 0.7rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
       color: var(--poken-text-secondary); margin-bottom: 0.75rem;
     }
+    .setup-back-row { grid-column: 1 / -1; }
+    .setup-card-head {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.75rem;
+    }
+    .setup-sidebar-card .setup-card-head h3 { margin-bottom: 0; }
     .recent-sessions-list { list-style: none; padding: 0; }
     .recent-sessions-list li {
+      display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
       font-size: 0.8125rem; color: var(--poken-text); padding: 0.4rem 0;
       border-bottom: 1px solid var(--poken-border-solid);
     }
+    .recent-sessions-list li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .recent-sessions-list li:last-child { border-bottom: none; }
     .setup-empty-state {
       text-align: center; padding: 1.5rem 0.5rem; color: var(--poken-text-secondary);
@@ -1207,10 +1214,16 @@
   <div id="setup-screen">
     <canvas id="ambientCanvas"></canvas>
     <div class="setup-container">
+      <div class="setup-back-row">
+        <button class="learn-back" id="setupBackBtn" type="button">&larr; Back</button>
+      </div>
       <!-- Left: Growth Column -->
       <aside class="setup-growth">
         <div class="glass-card setup-sidebar-card">
-          <h3>Recent sessions</h3>
+          <div class="setup-card-head">
+            <h3>Recent sessions</h3>
+            <button type="button" class="learn-topics-clear" id="recentSessionsClear" hidden>Clear all</button>
+          </div>
           <ul class="recent-sessions-list" id="recentSessionsList"></ul>
           <div class="setup-empty-state" id="recentSessionsEmpty">
             <span class="empty-icon" aria-hidden="true">&#x1F4DA;</span>
