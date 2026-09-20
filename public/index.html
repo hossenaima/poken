@@ -210,8 +210,8 @@
     .landing-cta:hover  { opacity: 0.85; }
     .landing-cta:active { transform: scale(0.98); }
 
-    /* ── Grid paper (teach, learn, open questions) ─── */
-    #setup-screen, #learn-screen, #questions-screen {
+    /* ── Grid paper (teach, learn, open questions, reflection) ─── */
+    #setup-screen, #learn-screen, #questions-screen, #reflection-screen {
       background-color: #fff;
       background-image:
         repeating-linear-gradient(0deg, rgba(17,24,39,0.045) 0 1px, transparent 1px 24px),
@@ -924,40 +924,63 @@
       font-size: 0.9375rem; color: #6B7280; text-align: center; max-width: 280px;
     }
 
-    /* ── REFLECTION (Glassmorphism) ─────────────────── */
+    /* ── REFLECTION (paper and ink; coral only on "Teach Again") ─── */
     #reflection-screen {
       display: none; width: 100%; min-height: 100vh;
       padding: 3rem 1.5rem; transition: opacity 0.3s ease-in-out;
-      background: linear-gradient(135deg, #f0f4f8 0%, #e8eef5 40%, #f5f0fa 70%, #fef9f4 100%);
     }
     #reflection-screen.show { display: block; }
     .reflection-inner { max-width: 68rem; margin: 0 auto; }
+    /* Header: title and summary on the left, Pokey and his line on the right.
+       The mascot wraps below the text when the row is too narrow to hold both. */
+    .reflection-header {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 1.5rem 2rem; flex-wrap: wrap; margin-bottom: 2.5rem;
+    }
+    .reflection-header-text { flex: 1 1 22rem; min-width: 0; }
     .reflection-title {
       font-size: 2.25rem; font-weight: 900; letter-spacing: -0.02em;
       color: #0f172a; margin-bottom: 0.5rem;
     }
     .reflection-summary {
       color: #64748b; font-size: 1.1rem; line-height: 1.7; font-weight: 400;
-      margin-bottom: 2.5rem; max-width: 48rem;
+      margin: 0; max-width: 48rem;
     }
-    /* Topic card — frosted teal glass */
+    .reflection-pokey {
+      display: flex; align-items: center; gap: 0.75rem; flex: 0 1 auto;
+      max-width: 100%; padding-top: 0.25rem;
+    }
+    .reflection-pokey .pk-blob { --size: 72px; flex-shrink: 0; }
+    .reflection-pokey-line {
+      position: relative; max-width: 16rem; margin: 0;
+      padding: 0.65rem 0.9rem; border-radius: 0.875rem;
+      background: #fff; border: 1px solid var(--poken-border-solid);
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+      font-size: 0.9375rem; line-height: 1.45; color: var(--poken-text);
+    }
+    .reflection-pokey-line::before, .reflection-pokey-line::after {
+      content: ""; position: absolute; top: 50%; right: 100%; translate: 0 -50%;
+      border: 7px solid transparent; border-left: 0;
+    }
+    .reflection-pokey-line::before { border-right-color: var(--poken-border-solid); }
+    .reflection-pokey-line::after  { border-right-color: #fff; margin-right: -1px; }
+    /* Topic card */
     .reflection-topic-card {
       display: flex; align-items: center; justify-content: space-between; gap: 1.5rem;
-      background: rgba(255, 115, 85, 0.06);
-      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 115, 85, 0.18);
+      background: #fff;
+      border: 1px solid var(--poken-border-solid);
       border-radius: 1rem; padding: 1.5rem 1.75rem; margin-bottom: 2rem;
     }
     .reflection-topic-label {
       display: block; font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.08em;
-      text-transform: uppercase; color: var(--poken-accent); margin-bottom: 0.35rem;
+      text-transform: uppercase; color: var(--poken-text-secondary); margin-bottom: 0.35rem;
     }
     .reflection-topic-name { font-size: 1.75rem; font-weight: 800; color: #0f172a; margin: 0; }
     .reflection-topic-right { text-align: right; flex-shrink: 0; }
     .reflection-duration { display: block; font-size: 1.5rem; font-weight: 800; color: #0f172a; font-variant-numeric: tabular-nums; }
     .reflection-duration-label {
       font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.08em;
-      text-transform: uppercase; color: var(--poken-accent);
+      text-transform: uppercase; color: var(--poken-text-secondary);
     }
     @media (max-width: 720px) {
       .reflection-topic-card { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
@@ -967,9 +990,8 @@
     /* One column, in reading order: vocabulary → what you covered → what to revisit */
     .reflection-stack { display: flex; flex-direction: column; gap: 1.25rem; }
     .reflection-card {
-      background: rgba(255, 255, 255, 0.55);
-      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.6);
+      background: #fff;
+      border: 1px solid var(--poken-border-solid);
       border-radius: 1rem; padding: 1.5rem 1.75rem;
       box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
     }
@@ -984,8 +1006,8 @@
     .rcard-vocab-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; }
     .rcard-vocab-tag {
       padding: 0.4rem 0.85rem; border-radius: 999px;
-      background: rgba(255, 115, 85, 0.08); border: 1px solid rgba(255, 115, 85, 0.22);
-      font-size: 0.875rem; font-weight: 600; color: #B4432C;
+      background: var(--poken-bg); border: 1px solid var(--poken-border-solid);
+      font-size: 0.875rem; font-weight: 600; color: var(--poken-text);
     }
 
     /* What you covered — numbered list */
@@ -999,8 +1021,8 @@
     .rcard-topics li::before {
       content: counter(rtopic); position: absolute; left: 0; top: 0.55rem;
       width: 1.5rem; height: 1.5rem; border-radius: 999px;
-      background: rgba(255, 115, 85, 0.1); color: #B4432C;
-      font-size: 0.75rem; font-weight: 800; display: flex; align-items: center; justify-content: center;
+      background: var(--poken-bg); border: 1px solid var(--poken-border-solid); color: var(--poken-text-secondary);
+      box-sizing: border-box; font-size: 0.75rem; font-weight: 800; display: flex; align-items: center; justify-content: center;
     }
 
     /* Concepts to revisit — each one is a way back into learning */
@@ -1009,33 +1031,32 @@
     .rcard-gap-btn {
       display: flex; align-items: center; gap: 0.75rem; width: 100%; text-align: left;
       padding: 0.85rem 1rem; border-radius: 0.75rem; cursor: pointer;
-      background: rgba(255, 255, 255, 0.6); border: 1px solid var(--poken-border-solid);
+      background: var(--poken-bg); border: 1px solid var(--poken-border-solid);
       font: inherit; font-size: 0.95rem; line-height: 1.5; color: #1e293b;
       transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
     }
     .rcard-gap-btn:hover, .rcard-gap-btn:focus-visible {
-      background: #fff; border-color: var(--poken-accent); transform: translateY(-1px);
+      background: #fff; border-color: var(--poken-text-secondary); transform: translateY(-1px);
     }
     .rcard-gap-text { flex: 1; }
     .rcard-gap-cta {
-      flex-shrink: 0; font-size: 0.8125rem; font-weight: 700; color: var(--poken-accent); white-space: nowrap;
+      flex-shrink: 0; font-size: 0.8125rem; font-weight: 700; color: var(--poken-text-secondary); white-space: nowrap;
     }
     .card-gap .reflection-highlight { font-weight: 700; color: var(--poken-text); }
     .reflection-empty-msg { font-size: 0.95rem; color: #94a3b8; font-style: italic; padding: 0.5rem 0; }
-    /* Actions — glass buttons */
+    /* Actions — "Teach Again" is the one thing on the page that keeps its coral */
     .reflection-actions { display: flex; gap: 0.75rem; justify-content: center; margin-top: 3rem; flex-wrap: wrap; }
     .reflection-btn {
       padding: 1rem 2.5rem; border-radius: 0.75rem;
-      background: rgba(255, 255, 255, 0.55);
-      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.5);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255,255,255,0.5);
+      background: #fff;
+      border: 1px solid var(--poken-border-solid);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
       font-family: inherit; font-size: 1.05rem; font-weight: 500;
       color: #334155; cursor: pointer; transition: all 0.25s;
     }
     .reflection-btn:hover {
-      background: rgba(255, 255, 255, 0.7);
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255,255,255,0.6);
+      background: var(--poken-bg); border-color: var(--poken-text-secondary);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
       transform: translateY(-1px);
     }
     .reflection-btn.primary {
@@ -1979,8 +2000,26 @@
   <!-- REFLECTION -->
   <div id="reflection-screen">
     <div class="reflection-inner">
-      <h2 class="reflection-title">Session Reflection</h2>
-      <p class="reflection-summary" id="reflectionSummary"></p>
+      <div class="reflection-header">
+        <div class="reflection-header-text">
+          <h2 class="reflection-title">Session Reflection</h2>
+          <p class="reflection-summary" id="reflectionSummary"></p>
+        </div>
+        <div class="reflection-pokey">
+          <div class="pk-blob is-idle" aria-hidden="true">
+            <div class="pk-blob__aura"></div><div class="pk-blob__aura"></div>
+            <div class="pk-blob__skin"></div>
+            <div class="pk-blob__blush"><b></b><b></b></div>
+            <div class="pk-blob__eyes">
+              <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
+              <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
+            </div>
+            <span class="pk-blob__brow"></span>
+            <span class="pk-blob__bubble"><b></b><b></b><b></b></span>
+          </div>
+          <p class="reflection-pokey-line" id="reflectionPokeyLine"></p>
+        </div>
+      </div>
 
       <div class="reflection-topic-card" id="reflectionRecap">
         <div class="reflection-topic-left">
