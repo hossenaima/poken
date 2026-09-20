@@ -2143,6 +2143,8 @@ function restoreScreenAfterSignIn() {
   try { restore(); } catch (e) { console.warn("[Poken] restoring after sign-in failed:", e); }
 }
 
+window.pokenShowLanding = showLanding;
+window.pokenConnect = connect;
 window.pokenScreens.register("landing", () => showLanding());
 window.pokenScreens.register("setup", () => {
   landingScreen.style.display = "none";
@@ -2249,6 +2251,14 @@ window.addEventListener("DOMContentLoaded", () => {
 function showReflection(data) {
   // Learn Mode marks the explanations behind any gaps as shaky, so the tree shows what to dig into.
   try { window.pokenLearnReflection?.(data); } catch (e) { console.warn("[Poken] learn reflection hook:", e); }
+  // Open questions: save what this session left hanging, and close the one it was started to
+  // answer. Both are fire-and-forget — a storage failure must never block the reflection.
+  try {
+    const lang = getSessionLanguage();
+    const topicId = window.pokenLearnTopicId?.(sessionTopic) || null;
+    window.pokenSaveOpenQuestions?.({ id: topicId, title: sessionTopic, language: lang }, data);
+    window.pokenSettleSeedQuestion?.(data);
+  } catch (e) { console.warn("[Poken] open questions hook:", e); }
   if (reflectionLoadingScreen) reflectionLoadingScreen.classList.remove("visible");
   sessionScreen.style.display = "none";
   reflectionScreen.style.display = "block";
@@ -2525,6 +2535,10 @@ async function connect(opts = {}) {
         // The explanations behind those notes, so the reflection can point its gaps back at them.
         const learnIndex = window.pokenLearnIndex?.(sessionTopic);
         if (learnIndex?.length) sock.send(JSON.stringify({ type: "learn_index", nodes: learnIndex }));
+        // Started from the Open Questions page: the student opens by asking this again.
+        // Only the question travels, never the old transcript.
+        const seed = window.pokenSeedQuestion;
+        if (seed?.question) sock.send(JSON.stringify({ type: "seed_question", question: seed.question }));
         // Send uploaded study material files first so the server can merge them into the system instruction before the session starts
         for (const file of uploadedFiles) {
           try {
@@ -2931,6 +2945,13 @@ if (sessionHomeBtn) {
     showLanding();
   });
 }
+
+// Same exit as the logo, but labelled. A session is a live socket and a hot mic, so leaving
+// has to be something you can find without guessing that the wordmark is a button.
+document.getElementById("sessionBackBtn")?.addEventListener("click", () => {
+  disconnect(true);
+  showLanding();
+});
 
 
 // ── Vision refresh ──────────────────────────────────────────────────────────

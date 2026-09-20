@@ -232,6 +232,32 @@
     } catch (_) { /* extras are optional */ }
   }
 
+  // A branch folds away everything below its crumb. Collapsing is per node and survives
+  // re-renders because the class lives on node.el, which renderBlocks never replaces.
+  function wireFold(node) {
+    const btn = node.el.querySelector(":scope > .learn-crumb-row > .learn-fold");
+    if (!btn) return;
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();   // the crumb row sits inside a node that has its own handlers
+      setFolded(node, !node.el.classList.contains("collapsed"));
+    });
+  }
+
+  function setFolded(node, folded) {
+    node.el.classList.toggle("collapsed", folded);
+    const btn = node.el.querySelector(":scope > .learn-crumb-row > .learn-fold");
+    if (!btn) return;
+    btn.innerHTML = folded ? "&#9656;" : "&#9662;";
+    btn.setAttribute("aria-expanded", folded ? "false" : "true");
+    btn.title = folded ? "Expand" : "Collapse";
+  }
+
+  // Opening a saved topic starts folded: you came back to navigate, not to re-read every
+  // rabbit hole you opened last time. A fresh tree you are actively building stays open.
+  function foldAllBranches() {
+    for (const n of nodes) if (n.parentId != null) setFolded(n, true);
+  }
+
   function showFigure(node, src, alt) {
     const fig = document.createElement("figure");
     fig.className = "learn-figure";
@@ -255,9 +281,10 @@
     node.el.className = "learn-node" + (parentId != null ? " child" : "");
     node.el.dataset.nodeId = node.id;
     node.el.dataset.mastery = node.mastery;
-    node.el.innerHTML = `<div class="learn-crumb">${crumbHtml(node)}</div>`
+    node.el.innerHTML = `<div class="learn-crumb-row">${parentId != null ? `<button type="button" class="learn-fold" aria-expanded="true" title="Collapse">&#9662;</button>` : ""}<div class="learn-crumb">${crumbHtml(node)}</div></div>`
       + (question ? `<p class="learn-question">Q: ${esc(question)}</p>` : "")
       + `<div class="learn-thinking" role="status"><span class="learn-spinner"></span><span>Thinking…</span></div>`;
+    if (parentId != null) wireFold(node);
     nodes.push(node);
     if (parentId == null) {
       treeEl.appendChild(node.el);
@@ -523,6 +550,11 @@
 
   window.pokenLearnNotes = (sessionTopic, budget) => (isThisTopic(sessionTopic) ? compileNotes(budget) : "");
 
+  // The saved learn_topics row this session was taught off, so an open question can point back
+  // at the tree. Null for a straight-to-teaching session, which is why open_questions.topic_id
+  // is nullable and topic_title is what the page actually groups by.
+  window.pokenLearnTopicId = (sessionTopic) => (isThisTopic(sessionTopic) ? topicId : null);
+
   // ── The loop: reflection → mastery → dig back in (Phase 5) ──────────────
   // Sent when a session starts, so the reflection can tag each gap with the explanation it
   // belongs to. Only explanations with text (a diagram can't be "taught").
@@ -688,6 +720,7 @@
     rebuild(data.topic.title, data.topic.language, data.nodes, { saved: true });
     topicId = id;
     topicReady = Promise.resolve(id);
+    foldAllBranches();   // reopened from My topics: navigate first, read second
     updateBanner();
   }
 

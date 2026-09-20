@@ -717,6 +717,14 @@
       flex-shrink: 0; padding: 0.5rem 1rem; background: #fff;
       border-top: 1.5px solid #E5E7EB;
     }
+    /* Matches .learn-back on the learn screen: the session had only the logo as an implicit
+       way out, which nobody reads as "leave". */
+    .session-back {
+      flex: none; font-family: inherit; font-size: 0.8rem; font-weight: 500; cursor: pointer;
+      background: none; border: 1px solid var(--poken-border-solid); border-radius: 8px;
+      padding: 0.3rem 0.6rem; color: var(--poken-text-secondary); margin-right: 0.5rem;
+    }
+    .session-back:hover { background: #F3F4F6; color: var(--poken-text); }
     .session-toolbar { display: flex; align-items: center; justify-content: center; gap: 0.4rem; margin-bottom: 0.4rem; }
     .toolbar-btn {
       display: flex; align-items: center; gap: 0.35rem;
@@ -986,6 +994,61 @@
     /* ── LEARN (Phase 1) ─────────────────────────── */
     .landing-actions { display: flex; gap: 0.75rem; margin-top: 0.75rem; }
     .landing-actions .landing-cta { margin-top: 0; min-width: 8.5rem; }
+    /* Deliberately not a button: a quiet text link under the two real choices. Double
+       underline is the affordance, so it must not pick up any button chrome. */
+    .landing-quiet-link {
+      margin-top: 1rem; background: none; border: 0; padding: 0; cursor: pointer;
+      font-family: inherit; font-size: 0.85rem; font-weight: 500;
+      color: var(--poken-text-secondary);
+      text-decoration: underline double; text-underline-offset: 3px;
+    }
+    .landing-quiet-link:hover { color: var(--poken-text); }
+    .landing-quiet-link[hidden] { display: none; }
+
+    /* ── Open questions ─────────────────────────────────────────────── */
+    #questions-screen { display: none; min-height: 100vh; background: #fff; }
+    .q-shell { max-width: 46rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+    .q-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.75rem; }
+    .q-title { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; margin: 0; color: var(--poken-text); }
+    .q-sub { margin: 0.3rem 0 0; font-size: 0.9rem; color: var(--poken-text-secondary); }
+    .q-back {
+      flex: none; font-family: inherit; font-size: 0.85rem; font-weight: 500; cursor: pointer;
+      background: none; border: 1px solid var(--poken-border-solid); border-radius: 8px;
+      padding: 0.4rem 0.75rem; color: var(--poken-text-secondary);
+    }
+    .q-back:hover { background: #F9FAFB; color: var(--poken-text); }
+    .q-topic { margin-bottom: 1.5rem; }
+    .q-topic-head { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.6rem; }
+    .q-topic-name { font-size: 1rem; font-weight: 600; color: var(--poken-text); }
+    .q-topic-count { font-size: 0.78rem; color: var(--poken-text-secondary); }
+    .q-item {
+      display: flex; align-items: flex-start; gap: 0.75rem;
+      border: 1px solid var(--poken-border-solid); border-radius: 12px;
+      padding: 0.85rem 1rem; margin-bottom: 0.5rem; background: #fff;
+    }
+    .q-body { flex: 1; min-width: 0; }
+    .q-text { font-size: 0.95rem; line-height: 1.55; color: var(--poken-text); }
+    .q-meta { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem; font-size: 0.75rem; color: var(--poken-text-secondary); }
+    .q-reason {
+      font-size: 0.7rem; font-weight: 600; text-transform: lowercase; letter-spacing: 0.01em;
+      padding: 0.1rem 0.4rem; border-radius: 5px;
+    }
+    .q-reason.deferred   { background: #FEF3C7; color: #92400E; }
+    .q-reason.skipped    { background: #E0E7FF; color: #3730A3; }
+    .q-reason.wrong      { background: #FEE2E2; color: #991B1B; }
+    .q-reason.unanswered { background: #F3F4F6; color: #374151; }
+    .q-actions { display: flex; align-items: center; gap: 0.4rem; flex: none; }
+    .q-teach {
+      font-family: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+      background: var(--poken-accent); color: #fff; border: 0; border-radius: 8px; padding: 0.45rem 0.7rem;
+    }
+    .q-teach:disabled { opacity: 0.6; cursor: default; }
+    .q-x {
+      font-family: inherit; font-size: 1.1rem; line-height: 1; cursor: pointer;
+      background: none; border: 0; color: #9CA3AF; padding: 0.25rem 0.35rem; border-radius: 6px;
+    }
+    .q-x:hover { background: #FEF2F2; color: #DC2626; }
+    .q-empty { border: 1px dashed var(--poken-border-solid); border-radius: 12px; padding: 1.5rem; text-align: center; color: var(--poken-text-secondary); font-size: 0.9rem; }
     .session-persona {
       font-family: inherit; font-size: 0.8rem; font-weight: 500; color: #374151; background: #fff;
       border: 1px solid var(--poken-border-solid); border-radius: 8px; padding: 0.3rem 0.5rem; cursor: pointer;
@@ -1018,6 +1081,22 @@
     .learn-node { margin-top: 1.25rem; }
     .learn-node.child { margin: 0.75rem 0 1rem 0.25rem; padding-left: 1rem; border-left: 2px solid var(--poken-accent); }
     .learn-crumb { font-size: 0.75rem; color: var(--poken-text-secondary); margin-bottom: 0.5rem; letter-spacing: 0.01em; }
+    /* Collapsing a branch: the crumb and question stay so you can still read what it was,
+       everything under it folds away. A deep tree is unreadable otherwise. */
+    .learn-crumb-row { display: flex; align-items: baseline; gap: 0.4rem; }
+    .learn-crumb-row > .learn-crumb { margin-bottom: 0; }
+    .learn-fold {
+      flex: none; font-family: inherit; font-size: 0.7rem; line-height: 1; cursor: pointer;
+      background: none; border: 0; padding: 0.15rem 0.25rem; border-radius: 4px;
+      color: var(--poken-text-secondary); width: 1.1rem; text-align: center;
+    }
+    .learn-fold:hover { background: #F3F4F6; color: var(--poken-text); }
+    .learn-node.child.collapsed > .learn-block,
+    .learn-node.child.collapsed > .learn-node.child,
+    .learn-node.child.collapsed > .learn-figure,
+    .learn-node.child.collapsed > .learn-thinking,
+    .learn-node.child.collapsed > .learn-suggest { display: none; }
+    .learn-node.child.collapsed > .learn-crumb-row > .learn-crumb::before { content: "… "; }
     .learn-crumb b { color: var(--poken-text); font-weight: 600; }
     .learn-block { font-size: 1rem; line-height: 1.65; color: var(--poken-text); margin: 0 0 0.9rem; }
     .learn-block::selection { background: rgba(255, 115, 85, 0.3); }
@@ -1160,6 +1239,7 @@
         <button class="landing-cta" id="learnFirstBtn">Learn</button>
         <button class="landing-cta" id="getStartedBtn">Teach</button>
       </div>
+      <button type="button" class="landing-quiet-link" id="openQuestionsLink" hidden>Open questions</button>
     </div>
     <div class="poken-account" data-poken-account="landing"></div>
   </div>
@@ -1207,6 +1287,20 @@
         <input type="text" id="learnAskInput" placeholder="Ask about the highlighted text…" autocomplete="off" maxlength="600" />
         <button type="submit">Ask</button>
       </form>
+    </div>
+  </div>
+
+  <!-- OPEN QUESTIONS -->
+  <div id="questions-screen">
+    <div class="q-shell">
+      <header class="q-top">
+        <div>
+          <h2 class="q-title">Open questions</h2>
+          <p class="q-sub">Questions your students asked that you haven't answered yet.</p>
+        </div>
+        <button type="button" class="q-back" id="questionsBackBtn">&larr; Back</button>
+      </header>
+      <div id="questionsList"></div>
     </div>
   </div>
 
@@ -1340,6 +1434,7 @@
     <!-- Top bar -->
     <div class="session-top-bar">
       <div class="session-top-left">
+        <button class="session-back" id="sessionBackBtn" type="button" title="Leave this session">&larr; Back</button>
         <button class="session-logo" id="sessionHomeBtn" type="button" title="Back to home">Poken</button>
         <span class="session-topic-badge" id="sessionTopicLabel"></span>
       </div>
@@ -1582,5 +1677,6 @@
   <script src="app.js"></script>
   <script src="learn-store.js"></script>
   <script src="learn.js"></script>
+  <script src="open-questions.js"></script>
 </body>
 </html>
