@@ -941,16 +941,7 @@
       position: relative; width: 160px; height: 160px;
       display: flex; align-items: center; justify-content: center;
     }
-    .reflection-loading-orb {
-      width: 72px; height: 72px; border-radius: 50%;
-      background: #FF7355;
-      box-shadow: 0 0 40px 8px rgba(255, 115, 85, 0.4);
-      animation: reflectionOrbPulse 1.8s ease-in-out infinite;
-    }
-    @keyframes reflectionOrbPulse {
-      0%, 100% { transform: scale(1); opacity: 1; }
-      50% { transform: scale(1.08); opacity: 0.85; }
-    }
+    .reflection-loading-orb-wrap .pk-blob { --size: 72px; }
     .reflection-loading-text {
       font-size: 0.9375rem; color: #6B7280; text-align: center; max-width: 280px;
     }
@@ -1928,7 +1919,17 @@
   <!-- Pre-session loading (shown while analyzing materials + opening the Live session) -->
   <div id="setup-loading" aria-live="polite">
     <div class="reflection-loading-orb-wrap">
-      <div class="reflection-loading-orb"></div>
+      <div class="pk-blob is-idle">
+        <div class="pk-blob__aura"></div><div class="pk-blob__aura"></div>
+        <div class="pk-blob__skin"></div>
+        <div class="pk-blob__blush"><b></b><b></b></div>
+        <div class="pk-blob__eyes">
+          <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
+          <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
+        </div>
+        <span class="pk-blob__brow"></span>
+        <span class="pk-blob__bubble"><b></b><b></b><b></b></span>
+      </div>
     </div>
     <p class="setup-loading-text" id="setupLoadingText">Preparing your session…</p>
   </div>
@@ -1936,7 +1937,17 @@
   <!-- REFLECTION LOADING -->
   <div id="reflection-loading-screen" aria-live="polite">
     <div class="reflection-loading-orb-wrap">
-      <div class="reflection-loading-orb"></div>
+      <div class="pk-blob is-idle">
+        <div class="pk-blob__aura"></div><div class="pk-blob__aura"></div>
+        <div class="pk-blob__skin"></div>
+        <div class="pk-blob__blush"><b></b><b></b></div>
+        <div class="pk-blob__eyes">
+          <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
+          <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
+        </div>
+        <span class="pk-blob__brow"></span>
+        <span class="pk-blob__bubble"><b></b><b></b><b></b></span>
+      </div>
     </div>
     <p class="reflection-loading-text">Your student is writing up their reflection…</p>
   </div>
