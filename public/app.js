@@ -2089,6 +2089,53 @@ window.pokenScreens.register("setup", () => {
   setupScreen.style.display = "block";
 });
 
+// ── Account control ─────────────────────────────────────────────────────────
+// One renderer for every [data-poken-account] mount. The attribute's value is the screen
+// name, so signing in from here comes back here. Never gates anything: signed out, the
+// app works exactly as it does signed in.
+function renderAccountControls(user) {
+  for (const mount of document.querySelectorAll("[data-poken-account]")) {
+    const screen = mount.getAttribute("data-poken-account") || "landing";
+    mount.replaceChildren();
+    if (!window.pokenAuth) return;
+    if (!user) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "learn-google";
+      b.textContent = "Sign in with Google";
+      b.addEventListener("click", () => {
+        if (typeof window.pokenStashForSignIn === "function") window.pokenStashForSignIn();
+        window.pokenAuth.signIn(screen);
+      });
+      mount.append(b);
+      continue;
+    }
+    const wrap = document.createElement("div");
+    wrap.className = "learn-user";
+    if (user.avatarUrl) {
+      const img = document.createElement("img");
+      img.src = user.avatarUrl;
+      img.alt = "";
+      img.referrerPolicy = "no-referrer";   // Google avatar URLs refuse some referrers
+      wrap.append(img);
+    }
+    const name = document.createElement("span");
+    name.textContent = user.name || user.email || "Signed in";
+    const out = document.createElement("button");
+    out.type = "button";
+    out.textContent = "Sign out";
+    out.addEventListener("click", () => window.pokenAuth.signOut());
+    wrap.append(name, out);
+    mount.append(wrap);
+  }
+}
+window.renderAccountControls = renderAccountControls;
+
+window.addEventListener("DOMContentLoaded", () => {
+  renderAccountControls(null);
+  window.pokenAuth?.onAuthChange(renderAccountControls);
+});
+
 function showReflection(data) {
   // Learn Mode marks the explanations behind any gaps as shaky, so the tree shows what to dig into.
   try { window.pokenLearnReflection?.(data); } catch (e) { console.warn("[Poken] learn reflection hook:", e); }

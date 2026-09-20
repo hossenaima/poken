@@ -1050,6 +1050,8 @@
     @keyframes learnFocus { from { background: rgba(255,115,85,0.18); } to { background: transparent; } }
     .learn-node.focus > .learn-block { animation: learnFocus 2s ease-out; }
     .learn-account { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+    .poken-account { display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-top: 1.25rem; }
+    .poken-account:empty { display: none; }
     .learn-account + .learn-teach { margin-left: 0; }
     .learn-google {
       display: inline-flex; align-items: center; gap: 0.45rem; font-family: inherit; font-size: 0.8125rem;
@@ -1135,6 +1137,7 @@
         <button class="landing-cta" id="getStartedBtn">Teach</button>
       </div>
     </div>
+    <div class="poken-account" data-poken-account="landing"></div>
   </div>
 
   <!-- LEARN (Phase 1) -->
@@ -1157,7 +1160,7 @@
           </select>
           <button type="submit" id="learnGoBtn">Learn</button>
         </form>
-        <div class="learn-account" id="learnAccount"></div>
+        <div class="learn-account" id="learnAccount" data-poken-account="learn"></div>
         <button class="learn-teach" id="learnTeachBtn" type="button" disabled>Teach this &rarr;</button>
       </header>
       <div class="learn-save-banner" id="learnSaveBanner" role="status" hidden>
@@ -1295,6 +1298,7 @@
       </div>
       <div class="debug-body" id="debugPanelBody"></div>
     </div>
+    <div class="poken-account" data-poken-account="setup"></div>
   </div>
 
   <!-- SESSION -->
@@ -1520,6 +1524,7 @@
         </div>
       </div>
 
+      <div class="poken-account" data-poken-account="reflection"></div>
       <div class="reflection-actions">
         <button class="reflection-btn primary" id="teachAgainBtn" type="button">&#x1F393; Teach Again</button>
         <button class="reflection-btn" id="backToLearnBtn" type="button">&#x1F4DA; Back to learning</button>
