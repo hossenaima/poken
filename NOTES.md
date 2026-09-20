@@ -128,6 +128,34 @@ estimates are logged per teacher turn (`[Poken][Tokens]`).
 - **Teacher transcription is Gemini Live's `inputTranscription`**; an ElevenLabs Scribe
   integration was tried and removed (2026-09-19) — its punctuation and segment timing caused
   more transcript bugs than it fixed.
+- **Open questions are tuned for recall, and that was measured, not guessed** (2026-09-20).
+  The reflection returns `openQuestions`, and the prompt deliberately tells the model that
+  completeness matters more than precision: include a question when the teacher ignored it,
+  changed the subject, promised to come back, answered it wrongly, half-answered it, or
+  brushed past it, and include it when unsure. An earlier version said the opposite ("be
+  strict", "an empty array is the correct answer for a session that went well") and suppressed
+  the whole feature. **Do not re-tighten this prompt.** It was set from seven live sessions
+  teaching the same script badly on purpose: strict wording found 3/2/3/4 questions per run
+  and missed real ones; the recall wording finds 4/7/4 and caught every deliberately-dropped
+  question in every run. The cost is occasional over-splitting of a multi-question turn, which
+  is the trade we chose.
+- **The `reason` on an open question is decoration, not a claim.** Across those same runs the
+  model labelled one identical event `wrong`, then `unanswered`, then `skipped`, then
+  `unanswered` — the teacher gave a flatly wrong answer and the student challenged it, and the
+  label was right once in four. So the page shows the bare tag and no sentence: an earlier
+  version printed "the answer wasn't right" next to it, which tells the user something false
+  about their own session. Detection *that* a question went unresolved is reliable; the *why*
+  is not. If you ever need the reason to be trustworthy, cut it to two values
+  (answered-wrong / not-answered) rather than trying to prompt the four into behaving.
+- **Open questions are rewritten to stand alone, not copied verbatim.** A transcript question
+  like "Wait, but I thought they were different things" is meaningless on a page read weeks
+  later, so the prompt resolves pronouns and back-references against the session ("What is the
+  difference between memory cells and antibodies?"). The constraint that keeps this honest:
+  keep the student's meaning exactly, never substitute or sharpen into a question they did not
+  ask, never merge two. Question text is also stripped of speech-transcript artefacts in
+  `cleanQuestionText` — emphasis asterisks become a space (deleting them fuses
+  "actually*cells*" into "actuallycells"), never touching apostrophes, since telling a quote
+  from a contraction would break "don't" and "O'Brien".
 - **The transcript language filter drops a chunk whole or not at all.** `enforceTranscriptLanguage`
   keeps only characters in the session's script, but it also allows `\p{Script=Common}` — and CJK
   punctuation (`。，？！、`) is Common. So a Chinese reply in an English session had every Han

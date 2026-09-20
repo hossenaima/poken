@@ -21,12 +21,10 @@
   let user = null;
   let rows = [];
 
-  const REASON_TEXT = {
-    deferred:   "you said you'd come back to it",
-    skipped:    "you moved on",
-    wrong:      "the answer wasn't right",
-    unanswered: "never got an answer",
-  };
+  // The reason tag is shown bare, with no sentence explaining it. Across seven live probe
+  // sessions the model labelled the same event wrong / unanswered / skipped on different runs,
+  // so a sentence like "the answer wasn't right" asserts something we know is often false.
+  // The tag alone groups and colours the row without claiming anything about the teacher.
 
   function when(iso) {
     const t = Date.parse(iso || "");
@@ -118,12 +116,10 @@
     const reason = document.createElement("span");
     reason.className = `q-reason ${q.reason}`;
     reason.textContent = q.reason;
-    const why = document.createElement("span");
-    why.textContent = REASON_TEXT[q.reason] || "";
     const age = document.createElement("span");
     const ago = when(q.createdAt);
     age.textContent = ago ? `· ${ago}` : "";
-    meta.append(reason, why, age);
+    meta.append(reason, age);
     body.append(text, meta);
 
     const actions = document.createElement("div");
