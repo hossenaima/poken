@@ -1191,14 +1191,38 @@
     .learn-crumb { font-size: 0.75rem; color: var(--poken-text-secondary); margin-bottom: 0.5rem; letter-spacing: 0.01em; }
     /* Collapsing a branch: the crumb and question stay so you can still read what it was,
        everything under it folds away. A deep tree is unreadable otherwise. */
-    .learn-crumb-row { display: flex; align-items: baseline; gap: 0.4rem; }
-    .learn-crumb-row > .learn-crumb { margin-bottom: 0; }
-    .learn-fold {
-      flex: none; font-family: inherit; font-size: 0.7rem; line-height: 1; cursor: pointer;
-      background: none; border: 0; padding: 0.15rem 0.25rem; border-radius: 4px;
-      color: var(--poken-text-secondary); width: 1.1rem; text-align: center;
+    .learn-crumb-row { display: flex; align-items: center; gap: 0.4rem; }
+    /* Faded notebook yellow, for the paragraph you were sent here to reread. Deliberately
+       transient: set only when arriving from a reflection concept, cleared on leaving the
+       screen, never saved — it is a pointer for this visit, not a property of the text. */
+    .learn-block.learn-hl {
+      background: rgba(253, 224, 71, 0.28);
+      box-shadow: 0 0 0 0.35rem rgba(253, 224, 71, 0.28);
+      border-radius: 2px;
+      animation: learn-hl-in 0.5s ease;
     }
-    .learn-fold:hover { background: #F3F4F6; color: var(--poken-text); }
+    @keyframes learn-hl-in {
+      from { background: rgba(253, 224, 71, 0); box-shadow: 0 0 0 0.35rem rgba(253, 224, 71, 0); }
+    }
+    .learn-crumb-row > .learn-crumb { margin-bottom: 0; }
+    /* A real chevron drawn from two borders rather than a text glyph: it rotates between ^ and
+       v, so the control shows its state instead of relying on the reader knowing the arrow. */
+    .learn-fold {
+      flex: none; cursor: pointer; width: 22px; height: 22px; padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: #fff; border: 1px solid var(--poken-border-solid); border-radius: 6px;
+      color: var(--poken-text-secondary); transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .learn-fold::before {
+      content: ""; width: 7px; height: 7px; margin-top: 2px;
+      border-left: 2px solid currentColor; border-top: 2px solid currentColor;
+      transform: rotate(45deg); transition: transform 0.18s ease;
+    }
+    .learn-node.child.collapsed > .learn-crumb-row > .learn-fold::before {
+      transform: rotate(225deg); margin-top: -2px;
+    }
+    .learn-fold:hover { background: #F3F4F6; color: var(--poken-text); border-color: var(--poken-accent); }
+    .learn-fold:focus-visible { outline: 2px solid var(--poken-accent); outline-offset: 1px; }
     .learn-node.child.collapsed > .learn-block,
     .learn-node.child.collapsed > .learn-node.child,
     .learn-node.child.collapsed > .learn-figure,

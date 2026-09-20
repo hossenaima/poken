@@ -819,8 +819,8 @@
 
   // Reflection → Learn Mode for one concept: the explanation it came from when we know it,
   // otherwise a fresh topic. Never discards a tree with unsaved work — that one waits for a click.
-  window.pokenLearnRevisit = (label, nodeId) => {
-    if (nodeId && byId(nodeId)) { digInto(nodeId); return; }
+  window.pokenLearnRevisit = (label, nodeId, gapText = "") => {
+    if (nodeId && byId(nodeId)) { digInto(nodeId, label, gapText); return; }
     const t = String(label || "").trim();
     if (!t) return;
     disconnect(true);
@@ -832,14 +832,63 @@
     form.requestSubmit();
   };
 
-  // Reflection screen → Learn Mode, scrolled to that explanation.
-  function digInto(nodeId) {
+  // ── "Learn this" → the paragraph it is actually about ───────────────────
+  const STOPWORDS = new Set(("the a an and or but of in on at to for from with as is are was were be been being " +
+    "it its this that these those they them their there here how why what when which who whom whose not no " +
+    "can could should would will shall may might do does did done have has had you your we our i").split(" "));
+
+  const wordsOf = (s) => String(s || "").toLowerCase().replace(/\*+/g, " ")
+    .split(/[^\p{L}\p{N}]+/u).filter(w => w.length > 2 && !STOPWORDS.has(w));
+
+  // Which paragraph of this explanation is the gap about? Score each block by how many of the
+  // concept's distinct content words it contains, longer words first — "photolysis" identifies a
+  // paragraph, "process" does not. A tie goes to the earlier block, and a zero score to the whole
+  // node, because a wrong confident highlight is worse than none.
+  function bestBlockFor(node, ...phrases) {
+    const want = new Set(phrases.flatMap(wordsOf));
+    if (!want.size) return null;
+    const blocks = [...node.el.querySelectorAll(":scope > .learn-block")];
+    let best = null, bestScore = 0;
+    for (const el of blocks) {
+      const have = new Set(wordsOf(el.textContent));
+      let score = 0;
+      for (const w of want) if (have.has(w)) score += Math.min(w.length, 12);
+      if (score > bestScore) { best = el; bestScore = score; }
+    }
+    return bestScore >= 6 ? best : null;
+  }
+
+  function clearHighlight() {
+    treeEl.querySelectorAll(".learn-hl").forEach(el => el.classList.remove("learn-hl"));
+  }
+
+  // Unfold every collapsed ancestor, or the target sits inside a hidden branch.
+  function revealAncestors(el) {
+    for (let p = el.parentElement; p && p !== treeEl; p = p.parentElement) {
+      if (p.classList?.contains("learn-node") && p.classList.contains("collapsed")) {
+        const n = byId(p.dataset.nodeId);
+        if (n) setFolded(n, false); else p.classList.remove("collapsed");
+      }
+    }
+  }
+
+  // Reflection screen → Learn Mode, scrolled to the paragraph the concept came from.
+  function digInto(nodeId, label = "", gapText = "") {
     disconnect(true);   // app.js: clean up socket/mic/audio without navigating
     document.getElementById("reflection-screen").style.display = "none";
     document.getElementById("reflection-loading-screen")?.classList.remove("visible");
     show();
     const node = byId(nodeId);
     if (!node) return;
+    clearHighlight();
+    const target = bestBlockFor(node, label, gapText);
+    revealAncestors(target || node.el);
+    if (target) {
+      target.classList.add("learn-hl");
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    // No paragraph clearly matched: fall back to the old behaviour rather than guessing.
     node.el.scrollIntoView({ behavior: "smooth", block: "center" });
     node.el.classList.add("focus");
     setTimeout(() => node.el.classList.remove("focus"), 2000);
@@ -1066,7 +1115,9 @@
     if (!nodes.length) showTopics();
     topicEl.focus();
   }
-  function hide() { hideToolbar(); screen.style.display = "none"; }
+  // Leaving the screen drops the highlight: it marks why you arrived this time, so coming
+  // back later must not find the paragraph still yellow.
+  function hide() { hideToolbar(); clearHighlight(); screen.style.display = "none"; }
 
   learnFirst.addEventListener("click", show);
   backBtn.addEventListener("click", () => { hide(); landing.style.display = "flex"; });

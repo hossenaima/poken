@@ -2345,7 +2345,9 @@ function showReflection(data) {
       btn.innerHTML =
         `<span class="rcard-gap-text">${wrapBold(raw)}</span>` +
         `<span class="rcard-gap-cta">${escapeHtml(labels.revisitCta || "Learn this")} &rarr;</span>`;
-      btn.addEventListener("click", () => revisitConcept(node.label || raw, node.nodeId || null));
+      // The full gap sentence goes too: the short label names the concept, the sentence has
+      // the wording that actually locates the paragraph it came from.
+      btn.addEventListener("click", () => revisitConcept(node.label || raw, node.nodeId || null, raw));
       gapsList.appendChild(btn);
     });
   }
@@ -2360,9 +2362,9 @@ function showReflection(data) {
 
 // Closing the loop: a concept from the reflection sends you back into Learn Mode to study it,
 // either at the explanation it came from or as a fresh topic.
-function revisitConcept(label, nodeId) {
+function revisitConcept(label, nodeId, gapText = "") {
   if (typeof window.pokenLearnRevisit === "function") {
-    window.pokenLearnRevisit(label, nodeId);
+    window.pokenLearnRevisit(label, nodeId, gapText);
     return;
   }
   // Learn Mode unavailable: fall back to setting up a teaching session on that concept.
