@@ -2089,6 +2089,56 @@ window.pokenScreens.register("setup", () => {
   setupScreen.style.display = "block";
 });
 
+// ── In-app confirm dialog ───────────────────────────────────────────────────
+// window.pokenConfirm({ title, body, confirmLabel, danger }) -> Promise<boolean>.
+// Always resolves: cancel, Escape and a click on the backdrop resolve false, and a
+// second call while one is open resolves false immediately instead of stacking.
+let confirmOpen = false;
+window.pokenConfirm = function pokenConfirm({ title = "Are you sure?", body = "", confirmLabel = "Delete", danger = false } = {}) {
+  return new Promise((resolve) => {
+    const root = document.getElementById("pokenConfirm");
+    const okBtn = document.getElementById("pokenConfirmOk");
+    const cancelBtn = document.getElementById("pokenConfirmCancel");
+    if (confirmOpen || !root || !okBtn || !cancelBtn) { resolve(false); return; }
+    confirmOpen = true;
+    const previous = document.activeElement;
+    try {
+      document.getElementById("pokenConfirmTitle").textContent = title;
+      document.getElementById("pokenConfirmBody").textContent = body;
+      okBtn.textContent = confirmLabel;
+      okBtn.classList.toggle("poken-confirm-danger", !!danger);
+    } catch (e) { console.warn("[Poken] confirm setup failed:", e); }
+
+    let done = false;
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      confirmOpen = false;
+      okBtn.removeEventListener("click", onOk);
+      cancelBtn.removeEventListener("click", onCancel);
+      root.removeEventListener("click", onBackdrop);
+      document.removeEventListener("keydown", onKey, true);
+      root.classList.remove("visible");
+      if (previous && typeof previous.focus === "function" && document.contains(previous)) {
+        try { previous.focus(); } catch (_) { /* ignore */ }
+      }
+      resolve(result);
+    };
+    const onOk = () => finish(true);
+    const onCancel = () => finish(false);
+    const onBackdrop = (e) => { if (e.target === root) finish(false); };
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); }
+    };
+    okBtn.addEventListener("click", onOk);
+    cancelBtn.addEventListener("click", onCancel);
+    root.addEventListener("click", onBackdrop);
+    document.addEventListener("keydown", onKey, true);
+    root.classList.add("visible");
+    try { okBtn.focus(); } catch (_) { /* ignore */ }
+  });
+};
+
 // ── Account control ─────────────────────────────────────────────────────────
 // One renderer for every [data-poken-account] mount. The attribute's value is the screen
 // name, so signing in from here comes back here. Never gates anything: signed out, the
