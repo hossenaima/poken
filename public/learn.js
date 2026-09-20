@@ -588,6 +588,11 @@
     return new Date(iso).toLocaleDateString();
   };
 
+  // In-app confirm (app.js); falls back to the browser's confirm() if it isn't loaded.
+  const ask = (opts) => typeof window.pokenConfirm === "function"
+    ? window.pokenConfirm({ danger: true, ...opts })
+    : Promise.resolve(confirm(opts.body || opts.title));
+
   async function showTopics() {
     const s = store();
     topicsEl.replaceChildren();
@@ -596,7 +601,25 @@
     if (nodes.length || !list.length) return;   // a tree opened meanwhile, or nothing saved yet
     const h = document.createElement("div");
     h.className = "learn-topics-title";
-    h.textContent = "Your topics";
+    const hText = document.createElement("span");
+    hText.textContent = "Your topics";
+    const clearAll = document.createElement("button");
+    clearAll.type = "button";
+    clearAll.className = "learn-topics-clear";
+    clearAll.textContent = "Delete all";
+    clearAll.addEventListener("click", async () => {
+      const n = list.length;
+      const ok = await ask({
+        title: `Delete all ${n} topic${n === 1 ? "" : "s"}?`,
+        body: "Everything you explored in them will be removed. This can't be undone.",
+        confirmLabel: "Delete all",
+      });
+      if (!ok) return;
+      clearAll.disabled = true;
+      for (const t of list) await s.deleteTopic(t.id);   // failures stay in the list; re-render shows survivors
+      showTopics();
+    });
+    h.append(hText, clearAll);
     topicsEl.append(h);
     for (const t of list) {
       const row = document.createElement("div");
@@ -617,7 +640,8 @@
       del.setAttribute("aria-label", `Delete ${t.title}`);
       del.textContent = "×";
       del.addEventListener("click", async () => {
-        if (!confirm(`Delete "${t.title}" and everything you explored in it?`)) return;
+        const ok = await ask({ title: "Delete this topic?", body: `Delete "${t.title}" and everything you explored in it?` });
+        if (!ok) return;
         if (await s.deleteTopic(t.id)) row.remove();
         if (!topicsEl.querySelector(".learn-topic")) topicsEl.replaceChildren();
       });

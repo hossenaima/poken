@@ -762,6 +762,17 @@
     }
     .timeout-modal-inner button:hover { opacity: 0.9; }
 
+    /* In-app confirm dialog (window.pokenConfirm) — same look as the idle modal */
+    #pokenConfirm {
+      display: none; position: fixed; inset: 0; z-index: 2100;
+      background: rgba(0,0,0,0.5); align-items: center; justify-content: center;
+      padding: 1rem;
+    }
+    #pokenConfirm.visible { display: flex; }
+    .poken-confirm-actions { display: flex; gap: 0.6rem; justify-content: center; }
+    .timeout-modal-inner .poken-confirm-cancel { background: #F3F4F6; color: #111827; }
+    .timeout-modal-inner .poken-confirm-danger { background: #DC2626; }
+
     .session-chat { display: flex; gap: 0.4rem; max-width: 600px; margin: 0 auto; }
     .session-chat input {
       flex: 1; padding: 0.45rem 0.75rem; background: #fff; border: 1.5px solid #E5E7EB;
@@ -1079,9 +1090,15 @@
     .learn-banner-close { margin-left: auto; background: none; border: none; font-size: 1.1rem; color: #B45309; cursor: pointer; }
     .learn-topics { margin-top: 1.25rem; }
     .learn-topics-title {
+      display: flex; align-items: baseline; justify-content: space-between;
       font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
       color: var(--poken-text-secondary); margin-bottom: 0.5rem;
     }
+    .learn-topics-clear {
+      background: none; border: none; cursor: pointer; font-family: inherit; font-size: 0.7rem;
+      font-weight: 600; letter-spacing: inherit; text-transform: inherit; color: #9CA3AF; padding: 0;
+    }
+    .learn-topics-clear:hover { color: #B91C1C; }
     .learn-topic { display: flex; align-items: stretch; border-bottom: 1px solid var(--poken-border-solid); }
     .learn-topic-open {
       flex: 1; display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
@@ -1469,6 +1486,18 @@
       <h3 id="timeoutModalTitle">Are you still there?</h3>
       <p>Session closing in <span id="timeoutCountdown">30</span> seconds.</p>
       <button type="button" id="timeoutStayBtn">I'm here</button>
+    </div>
+  </div>
+
+  <!-- In-app confirm dialog -->
+  <div id="pokenConfirm" role="dialog" aria-modal="true" aria-labelledby="pokenConfirmTitle">
+    <div class="timeout-modal-inner">
+      <h3 id="pokenConfirmTitle"></h3>
+      <p id="pokenConfirmBody"></p>
+      <div class="poken-confirm-actions">
+        <button type="button" class="poken-confirm-cancel" id="pokenConfirmCancel">Cancel</button>
+        <button type="button" id="pokenConfirmOk">Delete</button>
+      </div>
     </div>
   </div>
 
