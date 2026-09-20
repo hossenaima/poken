@@ -49,21 +49,88 @@
       display: flex; flex-direction: column; align-items: center;
       justify-content: center; gap: 2.75rem; z-index: 100;
     }
-    .landing-orb-wrap {
-      position: relative; width: 280px; height: 280px;
-      display: flex; align-items: center; justify-content: center;
+    /* ── Landing mascot ──────────────────────────────────────────────────
+       One shape whose outline morphs; the aura is the same silhouette scaled
+       up, so the glow radiates off the real edge. --t0 shifts its 9s clock so
+       the smile lands the moment the last polka dot settles.              */
+    .landing-orb-wrap { z-index: 2; position: relative; width: 150px; height: 150px; --t0: -3.98s; }
+    .l-blob { position: absolute; inset: 23px; animation: lWiggle 9s ease-in-out infinite var(--t0); }
+    .l-skin, .l-aura {
+      position: absolute; inset: 0; background: #FFCB45;
+      border-radius: 62% 38% 44% 56% / 40% 60% 54% 46%;
     }
-    .l-aura-3 { position: absolute; width: 130px; height: 130px; border-radius: 50%; background: rgba(160,160,160,0.08); opacity: 0; animation: lAuraIn 0.7s ease forwards 1.5s; }
-    .l-aura-2 { position: absolute; width: 110px; height: 110px; border-radius: 50%; background: rgba(160,160,160,0.18); opacity: 0; animation: lAuraIn 0.7s ease forwards 1.3s; }
-    .l-aura-1 { position: absolute; width: 90px; height: 90px; border-radius: 50%; background: rgba(160,160,160,0.36); opacity: 0; animation: lAuraIn 0.7s ease forwards 1.1s; }
-    @keyframes lAuraIn { to { opacity: 1; } }
-    .l-orb {
-      position: relative; z-index: 2; width: 72px; height: 72px; border-radius: 50%; background: #A0A0A0;
-      animation: lContract 1.6s cubic-bezier(0.16, 1, 0.3, 1) forwards, lBreath 4s ease-in-out 1.6s infinite;
+    .l-skin { box-shadow: 0 0 34px 3px rgba(255,203,69,0.45); animation: lMorph 6.5s ease-in-out infinite; }
+    .l-aura { opacity: 0; pointer-events: none; animation: lMorph 6.5s ease-in-out infinite, lHalo 4.1s ease-in-out infinite; }
+    .l-aura + .l-aura { animation-delay: 0s, -2.05s; }
+    .l-eyes {
+      position: absolute; inset: 0; z-index: 2; display: flex;
+      align-items: center; justify-content: center; gap: 16%; translate: 2% -7%;
     }
-    @keyframes lContract { 0% { transform: scale(7); } 100% { transform: scale(1); } }
-    @keyframes lBreath { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
-    .landing-copy { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+    .l-eye { position: relative; width: 10.5%; height: 15%; }
+    .l-eye .l-dot {
+      position: absolute; inset: 0; background: #1a1a1a; border-radius: 50%;
+      animation: lBlink 7.3s ease-in-out infinite, lDotOff 9s ease-in-out infinite var(--t0);
+    }
+    .l-eye .l-arc {
+      position: absolute; left: -14%; right: -14%; top: 38%; height: 42%; opacity: 0;
+      border-top: 2.6px solid #1a1a1a; border-radius: 50% 50% 0 0;
+      animation: lArcOn 9s ease-in-out infinite var(--t0);
+    }
+    .l-blush {
+      position: absolute; inset: 0; z-index: 2; display: flex; align-items: center;
+      justify-content: center; gap: 44%; translate: 2% 5%; opacity: 0;
+      animation: lBlushOn 9s ease-in-out infinite var(--t0);
+    }
+    .l-blush b { width: 17%; aspect-ratio: 1.5; border-radius: 50%; background: #FF8FA3; filter: blur(2.5px); }
+    @keyframes lMorph {
+      0%,100% { border-radius: 62% 38% 44% 56% / 40% 60% 54% 46%; scale: 1 1; }
+      33%     { border-radius: 40% 60% 58% 42% / 58% 42% 44% 56%; scale: 1.05 0.95; }
+      66%     { border-radius: 56% 44% 36% 64% / 46% 56% 62% 38%; scale: 0.96 1.04; }
+    }
+    @keyframes lHalo   { 0%,100% { scale: 1.12; opacity: 0.22; } 50% { scale: 1.32; opacity: 0.10; } }
+    @keyframes lBlink  { 0%,93%,100% { scale: 1 1; } 96% { scale: 1 0.1; } }
+    @keyframes lDotOff { 0%,64%,86%,100% { opacity: 1; } 69%,82% { opacity: 0; } }
+    @keyframes lArcOn  { 0%,64%,86%,100% { opacity: 0; } 69%,82% { opacity: 1; } }
+    @keyframes lBlushOn{ 0%,65%,88%,100% { opacity: 0; } 70%,83% { opacity: 0.62; } }
+    @keyframes lWiggle {
+      0%,64%,100% { rotate: 0deg;    translate: 0 0; }
+      69%         { rotate: -5deg;   translate: -2% -3%; }
+      73%         { rotate: 4.5deg;  translate: 2% -1%; }
+      77%         { rotate: -3.5deg; translate: -1.5% -2.5%; }
+      81%         { rotate: 2.5deg;  translate: 1% -1%; }
+      86%         { rotate: 0deg;    translate: 0 0; }
+    }
+
+    /* ── Polka field ─────────────────────────────────────────────────────
+       Poken, polka dot. Every dot launches from the middle and lands on a
+       delay set by how far out it sits, so the field blooms outward. The
+       mask keeps the centre clear for the logo, copy and both buttons, and
+       fades the boundary instead of cutting it.                          */
+    .landing-field {
+      position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0;
+      display: grid; place-items: center;
+      -webkit-mask-image: radial-gradient(ellipse 15rem 23rem at 50% 50%, transparent 0 68%, #000 100%);
+      mask-image: radial-gradient(ellipse 15rem 23rem at 50% 50%, transparent 0 68%, #000 100%);
+    }
+    .landing-field i {
+      grid-area: 1/1; width: var(--d); height: var(--d); background: var(--c);
+      border-radius: 62% 38% 44% 56% / 40% 60% 54% 46%;
+      translate: 0 0; scale: 0; opacity: 0;
+      animation: lBloom 0.95s cubic-bezier(0.22,1.35,0.36,1) forwards var(--delay),
+                 lDotWobble var(--beat) ease-in-out infinite calc(var(--delay) + 0.95s);
+    }
+    @keyframes lBloom { to { translate: var(--x) var(--y); scale: 1; opacity: var(--o); } }
+    @keyframes lDotWobble {
+      0%,100% { border-radius: 62% 38% 44% 56% / 40% 60% 54% 46%; translate: var(--x) var(--y); scale: 1; }
+      33%     { border-radius: 40% 60% 58% 42% / 58% 42% 44% 56%; translate: var(--x) var(--y); scale: 1.06 0.94; }
+      66%     { border-radius: 56% 44% 36% 64% / 46% 56% 62% 38%; translate: var(--x) var(--y); scale: 0.95 1.05; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .landing-field i { animation: none; translate: var(--x) var(--y); scale: 1; opacity: var(--o); }
+      .l-blob, .l-blob * { animation: none !important; }
+    }
+
+    .landing-copy { position: relative; z-index: 2; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
     .landing-title   { font-size: 2.25rem; font-weight: 600; color: #111827; letter-spacing: -0.05em; }
     .landing-tagline { font-size: 0.9375rem; color: #9CA3AF; letter-spacing: -0.01em; }
     .landing-cta {
@@ -1147,7 +1214,7 @@
     @keyframes learnFocus { from { background: rgba(255,115,85,0.18); } to { background: transparent; } }
     .learn-node.focus > .learn-block { animation: learnFocus 2s ease-out; }
     .learn-account { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
-    .poken-account { display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-top: 1.25rem; }
+    .poken-account { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-top: 1.25rem; }
     .poken-account:empty { display: none; }
     .learn-account + .learn-teach { margin-left: 0; }
     .learn-google {
@@ -1228,9 +1295,106 @@
 
   <!-- LANDING -->
   <div id="landing-screen">
+    <div class="landing-field" aria-hidden="true">
+      <i style="--x:1.7vw;--y:1.8vh;--d:0.99vmin;--c:#FFCB45;--delay:0.043s;--beat:4.0s;--o:0.89"></i>
+      <i style="--x:-5.2vw;--y:2.7vh;--d:1.30vmin;--c:#93C5FD;--delay:0.102s;--beat:5.0s;--o:0.87"></i>
+      <i style="--x:7.8vw;--y:-1.1vh;--d:1.61vmin;--c:#FDA4AF;--delay:0.139s;--beat:6.0s;--o:0.86"></i>
+      <i style="--x:5.7vw;--y:8.5vh;--d:1.91vmin;--c:#FF7355;--delay:0.181s;--beat:7.0s;--o:0.85"></i>
+      <i style="--x:2.0vw;--y:-10.2vh;--d:2.22vmin;--c:#A7C878;--delay:0.184s;--beat:8.0s;--o:0.85"></i>
+      <i style="--x:-5.2vw;--y:10.3vh;--d:2.53vmin;--c:#C4B5FD;--delay:0.204s;--beat:4.0s;--o:0.84"></i>
+      <i style="--x:2.3vw;--y:12.8vh;--d:2.83vmin;--c:#FF3D91;--delay:0.230s;--beat:5.0s;--o:0.84"></i>
+      <i style="--x:12.9vw;--y:-1.7vh;--d:0.95vmin;--c:#FFCB45;--delay:0.230s;--beat:6.0s;--o:0.84"></i>
+      <i style="--x:6.4vw;--y:-12.3vh;--d:1.26vmin;--c:#93C5FD;--delay:0.244s;--beat:7.0s;--o:0.83"></i>
+      <i style="--x:-9.8vw;--y:-12.1vh;--d:1.56vmin;--c:#FDA4AF;--delay:0.275s;--beat:8.0s;--o:0.83"></i>
+      <i style="--x:-16.3vw;--y:-2.1vh;--d:1.86vmin;--c:#FF7355;--delay:0.290s;--beat:4.0s;--o:0.82"></i>
+      <i style="--x:-13.9vw;--y:9.8vh;--d:2.16vmin;--c:#A7C878;--delay:0.300s;--beat:5.0s;--o:0.82"></i>
+      <i style="--x:0.1vw;--y:18.6vh;--d:2.45vmin;--c:#C4B5FD;--delay:0.328s;--beat:6.0s;--o:0.81"></i>
+      <i style="--x:17.0vw;--y:8.4vh;--d:2.76vmin;--c:#FF3D91;--delay:0.335s;--beat:7.0s;--o:0.81"></i>
+      <i style="--x:6.0vw;--y:18.5vh;--d:0.92vmin;--c:#FFCB45;--delay:0.343s;--beat:8.0s;--o:0.81"></i>
+      <i style="--x:-21.7vw;--y:0.2vh;--d:1.22vmin;--c:#93C5FD;--delay:0.382s;--beat:4.0s;--o:0.80"></i>
+      <i style="--x:-5.5vw;--y:22.2vh;--d:1.51vmin;--c:#FDA4AF;--delay:0.404s;--beat:5.0s;--o:0.79"></i>
+      <i style="--x:-17.7vw;--y:-14.9vh;--d:1.81vmin;--c:#FF7355;--delay:0.409s;--beat:6.0s;--o:0.79"></i>
+      <i style="--x:24.1vw;--y:3.4vh;--d:2.10vmin;--c:#A7C878;--delay:0.430s;--beat:7.0s;--o:0.78"></i>
+      <i style="--x:-21.8vw;--y:10.9vh;--d:2.39vmin;--c:#C4B5FD;--delay:0.430s;--beat:8.0s;--o:0.78"></i>
+      <i style="--x:-15.1vw;--y:-19.3vh;--d:2.69vmin;--c:#FF3D91;--delay:0.433s;--beat:4.0s;--o:0.78"></i>
+      <i style="--x:-5.8vw;--y:-23.9vh;--d:0.90vmin;--c:#FFCB45;--delay:0.434s;--beat:5.0s;--o:0.78"></i>
+      <i style="--x:5.9vw;--y:-24.7vh;--d:1.20vmin;--c:#93C5FD;--delay:0.448s;--beat:6.0s;--o:0.78"></i>
+      <i style="--x:22.9vw;--y:-11.2vh;--d:1.49vmin;--c:#FDA4AF;--delay:0.450s;--beat:7.0s;--o:0.78"></i>
+      <i style="--x:13.7vw;--y:22.0vh;--d:1.79vmin;--c:#FF7355;--delay:0.458s;--beat:8.0s;--o:0.78"></i>
+      <i style="--x:14.0vw;--y:-22.3vh;--d:2.08vmin;--c:#A7C878;--delay:0.465s;--beat:4.0s;--o:0.77"></i>
+      <i style="--x:-24.6vw;--y:-13.7vh;--d:2.35vmin;--c:#C4B5FD;--delay:0.497s;--beat:5.0s;--o:0.76"></i>
+      <i style="--x:25.6vw;--y:12.3vh;--d:2.64vmin;--c:#FF3D91;--delay:0.501s;--beat:6.0s;--o:0.76"></i>
+      <i style="--x:-14.9vw;--y:25.3vh;--d:0.88vmin;--c:#FFCB45;--delay:0.518s;--beat:7.0s;--o:0.76"></i>
+      <i style="--x:-20.9vw;--y:21.1vh;--d:1.17vmin;--c:#93C5FD;--delay:0.525s;--beat:8.0s;--o:0.76"></i>
+      <i style="--x:-1.9vw;--y:30.5vh;--d:1.46vmin;--c:#FDA4AF;--delay:0.539s;--beat:4.0s;--o:0.75"></i>
+      <i style="--x:28.7vw;--y:-12.3vh;--d:1.74vmin;--c:#FF7355;--delay:0.551s;--beat:5.0s;--o:0.75"></i>
+      <i style="--x:0.9vw;--y:-31.3vh;--d:2.03vmin;--c:#A7C878;--delay:0.553s;--beat:6.0s;--o:0.75"></i>
+      <i style="--x:23.4vw;--y:20.9vh;--d:2.32vmin;--c:#C4B5FD;--delay:0.554s;--beat:7.0s;--o:0.75"></i>
+      <i style="--x:5.5vw;--y:31.4vh;--d:2.60vmin;--c:#FF3D91;--delay:0.562s;--beat:8.0s;--o:0.75"></i>
+      <i style="--x:-32.0vw;--y:-1.0vh;--d:0.87vmin;--c:#FFCB45;--delay:0.566s;--beat:4.0s;--o:0.75"></i>
+      <i style="--x:31.0vw;--y:8.3vh;--d:1.16vmin;--c:#93C5FD;--delay:0.567s;--beat:5.0s;--o:0.75"></i>
+      <i style="--x:-21.1vw;--y:-25.4vh;--d:1.44vmin;--c:#FDA4AF;--delay:0.583s;--beat:6.0s;--o:0.74"></i>
+      <i style="--x:-29.9vw;--y:14.2vh;--d:1.73vmin;--c:#FF7355;--delay:0.585s;--beat:7.0s;--o:0.74"></i>
+      <i style="--x:-30.1vw;--y:-14.4vh;--d:2.01vmin;--c:#A7C878;--delay:0.589s;--beat:8.0s;--o:0.74"></i>
+      <i style="--x:21.8vw;--y:-26.0vh;--d:2.29vmin;--c:#C4B5FD;--delay:0.599s;--beat:4.0s;--o:0.74"></i>
+      <i style="--x:-9.5vw;--y:-33.4vh;--d:2.57vmin;--c:#FF3D91;--delay:0.613s;--beat:5.0s;--o:0.73"></i>
+      <i style="--x:9.7vw;--y:-34.7vh;--d:0.86vmin;--c:#FFCB45;--delay:0.637s;--beat:6.0s;--o:0.73"></i>
+      <i style="--x:-36.0vw;--y:2.7vh;--d:1.14vmin;--c:#93C5FD;--delay:0.637s;--beat:7.0s;--o:0.73"></i>
+      <i style="--x:15.9vw;--y:-32.7vh;--d:1.42vmin;--c:#FDA4AF;--delay:0.642s;--beat:8.0s;--o:0.73"></i>
+      <i style="--x:37.8vw;--y:-2.1vh;--d:1.69vmin;--c:#FF7355;--delay:0.668s;--beat:4.0s;--o:0.72"></i>
+      <i style="--x:-17.4vw;--y:-34.0vh;--d:1.97vmin;--c:#A7C878;--delay:0.673s;--beat:5.0s;--o:0.72"></i>
+      <i style="--x:-32.0vw;--y:21.6vh;--d:2.24vmin;--c:#C4B5FD;--delay:0.682s;--beat:6.0s;--o:0.71"></i>
+      <i style="--x:24.9vw;--y:-30.0vh;--d:2.52vmin;--c:#FF3D91;--delay:0.687s;--beat:7.0s;--o:0.71"></i>
+      <i style="--x:-13.4vw;--y:36.7vh;--d:0.85vmin;--c:#FFCB45;--delay:0.689s;--beat:8.0s;--o:0.71"></i>
+      <i style="--x:31.1vw;--y:24.4vh;--d:1.12vmin;--c:#93C5FD;--delay:0.697s;--beat:4.0s;--o:0.71"></i>
+      <i style="--x:-37.7vw;--y:13.4vh;--d:1.40vmin;--c:#FDA4AF;--delay:0.706s;--beat:5.0s;--o:0.71"></i>
+      <i style="--x:-32.7vw;--y:-24.1vh;--d:1.67vmin;--c:#FF7355;--delay:0.718s;--beat:6.0s;--o:0.70"></i>
+      <i style="--x:-39.0vw;--y:-11.9vh;--d:1.95vmin;--c:#A7C878;--delay:0.720s;--beat:7.0s;--o:0.70"></i>
+      <i style="--x:21.3vw;--y:35.0vh;--d:2.22vmin;--c:#C4B5FD;--delay:0.723s;--beat:8.0s;--o:0.70"></i>
+      <i style="--x:5.3vw;--y:-41.7vh;--d:2.48vmin;--c:#FF3D91;--delay:0.743s;--beat:4.0s;--o:0.70"></i>
+      <i style="--x:40.2vw;--y:-13.7vh;--d:0.83vmin;--c:#FFCB45;--delay:0.749s;--beat:5.0s;--o:0.70"></i>
+      <i style="--x:40.9vw;--y:12.2vh;--d:1.11vmin;--c:#93C5FD;--delay:0.754s;--beat:6.0s;--o:0.69"></i>
+      <i style="--x:-2.1vw;--y:42.7vh;--d:1.38vmin;--c:#FDA4AF;--delay:0.754s;--beat:7.0s;--o:0.69"></i>
+      <i style="--x:9.2vw;--y:42.7vh;--d:1.65vmin;--c:#FF7355;--delay:0.771s;--beat:8.0s;--o:0.69"></i>
+      <i style="--x:38.8vw;--y:20.3vh;--d:1.92vmin;--c:#A7C878;--delay:0.773s;--beat:4.0s;--o:0.69"></i>
+      <i style="--x:-29.8vw;--y:33.0vh;--d:2.18vmin;--c:#C4B5FD;--delay:0.784s;--beat:5.0s;--o:0.69"></i>
+      <i style="--x:-39.5vw;--y:20.3vh;--d:2.46vmin;--c:#FF3D91;--delay:0.785s;--beat:6.0s;--o:0.69"></i>
+      <i style="--x:44.6vw;--y:-2.2vh;--d:0.82vmin;--c:#FFCB45;--delay:0.788s;--beat:7.0s;--o:0.69"></i>
+      <i style="--x:-15.8vw;--y:-42.0vh;--d:1.09vmin;--c:#93C5FD;--delay:0.792s;--beat:8.0s;--o:0.68"></i>
+      <i style="--x:39.5vw;--y:-22.1vh;--d:1.36vmin;--c:#FDA4AF;--delay:0.799s;--beat:4.0s;--o:0.68"></i>
+      <i style="--x:-45.9vw;--y:-3.6vh;--d:1.63vmin;--c:#FF7355;--delay:0.813s;--beat:5.0s;--o:0.68"></i>
+      <i style="--x:-44.1vw;--y:13.7vh;--d:1.90vmin;--c:#A7C878;--delay:0.815s;--beat:6.0s;--o:0.68"></i>
+      <i style="--x:-14.7vw;--y:44.5vh;--d:2.16vmin;--c:#C4B5FD;--delay:0.828s;--beat:7.0s;--o:0.67"></i>
+      <i style="--x:-23.4vw;--y:40.8vh;--d:2.43vmin;--c:#FF3D91;--delay:0.830s;--beat:8.0s;--o:0.67"></i>
+      <i style="--x:-36.9vw;--y:-31.8vh;--d:0.81vmin;--c:#FFCB45;--delay:0.861s;--beat:4.0s;--o:0.67"></i>
+      <i style="--x:-44.4vw;--y:20.0vh;--d:1.07vmin;--c:#93C5FD;--delay:0.861s;--beat:5.0s;--o:0.67"></i>
+      <i style="--x:13.5vw;--y:-47.3vh;--d:1.34vmin;--c:#FDA4AF;--delay:0.869s;--beat:6.0s;--o:0.66"></i>
+      <i style="--x:48.5vw;--y:-10.9vh;--d:1.60vmin;--c:#FF7355;--delay:0.878s;--beat:7.0s;--o:0.66"></i>
+      <i style="--x:-29.6vw;--y:40.8vh;--d:1.86vmin;--c:#A7C878;--delay:0.890s;--beat:8.0s;--o:0.66"></i>
+      <i style="--x:-37.9vw;--y:33.4vh;--d:2.12vmin;--c:#C4B5FD;--delay:0.891s;--beat:4.0s;--o:0.66"></i>
+      <i style="--x:37.0vw;--y:36.8vh;--d:2.36vmin;--c:#FF3D91;--delay:0.921s;--beat:5.0s;--o:0.65"></i>
+      <i style="--x:-23.4vw;--y:-47.7vh;--d:0.79vmin;--c:#FFCB45;--delay:0.938s;--beat:6.0s;--o:0.64"></i>
+      <i style="--x:-48.7vw;--y:-22.5vh;--d:1.05vmin;--c:#93C5FD;--delay:0.946s;--beat:7.0s;--o:0.64"></i>
+      <i style="--x:-33.1vw;--y:-44.4vh;--d:1.30vmin;--c:#FDA4AF;--delay:0.977s;--beat:8.0s;--o:0.63"></i>
+      <i style="--x:31.1vw;--y:46.0vh;--d:1.55vmin;--c:#FF7355;--delay:0.980s;--beat:4.0s;--o:0.63"></i>
+      <i style="--x:-45.7vw;--y:-33.7vh;--d:1.80vmin;--c:#A7C878;--delay:1.002s;--beat:5.0s;--o:0.63"></i>
+      <i style="--x:-39.3vw;--y:42.1vh;--d:2.05vmin;--c:#C4B5FD;--delay:1.017s;--beat:6.0s;--o:0.62"></i>
+      <i style="--x:-44.8vw;--y:36.4vh;--d:2.30vmin;--c:#FF3D91;--delay:1.020s;--beat:7.0s;--o:0.62"></i>
+      <i style="--x:36.1vw;--y:45.9vh;--d:0.77vmin;--c:#FFCB45;--delay:1.031s;--beat:8.0s;--o:0.62"></i>
+      <i style="--x:36.2vw;--y:-47.8vh;--d:1.01vmin;--c:#93C5FD;--delay:1.058s;--beat:4.0s;--o:0.61"></i>
+      <i style="--x:-40.7vw;--y:-44.2vh;--d:1.27vmin;--c:#FDA4AF;--delay:1.060s;--beat:5.0s;--o:0.61"></i>
+      <i style="--x:47.1vw;--y:-45.0vh;--d:1.48vmin;--c:#FF7355;--delay:1.150s;--beat:6.0s;--o:0.59"></i>
+    </div>
     <div class="landing-orb-wrap">
-      <div class="l-aura-3"></div><div class="l-aura-2"></div><div class="l-aura-1"></div>
-      <div class="l-orb"></div>
+      <div class="l-blob">
+        <div class="l-aura"></div><div class="l-aura"></div>
+        <div class="l-skin"></div>
+        <div class="l-blush"><b></b><b></b></div>
+        <div class="l-eyes">
+          <div class="l-eye"><span class="l-dot"></span><span class="l-arc"></span></div>
+          <div class="l-eye"><span class="l-dot"></span><span class="l-arc"></span></div>
+        </div>
+      </div>
     </div>
     <div class="landing-copy">
       <h1 class="landing-title">Poken</h1>
