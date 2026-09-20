@@ -81,13 +81,19 @@
       .replace(/`([^`\n]*)`/g, "$1")
       .replace(EMOJI, "");
     let text = "";
-    const bold = [];
-    const re = /\*\*([^*\n]+?)\*\*|\*{1,2}([^*\n]+?)\*{1,2}/g;
+    const bold = [], italic = [];
+    // Longest delimiter first: *** is both, ** bold, * italic. Underscores are deliberately not
+    // emphasis — prose rarely means them that way and snake_case identifiers would be mangled.
+    const re = /\*\*\*([^*\n]+?)\*\*\*|\*\*([^*\n]+?)\*\*|\*([^*\n]+?)\*/g;
     let last = 0, m;
     while ((m = re.exec(flat))) {
       text += flat.slice(last, m.index);
-      if (m[1] != null) bold.push([text.length, text.length + m[1].length]);
-      text += m[1] ?? m[2];
+      const body = m[1] ?? m[2] ?? m[3];
+      const range = [text.length, text.length + body.length];
+      if (m[1] != null) { bold.push(range); italic.push(range); }
+      else if (m[2] != null) bold.push(range);
+      else italic.push(range);
+      text += body;
       last = m.index + m[0].length;
     }
     text += flat.slice(last);
@@ -101,27 +107,38 @@
     const stripped = keep.map(([s, e]) => text.slice(s, e)).join("");
     const lead = stripped.length - stripped.trimStart().length;
     const out = stripped.trim();
-    const segs = bold
+    const remap = (ranges) => ranges
       .map(([s, e]) => [s - removedBefore(s) - lead, e - removedBefore(e) - lead])
       .map(([s, e]) => [Math.max(0, s), Math.min(out.length, e)])
       .filter(([s, e]) => e > s);
-    return { text: out, bold: segs };
+    return { text: out, bold: remap(bold), italic: remap(italic) };
   }
 
   function blocksOf(text) {
     const blocks = [];
     for (const chunk of text.split(/\n\s*\n/)) {
-      let para = [], list = null;
+      let para = [], list = null, quote = [], table = null;
       const flush = () => {
         if (para.length) {
           const inline = parseInline(para.join("\n"));
           if (inline.text) blocks.push({ kind: "paragraph", ...inline });
         }
         if (list?.items.length) blocks.push({ ...list, text: list.items.map(i => i.text).join("\n") });
-        para = []; list = null;
+        if (quote.length) {
+          const inline = parseInline(quote.join(" "));
+          if (inline.text) blocks.push({ kind: "quote", ...inline });
+        }
+        if (table?.rows.length) {
+          blocks.push({ ...table, text: table.rows.map(r => r.map(c => c.text).join(" · ")).join("\n") });
+        }
+        para = []; list = null; quote = []; table = null;
       };
+      // Split a | a | b | row into its cells, tolerating a missing leading or trailing pipe.
+      const cellsOf = (line) => line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map(c => parseInline(c.trim()));
       for (const line of chunk.split("\n")) {
-        if (LINE.fence.test(line) || LINE.tableRule.test(line)) continue;
+        if (LINE.fence.test(line)) continue;
+        // The |---|---| rule line only marks the header, it is not a row of its own.
+        if (LINE.tableRule.test(line)) { if (table) table.headerDone = true; continue; }
         let m;
         if ((m = LINE.heading.exec(line))) {
           flush();
@@ -129,13 +146,22 @@
           if (inline.text) blocks.push({ kind: "subhead", ...inline });
         } else if ((m = LINE.bullet.exec(line)) || (m = LINE.numbered.exec(line))) {
           const ordered = !LINE.bullet.test(line);
-          if (para.length || (list && list.ordered !== ordered)) flush();
+          if (para.length || quote.length || table || (list && list.ordered !== ordered)) flush();
           list ??= { kind: "list", ordered, items: [] };
           const item = parseInline(m[1]);
           if (item.text) list.items.push(item);
+        } else if (LINE.quote.test(line)) {
+          if (para.length || list || table) flush();
+          quote.push(line.replace(LINE.quote, ""));
+        } else if (LINE.tableRow.test(line)) {
+          if (para.length || list || quote.length) flush();
+          table ??= { kind: "table", rows: [], headerDone: false };
+          // Rows before the |---| rule are the header; without a rule the first row is.
+          const cells = cellsOf(line);
+          if (cells.length) { table.rows.push(cells); if (!table.headerDone) table.header = table.rows.length; }
         } else {
-          if (list) flush();
-          para.push(LINE.tableRow.test(line) ? line.replace(/\|/g, " ").replace(/\s+/g, " ").trim() : line.replace(LINE.quote, ""));
+          if (list || quote.length || table) flush();
+          para.push(line);
         }
       }
       flush();
@@ -226,12 +252,32 @@
     node.el.querySelectorAll(":scope > .learn-block, :scope > .learn-node.child").forEach(el => el.remove());
     const usedTerms = new Set();   // gloss each key term once per node, at its first occurrence
     blocksOf(node.text).forEach((block, i) => {
-      const tag = block.kind === "subhead" ? "h4" : block.kind === "list" ? (block.ordered ? "ol" : "ul") : "p";
+      // A table is the one block that can be wider than the column, so it is wrapped in a
+      // scroller and the WRAPPER carries .learn-block — block indexing, drag-select and the
+      // collapse rules all need the indexed element to be a direct child of the node.
+      const TAGS = { subhead: "h4", quote: "blockquote", table: "div" };
+      const tag = TAGS[block.kind] || (block.kind === "list" ? (block.ordered ? "ol" : "ul") : "p");
       const p = document.createElement(tag);
+      // Every block carries .learn-block whatever its tag: drag-select, block indexing and the
+      // collapse rules all key off that one class, so a new kind must never opt out of it.
+      // Assigned, not added, so anything else must come after this line or it gets wiped.
       p.className = "learn-block";
+      if (block.kind === "table") p.classList.add("learn-table-wrap");
       p.dataset.nodeId = node.id;
       p.dataset.blockIdx = i;
-      if (block.kind === "list") {
+      if (block.kind === "table") {
+        const table = document.createElement("table");
+        block.rows.forEach((cells, r) => {
+          const tr = document.createElement("tr");
+          for (const cell of cells) {
+            const td = document.createElement(r < (block.header || 0) ? "th" : "td");
+            decorateTerms(td, cell, node.terms, usedTerms);
+            tr.append(td);
+          }
+          table.append(tr);
+        });
+        p.append(table);
+      } else if (block.kind === "list") {
         // Newlines between items so textContent (what selection and context read) keeps them apart.
         block.items.forEach((item, j) => {
           if (j) p.append("\n");
@@ -248,19 +294,26 @@
     if (node.suggestEl) node.el.appendChild(node.suggestEl);   // suggestions stay last
   }
 
-  // Append text[from, to) to el, wrapping the parts that fall inside a bold range in <strong>.
-  function appendRich(el, { text, bold }, from, to) {
-    let cursor = from;
-    for (const [s, e] of bold) {
-      const bs = Math.max(s, from), be = Math.min(e, to);
-      if (be <= bs) continue;
-      if (bs > cursor) el.append(text.slice(cursor, bs));
-      const strong = document.createElement("strong");
-      strong.textContent = text.slice(bs, be);
-      el.append(strong);
-      cursor = be;
+  // Append text[from, to) to el, wrapping bold ranges in <strong> and italic ranges in <em>.
+  // The two sets can overlap (***both***), so cut at every boundary instead of walking one set.
+  function appendRich(el, inline, from, to) {
+    const { text } = inline;
+    const bold = inline.bold || [], italic = inline.italic || [];
+    const cuts = new Set([from, to]);
+    for (const [s, e] of [...bold, ...italic]) {
+      if (s > from && s < to) cuts.add(s);
+      if (e > from && e < to) cuts.add(e);
     }
-    if (to > cursor) el.append(text.slice(cursor, to));
+    const points = [...cuts].sort((a, b) => a - b);
+    const covers = (ranges, i) => ranges.some(([s, e]) => i >= s && i < e);
+    for (let k = 0; k < points.length - 1; k++) {
+      const a = points[k], b = points[k + 1];
+      if (b <= a) continue;
+      let node = document.createTextNode(text.slice(a, b));
+      if (covers(italic, a)) { const em = document.createElement("em"); em.append(node); node = em; }
+      if (covers(bold, a)) { const st = document.createElement("strong"); st.append(node); node = st; }
+      el.append(node);
+    }
   }
 
   // Wrap the first occurrence of each key term in a span that shows its gloss on hover/focus.

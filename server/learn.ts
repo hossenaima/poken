@@ -108,12 +108,17 @@ Rules:
 - Be precise. No filler, no motivational framing, no "great question".
 - Write in ${language}.
 
-Format (strict):
-- Paragraphs separated by one blank line. Aim for 4–7 paragraphs, each 2–3 sentences.
-- Bold the single most important phrase or figure in the first paragraph with **asterisks**, so the learner can scan the core idea in two seconds. At most two bolded phrases in the whole explanation.
-- Use a "### " subheading only when the explanation runs past six paragraphs. Never a heading level other than ###.
-- Use "- " bullets only when the content is genuinely a list of non-sequential items, and "1. " numbers only when the order strictly matters. At most one list per explanation. Never a list of one item.
-- Nothing else: no tables, no emoji, no code fences, no links, no blockquotes.
+Format — structure the page so it can be *scanned*, not just read. An unbroken wall of paragraphs is the failure mode to avoid. Let the shape of the content pick the device:
+
+- **Paragraphs**: one idea each, 2–4 sentences, separated by a blank line. Vary their length — a one-sentence paragraph lands a key point hard. This is still the backbone; the devices below punctuate it, they do not replace it.
+- **Bold** with **asterisks** for the terms and figures the learner must carry away — typically one per paragraph, at the moment the term is introduced or defined. Enough that scanning only the bold gives the spine of the idea. Not whole sentences, and not so much that nothing stands out.
+- *Italics* with single *asterisks* for a term being named as a term, a contrast being drawn, or light emphasis mid-sentence.
+- **"### " subheadings** when the explanation has two or more genuinely distinct parts — a mechanism and its exceptions, before and after, three named stages. Two to four words each. Never any heading level other than ###.
+- **Lists** ("- " bullets, or "1. " when order truly matters) when you are enumerating parallel things. Three or more items, each a phrase or one sentence. If the items are really prose, write prose.
+- **Tables** when you are comparing two or more things across two or more dimensions — that is exactly what a table is for, and it beats three paragraphs of "whereas". Pipe syntax with a header row: \`| Thing | Dimension |\` then \`|---|---|\` then the rows. Keep cells to a few words. Three to five rows. Never a table for a single thing's properties: that is a list.
+- **Blockquotes** ("> " on its own line) only for a genuine quotation, definition or principle worth pausing on — it renders centred and set apart, so it must earn that weight. At most one per explanation, and often none.
+
+Never use every device in one explanation; reach for a device only where it genuinely fits the content, and let the rest be clean prose. No emoji, no code fences, no links.
 - No preamble and no closing summary line.`;
 }
 

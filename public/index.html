@@ -1167,6 +1167,26 @@
     ul.learn-block, ol.learn-block { padding-left: 1.4rem; }
     .learn-block > li { margin: 0 0 0.35rem; }
     .learn-block > li::marker { color: var(--poken-text-secondary); }
+    .learn-block em { font-style: italic; }
+    /* A pulled-out quote: its own breathing room, centred and italic, with a rule above and
+       below rather than a left bar — it is a passage to dwell on, not an aside. */
+    blockquote.learn-block {
+      margin: 1.5rem auto; padding: 1.1rem 1.25rem; max-width: 34rem;
+      text-align: center; font-style: italic; font-size: 1.05rem; line-height: 1.6;
+      color: var(--poken-text-secondary);
+      border-top: 1px solid var(--poken-border-solid);
+      border-bottom: 1px solid var(--poken-border-solid);
+    }
+    blockquote.learn-block em { font-style: normal; }   /* emphasis inside an italic block */
+    /* The table scrolls inside its own block rather than pushing the column wide: on a phone a
+       3-column comparison cannot fit, and a clipped last column is worse than a scrollbar. */
+    .learn-table-wrap { overflow-x: auto; margin: 1.1rem 0; -webkit-overflow-scrolling: touch; }
+    .learn-table-wrap table { border-collapse: collapse; width: 100%; min-width: 22rem; font-size: 0.94rem; }
+    .learn-table-wrap th, .learn-table-wrap td {
+      border: 1px solid var(--poken-border-solid); padding: 0.5rem 0.7rem;
+      text-align: left; vertical-align: top;
+    }
+    .learn-table-wrap th { background: #F9FAFB; font-weight: 600; }
     .learn-node.streaming .learn-block:not(:has(~ .learn-block))::after {
       content: ''; display: inline-block; width: 0.5em; height: 1em; margin-left: 2px; vertical-align: text-bottom;
       background: var(--poken-accent); animation: learnBlink 0.9s steps(2) infinite;
