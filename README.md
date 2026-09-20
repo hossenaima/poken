@@ -75,6 +75,7 @@ team's review are all on the PR.
 | Opaque Upload button and signed-in account pill | [#80](https://github.com/poken-app/poken/issues/80) | [#81](https://github.com/poken-app/poken/pull/81) | |
 | Progress bar from upload to end of document analysis | [#82](https://github.com/poken-app/poken/issues/82) | [#83](https://github.com/poken-app/poken/pull/83) | |
 | Pre-session progress bar no longer snaps back to empty | [#84](https://github.com/poken-app/poken/issues/84) | [#85](https://github.com/poken-app/poken/pull/85) | |
+| Document viewers: draggable popup in session, side panel in Learn | [#86](https://github.com/poken-app/poken/issues/86) | [#87](https://github.com/poken-app/poken/pull/87) | |
 
 ## Layout
 
