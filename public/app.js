@@ -135,14 +135,15 @@ class AmbientVisualizer {
   }
 }
 
+// Colours and motion live in CSS (.pk-blob.is-<state> in index.html); this only holds what the DOM around the blob needs.
 const ORB_STATES = {
-  idle:      { color: "#9CA3AF", glow: "rgba(156,163,175,0.4)", speed: "3.5s",  rings: false, label: "" },
-  listening: { color: "#93C5FD", glow: "rgba(147,197,253,0.45)", speed: "2.2s",  rings: false, label: "Listening\u2026" },
-  thinking:  { color: "#C4B5FD", glow: "rgba(196,181,253,0.5)",  speed: "2.6s",  rings: false, label: "Thinking\u2026" },
-  speaking:  { color: "#FF7355", glow: "rgba(255,115,85,0.5)",   speed: "0.85s", rings: true,  label: "Speaking\u2026" },
-  curious:   { color: "#FBBF24", glow: "rgba(251,191,36,0.45)",  speed: "1.6s",  rings: false, label: "Curious!" },
-  confused:  { color: "#FDA4AF", glow: "rgba(253,164,175,0.45)", speed: "2.9s",  rings: false, label: "Hmm\u2026" },
-  excited:   { color: "#FF7355", glow: "rgba(255,115,85,0.65)",  speed: "0.65s", rings: true,  label: "Excited!" },
+  idle:      { rings: false, label: "" },
+  listening: { rings: false, label: "Listening\u2026" },
+  thinking:  { rings: false, label: "Thinking\u2026" },
+  speaking:  { rings: true,  label: "Speaking\u2026" },
+  curious:   { rings: false, label: "Curious!" },
+  confused:  { rings: false, label: "Hmm\u2026" },
+  excited:   { rings: true,  label: "Excited!" },
 };
 
 const SERVER_EMOTION_STATES = new Set(["curious", "confused", "excited", "listening", "thinking"]);
@@ -735,22 +736,15 @@ fileDropZone.addEventListener("drop", (e) => {
 });
 
 // ── Orb state machine ────────────────────────────────────────────────────────
-function applyOrbColor(color, glow) {
-  orb.style.setProperty("--orb-color", color);
-  orb.style.setProperty("--orb-glow",  glow);
-  orbWrap.style.setProperty("--orb-color", color);
-  orbPillDot.style.setProperty("--orb-color", color);
-  orbPillDot.style.setProperty("--orb-glow",  glow);
-}
-
 function setOrbState(name) {
   if (name === currentOrbState) return;
   currentOrbState = name;
   const s = ORB_STATES[name] || ORB_STATES.idle;
-  applyOrbColor(s.color, s.glow);
-  orb.style.setProperty("--orb-speed", s.speed);
-  orbPillDot.style.setProperty("--orb-speed", s.speed);
-  orb.style.animation = "none"; void orb.offsetWidth; orb.style.animation = "";
+  const stateClass = "is-" + (ORB_STATES[name] ? name : "idle");
+  for (const el of [orb, orbPillDot]) {
+    el.classList.remove(...Object.keys(ORB_STATES).map((k) => "is-" + k));
+    el.classList.add(stateClass);
+  }
   orbWrap.classList.toggle("rings-on", s.rings);
   orbLabel.textContent = s.label;
   orbPillLabel.textContent = s.label;
