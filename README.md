@@ -65,6 +65,9 @@ team's review are all on the PR.
 | Teach page: drop branding and stats, student choice moves left | [#60](https://github.com/poken-app/poken/issues/60) | [#61](https://github.com/poken-app/poken/pull/61) | |
 | Account control in one fixed corner on every screen | [#62](https://github.com/poken-app/poken/issues/62) | [#63](https://github.com/poken-app/poken/pull/63) | |
 | Grid-paper background on teach, learn and open questions | [#64](https://github.com/poken-app/poken/issues/64) | [#65](https://github.com/poken-app/poken/pull/65) | |
+| Learn and open questions: content on a white card | [#66](https://github.com/poken-app/poken/issues/66) | [#67](https://github.com/poken-app/poken/pull/67) | |
+| Reflection: grid paper, neutral palette, Pokey with a line | [#68](https://github.com/poken-app/poken/issues/68) | [#69](https://github.com/poken-app/poken/pull/69) | |
+| Persona cards: Pokey instead of emoji, coloured selection | [#70](https://github.com/poken-app/poken/issues/70) | [#71](https://github.com/poken-app/poken/pull/71) | |
 
 ## Layout
 
