@@ -850,21 +850,21 @@
     /* Topic card — frosted teal glass */
     .reflection-topic-card {
       display: flex; align-items: center; justify-content: space-between; gap: 1.5rem;
-      background: rgba(224, 242, 241, 0.4);
+      background: rgba(255, 115, 85, 0.06);
       backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-      border: 1px solid rgba(178, 223, 219, 0.5);
+      border: 1px solid rgba(255, 115, 85, 0.18);
       border-radius: 1rem; padding: 1.5rem 1.75rem; margin-bottom: 2rem;
     }
     .reflection-topic-label {
       display: block; font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.08em;
-      text-transform: uppercase; color: #00796b; margin-bottom: 0.35rem;
+      text-transform: uppercase; color: var(--poken-accent); margin-bottom: 0.35rem;
     }
     .reflection-topic-name { font-size: 1.75rem; font-weight: 800; color: #0f172a; margin: 0; }
     .reflection-topic-right { text-align: right; flex-shrink: 0; }
     .reflection-duration { display: block; font-size: 1.5rem; font-weight: 800; color: #0f172a; font-variant-numeric: tabular-nums; }
     .reflection-duration-label {
       font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.08em;
-      text-transform: uppercase; color: #00796b;
+      text-transform: uppercase; color: var(--poken-accent);
     }
     @media (max-width: 720px) {
       .reflection-topic-card { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
@@ -885,14 +885,14 @@
       font-size: 1.0625rem; font-weight: 800; color: #0f172a;
     }
     .rcard-icon { font-size: 1.1rem; }
-    .rcard-icon-gap { color: #f472b6; }
+    .rcard-icon-gap { color: var(--poken-text-secondary); }
 
     /* Key vocabulary — pills */
     .rcard-vocab-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; }
     .rcard-vocab-tag {
       padding: 0.4rem 0.85rem; border-radius: 999px;
-      background: rgba(224, 242, 241, 0.7); border: 1px solid rgba(178, 223, 219, 0.7);
-      font-size: 0.875rem; font-weight: 600; color: #00695c;
+      background: rgba(255, 115, 85, 0.08); border: 1px solid rgba(255, 115, 85, 0.22);
+      font-size: 0.875rem; font-weight: 600; color: #B4432C;
     }
 
     /* What you covered — numbered list */
@@ -906,7 +906,7 @@
     .rcard-topics li::before {
       content: counter(rtopic); position: absolute; left: 0; top: 0.55rem;
       width: 1.5rem; height: 1.5rem; border-radius: 999px;
-      background: rgba(224, 242, 241, 0.9); color: #00695c;
+      background: rgba(255, 115, 85, 0.1); color: #B4432C;
       font-size: 0.75rem; font-weight: 800; display: flex; align-items: center; justify-content: center;
     }
 
@@ -916,18 +916,18 @@
     .rcard-gap-btn {
       display: flex; align-items: center; gap: 0.75rem; width: 100%; text-align: left;
       padding: 0.85rem 1rem; border-radius: 0.75rem; cursor: pointer;
-      background: rgba(252, 231, 243, 0.35); border: 1px solid rgba(244, 114, 182, 0.3);
+      background: rgba(255, 255, 255, 0.6); border: 1px solid var(--poken-border-solid);
       font: inherit; font-size: 0.95rem; line-height: 1.5; color: #1e293b;
       transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
     }
     .rcard-gap-btn:hover, .rcard-gap-btn:focus-visible {
-      background: rgba(252, 231, 243, 0.6); border-color: #f472b6; transform: translateY(-1px);
+      background: #fff; border-color: var(--poken-accent); transform: translateY(-1px);
     }
     .rcard-gap-text { flex: 1; }
     .rcard-gap-cta {
-      flex-shrink: 0; font-size: 0.8125rem; font-weight: 700; color: #be185d; white-space: nowrap;
+      flex-shrink: 0; font-size: 0.8125rem; font-weight: 700; color: var(--poken-accent); white-space: nowrap;
     }
-    .card-gap .reflection-highlight { font-weight: 700; color: #e11d48; }
+    .card-gap .reflection-highlight { font-weight: 700; color: var(--poken-text); }
     .reflection-empty-msg { font-size: 0.95rem; color: #94a3b8; font-style: italic; padding: 0.5rem 0; }
     /* Actions — glass buttons */
     .reflection-actions { display: flex; gap: 0.75rem; justify-content: center; margin-top: 3rem; flex-wrap: wrap; }
