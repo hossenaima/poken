@@ -1621,10 +1621,11 @@ function buildServer(): http.Server {
             const mimeType = String(msg.mimeType || 'application/octet-stream');
             console.log(`[Poken] Received study material: ${name} (${mimeType})`);
             processMaterialFile(name, msg.base64, mimeType)
-              .then(message => sendText(message))
+              .then(message => { sendText(message); sendJson({ type: 'material_ready', name }); })
               .catch(e => {
                 console.error('[Poken] material_file extract failed', e);
                 sendText(`[The teacher has shared a file: "${name}".]`);
+                sendJson({ type: 'material_ready', name, failed: true });
               });
           }
           return;

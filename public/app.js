@@ -1534,14 +1534,28 @@ if (toggleCoachingBtn) {
 }
 
 // ── In-session file drop and upload ─────────────────────────────────────────
-function showSessionToast(message, style) {
+function showSessionToast(message, style, withProgress = false) {
   if (!sessionToast) return;
   sessionToast.textContent = message;
+  if (withProgress) {
+    const bar = document.createElement("span");
+    bar.className = "pk-progress";
+    bar.setAttribute("aria-hidden", "true");
+    sessionToast.appendChild(bar);
+  }
   sessionToast.className = "session-toast visible" + (style ? " toast-" + style : "");
 }
 function hideSessionToast() {
   if (!sessionToast) return;
   sessionToast.classList.remove("visible");
+}
+
+// In-session material analyses still awaiting the server's material_ready ack.
+let materialAnalysesInFlight = 0;
+function resetMaterialAnalyses() {
+  if (materialAnalysesInFlight === 0) return;
+  materialAnalysesInFlight = 0;
+  hideSessionToast();
 }
 
 async function sendSessionMaterialFile(file) {
@@ -1565,8 +1579,8 @@ async function sendSessionMaterialFile(file) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     try {
       ws.send(JSON.stringify({ type: "material_file", name: file.name, mimeType: mimeType || "application/octet-stream", base64 }));
-      showSessionToast(`Shared "${file.name}" with class`);
-      setTimeout(() => hideSessionToast(), 2800);
+      materialAnalysesInFlight++;
+      showSessionToast(`Analyzing "${file.name}"…`, "processing", true);
       updateActivity();
     } catch (_) {}
   }
@@ -2275,6 +2289,7 @@ function disconnect(keepScreen = false) {
   }
   if (oldWs) { oldWs.onclose = null; try { oldWs.close(); } catch (_) {} oldWs = null; }
   if (resumeRetryTimer) { clearTimeout(resumeRetryTimer); resumeRetryTimer = null; }
+  resetMaterialAnalyses();
   handoverInProgress = false;
   handoverQueue = [];
   resumeFailures = 0;
@@ -2346,6 +2361,7 @@ function beginClientHandover(token, reason) {
   if (!resumeToken) return;
   handoverInProgress = true;
   handoverQueue = [];
+  resetMaterialAnalyses();
   debugLog('warn', `Session handover: ${reason || 'server request'}`);
   setStatus("Reconnecting…", "");
   if (ws) { oldWs = ws; oldWs.onclose = null; oldWs.onerror = null; }
@@ -2449,6 +2465,7 @@ async function connect(opts = {}) {
   sock.onclose = (ev) => {
     if (ws !== sock) return; // replaced by a handover — ignore
     debugLog('error', `WebSocket closed (code ${ev.code}${ev.reason ? ': ' + ev.reason : ''})`);
+    resetMaterialAnalyses();
     if (awaitingReflection) return;
     if (handoverInProgress) {
       // The replacement socket died before session_ready.
@@ -2468,6 +2485,7 @@ async function connect(opts = {}) {
   sock.onerror = () => {
     if (ws !== sock) return;
     debugLog('error', 'WebSocket connection error');
+    resetMaterialAnalyses();
     if (!handoverInProgress && !(sessionReady && resumeToken)) {
       lastError = "Connection error.";
       setStatus("Connection error", "error");
@@ -2553,6 +2571,13 @@ async function connect(opts = {}) {
 
       // Handover / resume bookkeeping
       if (msg.type === "session_context") { materialsContext = msg.materialsContext || ""; }
+      if (msg.type === "material_ready") {
+        if (materialAnalysesInFlight > 0) materialAnalysesInFlight--;
+        if (materialAnalysesInFlight === 0) {
+          showSessionToast(msg.failed ? `Couldn't read "${msg.name}"` : `Shared "${msg.name}" with class`, msg.failed ? "error" : "success");
+          setTimeout(() => hideSessionToast(), 2800);
+        }
+      }
       if (msg.type === "session_state" && msg.resumeToken) { resumeToken = msg.resumeToken; storeSessionForResume(); }
       if (msg.type === "session_handover") { beginClientHandover(msg.resumeToken, msg.reason); }
 
@@ -2569,15 +2594,6 @@ async function connect(opts = {}) {
           loadingText.textContent = `Analyzing ${msg.filename} (${msg.current}/${msg.total})…`;
         }
       }
-      // In-session material processing (file dropped mid-session)
-      if (msg.type === "material_processing") {
-        showSessionToast(`Analyzing ${msg.filename}…`, "processing");
-      }
-      if (msg.type === "material_processed") {
-        showSessionToast(`${msg.filename} ready ✓`, "success");
-        setTimeout(() => hideSessionToast(), 3000);
-      }
-
 
       // Teacher transcript: new teacher turn — close any open student entry first.
       if (msg.type === "teacher_transcript" && msg.text) {

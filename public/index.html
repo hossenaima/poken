@@ -878,6 +878,26 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     }
     .session-toast.visible { opacity: 1; }
+    .session-toast > .pk-progress { width: 100%; margin-top: 0.4rem; }
+
+    /* Indeterminate progress bar (no upload path reports a real fraction) */
+    .pk-progress {
+      position: relative; width: 100%; height: 4px; border-radius: 999px;
+      background: #EFEDE8; overflow: hidden;
+    }
+    .pk-progress::after {
+      content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 40%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #FFCB45, #A7C878, #93C5FD, #C4B5FD, #FF3D91, #FF7355);
+      animation: pkProgressSweep 1.4s ease-in-out infinite;
+    }
+    @keyframes pkProgressSweep {
+      0%   { transform: translateX(-110%); }
+      100% { transform: translateX(260%); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .pk-progress::after { animation: none; width: 100%; opacity: 0.45; }
+    }
 
     /* Idle timeout modal */
     #timeoutModal {
@@ -1221,10 +1241,17 @@
       flex: none; font-family: inherit; font-size: 0.8rem; font-weight: 500; cursor: pointer;
       background: #fff; border: 1px solid var(--poken-border-solid); border-radius: 10px;
       padding: 0.5rem 0.8rem; color: var(--poken-text-secondary); white-space: nowrap;
+      position: relative; overflow: hidden;
     }
+    .learn-upload > .pk-progress {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      width: auto; height: 3px; border-radius: 0; background: transparent;
+      display: none;
+    }
+    .learn-upload.busy > .pk-progress { display: block; }
     .learn-upload:hover { background: #F9FAFB; color: var(--poken-text); }
     .learn-upload.has-file { border-color: var(--poken-accent); color: var(--poken-accent); }
-    .learn-upload.busy { opacity: 0.6; cursor: progress; }
+    .learn-upload.busy { opacity: 0.75; cursor: progress; }
     .learn-hint { margin: 1.25rem 0 0; font-size: 0.8125rem; color: #9CA3AF; }
     .learn-card { padding: 1.5rem; margin-top: 1.25rem; }
     .learn-card:not(:has(.learn-node, .learn-topics-title)) { display: none; }
@@ -1594,6 +1621,7 @@
         <label class="learn-upload" id="learnUploadLabel" title="Upload slides, a PDF or a photo to learn from">
           <input type="file" id="learnFile" accept=".pdf,.ppt,.pptx,.doc,.docx,.txt,.md,.csv,image/*" hidden />
           <span id="learnUploadText">Upload</span>
+          <span class="pk-progress" aria-hidden="true"></span>
         </label>
         <button class="learn-teach" id="learnTeachBtn" type="button" disabled>Teach this &rarr;</button>
       </header>
@@ -2007,6 +2035,7 @@
       </div>
     </div>
     <p class="setup-loading-text" id="setupLoadingText">Preparing your session…</p>
+    <span class="pk-progress" aria-hidden="true" style="max-width: 220px;"></span>
   </div>
 
   <!-- REFLECTION LOADING -->
