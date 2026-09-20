@@ -885,21 +885,30 @@
     show();
     clearHighlight();
     const q = String(question || "").trim();
+    let ownTopicOpen = false;
     if (tid) {
       // Already open? Don't reload and lose scroll position or unsaved branches.
       if (tid !== topicId) await openTopic(tid);
-      if (tid === topicId) {
+      ownTopicOpen = tid === topicId;
+      if (ownTopicOpen) {
         const hit = bestBlockFor(null, q);
         if (hit) {
           revealAncestors(hit);
           hit.classList.add("learn-hl");
           hit.scrollIntoView({ behavior: "smooth", block: "center" });
+          return true;
         }
-        return true;
       }
     }
-    // The question came from a teaching session with no Learn tree behind it. Offer its topic
-    // as a fresh explanation rather than dropping the user on an empty screen.
+    // Its own topic had nothing matching — or it has no topic at all. The answer may still be
+    // sitting in something else already studied, so search every saved explanation before
+    // falling back to writing a new one.
+    if (await openBestSavedMatch(q)) return true;
+    // Nothing better found: if we already opened the question's own topic, stay there.
+    if (ownTopicOpen) return true;
+
+    // Nothing saved is relevant. Offer the topic as a fresh explanation rather than dropping
+    // the user on an empty screen.
     const t = String(topicTitle || "").trim();
     if (!t) return false;
     topicEl.value = t;
@@ -907,6 +916,63 @@
     form.requestSubmit();
     return true;
   };
+
+  // A "### " subhead is the title of the paragraph under it, so score them as one unit. Left
+  // apart, a three-word heading like "Light-Dependent Reactions" scores far below a long,
+  // loosely related paragraph elsewhere — which is exactly the wrong answer for a question that
+  // names the heading almost word for word.
+  function scorableChunks(body) {
+    const out = [];
+    let carry = "";
+    for (const chunk of body.split(/\n\s*\n/)) {
+      const t = chunk.trim();
+      if (!t) continue;
+      if (/^#{1,6}\s/.test(t)) { carry = t.replace(/^#{1,6}\s+/, "") + "\n"; continue; }
+      out.push(carry + t);
+      carry = "";
+    }
+    if (carry) out.push(carry);
+    return out;
+  }
+
+  // Search every saved explanation for the one that best answers this question, open its topic
+  // and highlight the paragraph. Postgres does the narrowing (ilike on any of the question's
+  // distinctive words); the scoring that decides the winner happens here, on the same scale the
+  // in-tree matcher uses, so a weak match is rejected rather than opened on a hunch.
+  async function openBestSavedMatch(question) {
+    const s = store();
+    const want = wordsOf(question);
+    if (!s || !user || !want.length || typeof s.searchNodes !== "function") return false;
+    const hits = await s.searchNodes(want);
+    if (!hits.length) return false;
+    // Score the best PARAGRAPH in each body, not the body as a whole: a long, loosely related
+    // explanation otherwise beats a short one that answers the question outright, just by
+    // containing more words. The body is already here, so this costs nothing extra.
+    const unique = [...new Set(want)];
+    const scoreOf = (text) => {
+      const have = new Set(wordsOf(text));
+      let score = 0;
+      for (const w of unique) if (have.has(w)) score += Math.min(w.length, 12);
+      return score;
+    };
+    let best = null, bestScore = 0;
+    for (const hit of hits) {
+      for (const para of scorableChunks(String(hit.body))) {
+        const score = scoreOf(para);
+        if (score > bestScore) { best = hit; bestScore = score; }
+      }
+    }
+    if (!best || bestScore < 10 || !best.topicId) return false;   // a weak match is worse than none
+    if (best.topicId !== topicId) await openTopic(best.topicId);
+    if (best.topicId !== topicId) return false;                   // the topic was deleted meanwhile
+    const node = byId(best.id);
+    const target = bestBlockFor(node || null, question);
+    if (!target) return true;                                     // right topic open, no one paragraph stood out
+    revealAncestors(target);
+    target.classList.add("learn-hl");
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    return true;
+  }
 
   // Reflection screen → Learn Mode, scrolled to the paragraph the concept came from.
   function digInto(nodeId, label = "", gapText = "") {
@@ -1157,16 +1223,20 @@
   // back later must not find the paragraph still yellow.
   function hide() { hideToolbar(); clearHighlight(); screen.style.display = "none"; }
 
-  learnFirst.addEventListener("click", show);
+  // Opening Learn from the landing page always lands on the topics list, never back inside
+  // whatever tree happened to still be in memory: the tab is a place to choose from, not a
+  // resume button. (Unsaved work is already flagged by the save banner.)
+  learnFirst.addEventListener("click", () => { toTopicsList(); show(); });
   backBtn.addEventListener("click", () => { hide(); landing.style.display = "flex"; });
   // Leave the current tree (it's saved) and pick another.
-  topicsBtn.addEventListener("click", () => {
+  function toTopicsList() {
     if (streamingCount) return;
     reset();
     topic = "";
     topicEl.value = "";
     showTopics();
-  });
+  }
+  topicsBtn.addEventListener("click", toTopicsList);
   topicsBtn.hidden = !user;   // onAuthChange keeps this in sync
   renderAccount();
 

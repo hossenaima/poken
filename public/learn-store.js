@@ -214,6 +214,35 @@
     return bytes;
   }
 
+  // Explanations across every saved topic that mention any of these words. Used when an open
+  // question has no tree of its own, so the answer may be sitting in something else you studied.
+  // Filtering in Postgres rather than pulling every node down: bodies run to 20k chars each.
+  const NODE_SEARCH_LIMIT = 60;
+
+  async function searchNodes(words, limit = NODE_SEARCH_LIMIT) {
+    try {
+      const ctx = await authed();
+      // `or` takes a comma-separated filter list, so a word containing a comma, parenthesis or
+      // wildcard would change the query's shape. wordsOf upstream keeps letters and digits only;
+      // this is the belt to that braces.
+      const safe = (Array.isArray(words) ? words : [])
+        .map(w => String(w).replace(/[^\p{L}\p{N}]/gu, ""))
+        .filter(w => w.length > 2)
+        .slice(0, 6);
+      if (!ctx || !safe.length) return [];
+      const { data, error } = await ctx.sb
+        .from("learn_nodes")
+        .select("id, topic_id, body")
+        .or(safe.map(w => `body.ilike.%${w}%`).join(","))
+        .limit(limit);
+      if (error) throw error;
+      return (data || []).map(r => ({ id: r.id, topicId: r.topic_id, body: r.body || "" }));
+    } catch (err) {
+      warn("searchNodes failed", err);
+      return [];
+    }
+  }
+
   // ── Open questions ───────────────────────────────────────────────────────
   // Questions a student asked that the teacher left hanging. Grouped per topic by
   // topic_title, which is the one key present whether or not the session was taught off a
@@ -317,7 +346,7 @@
     signInWithGoogle: () => auth().signIn("learn"),
     signOut: (...a) => auth().signOut(...a),
     onAuthChange: (...a) => auth().onAuthChange(...a),
-    listTopics, createTopic, saveNode, loadTree, deleteTopic, uploadDiagram, diagramUrl,
+    listTopics, createTopic, saveNode, loadTree, deleteTopic, uploadDiagram, diagramUrl, searchNodes,
     listOpenQuestions, saveOpenQuestions, closeOpenQuestion, reopenOpenQuestion,
     _openQuestions: { toOpenQuestion, toOpenQuestionRow, OPEN_QUESTION_REASONS },
   };
