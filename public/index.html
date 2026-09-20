@@ -569,6 +569,34 @@
     }
     .camera-container:not(.floating) .camera-drag-handle { display: none; }
     .camera-drag-handle:active { cursor: grabbing; }
+
+    /* Uploaded-document viewer: a draggable sibling of the floating camera */
+    .doc-viewer {
+      position: fixed; width: 420px; height: 520px; z-index: 1215;
+      display: flex; flex-direction: column;
+      background: #fff; border: 1px solid var(--poken-border-solid); border-radius: 12px;
+      box-shadow: 0 14px 28px rgba(0,0,0,0.18); overflow: hidden;
+    }
+    .doc-viewer[hidden] { display: none; }
+    .doc-viewer-bar {
+      display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.6rem;
+      border-bottom: 1px solid var(--poken-border-solid); background: #F9FAFB;
+      cursor: grab; user-select: none; flex: none;
+    }
+    .doc-viewer-bar:active { cursor: grabbing; }
+    .doc-viewer-handle { color: #6B7280; font-size: 0.85rem; }
+    .doc-viewer-name {
+      flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-size: 0.8rem; font-weight: 500; color: #374151;
+    }
+    .doc-viewer-close {
+      flex: none; background: none; border: none; cursor: pointer; color: #6B7280;
+      font-size: 0.85rem; padding: 0.1rem 0.3rem; border-radius: 6px;
+    }
+    .doc-viewer-close:hover { background: #E5E7EB; color: var(--poken-text); }
+    .doc-viewer-body { flex: 1; min-height: 0; overflow: auto; }
+    .doc-viewer-body > iframe, .doc-viewer-body > img { width: 100%; height: 100%; border: 0; display: block; }
+    .doc-viewer-body > img { max-width: 100%; height: auto; object-fit: contain; }
     .session-center.dual-media .camera-container {
       aspect-ratio: auto;
       height: 25vh;
@@ -854,6 +882,7 @@
       color: #374151; font-family: inherit; font-size: 0.78rem; font-weight: 500;
       cursor: pointer; transition: background 0.15s; white-space: nowrap;
     }
+    .toolbar-btn[hidden] { display: none; }
     .toolbar-btn:hover { background: #E5E7EB; }
     .toolbar-btn.active { background: #FF7355; color: #fff; }
     .toolbar-btn.muted  { background: #dc2626; color: #fff; }
@@ -1218,6 +1247,41 @@
     .session-persona:focus { outline: none; border-color: #9CA3AF; }
     #learn-screen { display: none; min-height: 100vh; position: relative; isolation: isolate; }
     .learn-shell { max-width: 44rem; margin: 0 auto; padding: 2rem 1.25rem 6rem; }
+    .learn-layout { max-width: 44rem; margin: 0 auto; }
+    #learn-screen.with-media .learn-layout {
+      display: flex; gap: 1.5rem; align-items: flex-start;
+      max-width: 82rem;
+    }
+    #learn-screen.with-media .learn-shell { margin: 0; flex: 1 1 0; min-width: 0; }
+    .learn-media {
+      flex: 0 0 32rem; position: sticky; top: 1rem;
+      background: #fff; border: 1px solid var(--poken-border-solid);
+      border-radius: 12px; overflow: hidden; margin-top: 2rem;
+      display: flex; flex-direction: column; height: calc(100vh - 4rem);
+    }
+    .learn-media[hidden] { display: none; }
+    .learn-media-bar {
+      display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.6rem;
+      border-bottom: 1px solid var(--poken-border-solid); background: #F9FAFB; flex: none;
+    }
+    .learn-media-name {
+      flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-size: 0.8rem; font-weight: 500; color: #374151;
+    }
+    .learn-media-close {
+      flex: none; background: none; border: none; cursor: pointer; color: #6B7280;
+      font-size: 0.85rem; padding: 0.1rem 0.3rem; border-radius: 6px;
+    }
+    .learn-media-close:hover { background: #E5E7EB; color: var(--poken-text); }
+    .learn-media-body { flex: 1; overflow: auto; }
+    .learn-media-body > iframe, .learn-media-body > img { width: 100%; height: 100%; border: 0; display: block; }
+    .learn-media-body > img { height: auto; object-fit: contain; }
+    @media (max-width: 78rem) {
+      #learn-screen.with-media .learn-layout { display: block; max-width: 44rem; }
+      .learn-media { position: static; height: auto; max-height: 60vh; flex: none; }
+    }
+    .learn-view { flex: none; }
+    .learn-view[hidden] { display: none; }
     .learn-top { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
     .learn-back, .learn-teach {
       font-family: inherit; font-size: 0.875rem; cursor: pointer; border-radius: 10px; padding: 0.55rem 0.9rem;
@@ -1602,6 +1666,7 @@
       <i style="--x:86.9%;--y:94vh;--d:3.11vmin;--c:#93C5FD;--beat:8.5s;--delay:-2.09s;--o:0.78"></i>
     </div>
     <div class="poken-account-corner" data-poken-account="learn"></div>
+    <div class="learn-layout">
     <div class="learn-shell">
       <header class="learn-top">
         <button class="learn-back" id="learnBackBtn" type="button">&larr; Back</button>
@@ -1625,6 +1690,7 @@
           <span id="learnUploadText">Upload</span>
           <span class="pk-progress" aria-hidden="true"></span>
         </label>
+        <button class="learn-back learn-view" id="learnViewBtn" type="button" title="Show the uploaded file" hidden>View</button>
         <button class="learn-teach" id="learnTeachBtn" type="button" disabled>Teach this &rarr;</button>
       </header>
       <div class="learn-save-banner" id="learnSaveBanner" role="status" hidden>
@@ -1637,6 +1703,14 @@
         <div class="learn-topics" id="learnTopics"></div>
         <div id="learnTree"></div>
       </div>
+    </div>
+    <aside class="learn-media" id="learnMedia" hidden>
+      <div class="learn-media-bar">
+        <span class="learn-media-name" id="learnMediaName"></span>
+        <button class="learn-media-close" id="learnMediaClose" type="button" aria-label="Close">&#x2715;</button>
+      </div>
+      <div class="learn-media-body" id="learnMediaBody"></div>
+    </aside>
     </div>
     <div class="learn-toolbar" id="learnToolbar" hidden>
       <div class="learn-toolbar-actions" id="learnToolbarActions">
@@ -1937,6 +2011,16 @@
           <video id="cameraPipFeed" autoplay muted playsinline></video>
         </div>
 
+        <!-- Uploaded document viewer -->
+        <div class="doc-viewer" id="docViewer" hidden>
+          <div class="doc-viewer-bar" id="docViewerBar">
+            <span class="doc-viewer-handle" id="docViewerHandle">&#x2630;</span>
+            <span class="doc-viewer-name" id="docViewerName"></span>
+            <button class="doc-viewer-close" id="docViewerClose" type="button" aria-label="Close">&#x2715;</button>
+          </div>
+          <div class="doc-viewer-body" id="docViewerBody"></div>
+        </div>
+
         <!-- Full orb (when no media) -->
         <div class="orb-area" id="orbArea">
           <div class="orb-wrap" id="orbWrap">
@@ -1984,6 +2068,7 @@
         <button class="toolbar-btn" id="wbToggleBtn" type="button"><span class="icon">&#x270F;&#xFE0F;</span> Board</button>
         <button class="toolbar-btn" id="screenToggleBtn" type="button"><span class="icon">&#x1F5A5;</span> Share</button>
         <button class="toolbar-btn" id="uploadMaterialBtn" type="button"><span class="icon">&#x1F4CE;</span> Upload Material</button>
+        <button class="toolbar-btn" id="viewMaterialBtn" type="button" hidden><span class="icon">&#x1F4C4;</span> Materials</button>
         <span class="toolbar-note" id="uploadMaterialHint" title="Allowed: PDF, JPG/JPEG, PNG, GIF, WEBP, TXT, MD, CSV. You can also paste a URL in chat and the student will read it.">
           PDF/JPG/PNG/TXT/MD/CSV • links via chat supported
         </span>

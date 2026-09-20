@@ -186,6 +186,39 @@
   // the saved tree: the explanations it produced are what's worth keeping, not the raw file.
   const MAX_UPLOAD_MB = 8;
   let materialText = "";
+  // Blob URL of the picked File so the side panel can show it; revoked in clearUpload().
+  let materialUrl = "";
+  let mediaMeta = null;     // { name, mimeType } of the file behind materialUrl
+  const viewBtn    = document.getElementById("learnViewBtn");
+  const mediaEl    = document.getElementById("learnMedia");
+  const mediaName  = document.getElementById("learnMediaName");
+  const mediaBody  = document.getElementById("learnMediaBody");
+  const mediaClose = document.getElementById("learnMediaClose");
+
+  function showMedia(name, mimeType) {
+    if (!mediaEl || !materialUrl) return;
+    mediaName.textContent = name;
+    mediaName.title = name;
+    mediaBody.innerHTML = "";
+    const el = document.createElement(mimeType.startsWith("image/") ? "img" : "iframe");
+    if (el.tagName === "IMG") el.alt = name; else el.title = name;
+    el.src = materialUrl;
+    mediaBody.appendChild(el);
+    mediaEl.hidden = false;
+    screen.classList.add("with-media");
+    if (viewBtn) viewBtn.hidden = true;
+  }
+
+  function hideMedia() {
+    if (!mediaEl) return;
+    mediaEl.hidden = true;
+    mediaBody.innerHTML = "";
+    screen.classList.remove("with-media");
+    if (viewBtn) viewBtn.hidden = !materialUrl;
+  }
+
+  mediaClose?.addEventListener("click", hideMedia);
+  viewBtn?.addEventListener("click", () => { if (mediaMeta) showMedia(mediaMeta.name, mediaMeta.mimeType); });
 
   function setUpload(state, label) {
     uploadEl.classList.toggle("busy", state === "busy");
@@ -195,6 +228,11 @@
   }
 
   function clearUpload() {
+    hideMedia();
+    if (materialUrl) { try { URL.revokeObjectURL(materialUrl); } catch (_) {} }
+    materialUrl = "";
+    mediaMeta = null;
+    if (viewBtn) viewBtn.hidden = true;
     materialText = "";
     fileInput.value = "";
     setUpload("empty", "Upload");
@@ -227,6 +265,10 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.text) throw new Error(data.error || `HTTP ${res.status}`);
       materialText = data.text;
+      if (materialUrl) { try { URL.revokeObjectURL(materialUrl); } catch (_) {} }
+      materialUrl = URL.createObjectURL(file);
+      mediaMeta = { name: file.name, mimeType: file.type || "" };
+      showMedia(mediaMeta.name, mediaMeta.mimeType);
       const short = file.name.length > 22 ? file.name.slice(0, 20) + "…" : file.name;
       setUpload("ready", `${short} ✕`);
       uploadEl.title = `Using ${file.name}${data.truncated ? " (truncated)" : ""} — click to remove`;
