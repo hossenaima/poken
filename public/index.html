@@ -49,50 +49,101 @@
       display: flex; flex-direction: column; align-items: center;
       justify-content: center; gap: 2.75rem; z-index: 100;
     }
-    /* ── Landing mascot ──────────────────────────────────────────────────
+    /* ── Poken mascot: .pk-blob ──────────────────────────────────────────
        One shape whose outline morphs; the aura is the same silhouette scaled
-       up, so the glow radiates off the real edge. --t0 shifts its 9s clock so
-       the smile lands the moment the last polka dot settles.              */
-    .landing-orb-wrap { z-index: 2; position: relative; width: 150px; height: 150px; --t0: -3.98s; }
-    .l-blob { position: absolute; inset: 23px; animation: lWiggle 9s ease-in-out infinite var(--t0); }
-    .l-skin, .l-aura {
-      position: absolute; inset: 0; background: #FFCB45;
+       up, so the glow radiates off the real edge. Sized by --size; a state
+       class (.is-<state>) sets --fill/--glow/--beat/--amp/--lean.
+         .pk-blob--bare   silhouette and colour only, no face (20px pill)
+         .pk-blob--greet  --t0 shifts its 9s clock so the smile and blush
+                          land the moment the last polka dot settles     */
+    .pk-blob {
+      --size: 104px; --t0: 0s;
+      --fill: #FFCB45; --glow: rgba(255,203,69,0.45); --beat: 6.5s; --amp: 0.05; --lean: 0deg;
+      --ink: #1a1a1a;
+      position: relative; width: var(--size); height: var(--size);
+    }
+    .pk-blob.is-idle      { --fill: #FFCB45; --glow: rgba(255,203,69,0.45);  --beat: 6.5s;  --amp: 0.05; --lean: 0deg; }
+    .pk-blob.is-listening { --fill: #93C5FD; --glow: rgba(147,197,253,0.45); --beat: 2.2s;  --amp: 0.06; --lean: 3deg; }
+    .pk-blob.is-thinking  { --fill: #FDA4AF; --glow: rgba(253,164,175,0.5);  --beat: 2.6s;  --amp: 0.04; --lean: -4deg; }
+    .pk-blob.is-speaking  { --fill: #FF7355; --glow: rgba(255,115,85,0.5);   --beat: 0.85s; --amp: 0.09; --lean: 0deg; }
+    .pk-blob.is-curious   { --fill: #A7C878; --glow: rgba(167,200,120,0.45); --beat: 1.6s;  --amp: 0.07; --lean: 6deg; }
+    .pk-blob.is-confused  { --fill: #C4B5FD; --glow: rgba(196,181,253,0.45); --beat: 2.9s;  --amp: 0.04; --lean: -6deg; }
+    .pk-blob.is-excited   { --fill: #FF3D91; --glow: rgba(255,61,145,0.65);  --beat: 0.65s; --amp: 0.10; --lean: 0deg; }
+
+    .pk-blob__skin, .pk-blob__aura {
+      position: absolute; inset: 0; background: var(--fill); rotate: var(--lean);
       border-radius: 62% 38% 44% 56% / 40% 60% 54% 46%;
     }
-    .l-skin { box-shadow: 0 0 34px 3px rgba(255,203,69,0.45); animation: lMorph 6.5s ease-in-out infinite; }
-    .l-aura { opacity: 0; pointer-events: none; animation: lMorph 6.5s ease-in-out infinite, lHalo 4.1s ease-in-out infinite; }
-    .l-aura + .l-aura { animation-delay: 0s, -2.05s; }
-    .l-eyes {
+    .pk-blob__skin {
+      box-shadow: 0 0 calc(var(--size) * 34 / 104) calc(var(--size) * 3 / 104) var(--glow);
+      animation: pkMorph var(--beat) ease-in-out infinite;
+    }
+    .pk-blob__aura { opacity: 0; pointer-events: none; animation: pkMorph var(--beat) ease-in-out infinite, pkHalo 4.1s ease-in-out infinite; }
+    .pk-blob__aura + .pk-blob__aura { animation-delay: 0s, -2.05s; }
+    .pk-blob__eyes {
       position: absolute; inset: 0; z-index: 2; display: flex;
       align-items: center; justify-content: center; gap: 16%; translate: 2% -7%;
     }
-    .l-eye { position: relative; width: 10.5%; height: 15%; }
-    .l-eye .l-dot {
-      position: absolute; inset: 0; background: #1a1a1a; border-radius: 50%;
-      animation: lBlink 7.3s ease-in-out infinite, lDotOff 9s ease-in-out infinite var(--t0);
+    .pk-blob__eye { position: relative; width: 10.5%; height: 15%; }
+    .pk-blob__dot {
+      position: absolute; inset: 0; background: var(--ink); border-radius: 50%;
+      animation: pkBlink 7.3s ease-in-out infinite;
     }
-    .l-eye .l-arc {
+    .pk-blob__arc {
       position: absolute; left: -14%; right: -14%; top: 38%; height: 42%; opacity: 0;
-      border-top: 2.6px solid #1a1a1a; border-radius: 50% 50% 0 0;
-      animation: lArcOn 9s ease-in-out infinite var(--t0);
+      border-top: calc(var(--size) * 2.6 / 104) solid var(--ink); border-radius: 50% 50% 0 0;
     }
-    .l-blush {
+    .pk-blob__brow {
+      position: absolute; z-index: 2; opacity: 0; left: 51%; top: 24%; width: 12%; height: 0;
+      border-top: calc(var(--size) * 2.6 / 104) solid var(--ink); border-radius: 50%; rotate: -12deg;
+    }
+    .pk-blob__blush {
       position: absolute; inset: 0; z-index: 2; display: flex; align-items: center;
       justify-content: center; gap: 44%; translate: 2% 5%; opacity: 0;
-      animation: lBlushOn 9s ease-in-out infinite var(--t0);
     }
-    .l-blush b { width: 17%; aspect-ratio: 1.5; border-radius: 50%; background: #FF8FA3; filter: blur(2.5px); }
-    @keyframes lMorph {
+    .pk-blob__blush b { width: 17%; aspect-ratio: 1.5; border-radius: 50%; background: #FF8FA3; filter: blur(calc(var(--size) * 2.5 / 104)); }
+    .pk-blob__bubble {
+      position: absolute; z-index: 3; display: none; align-items: center; justify-content: center; gap: 12%;
+      right: -14%; top: -12%; width: 34%; height: 28%; padding: 0 6%; box-sizing: border-box;
+      background: #fff; color: var(--ink); border-radius: 999px; box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+      font-weight: 700; font-size: calc(var(--size) * 0.17); line-height: 1;
+    }
+    .pk-blob__bubble b { display: none; width: 16%; aspect-ratio: 1; border-radius: 50%; background: var(--ink); }
+
+    /* Greeting: dots give way to smiling arcs, blush blooms, body wiggles — once per 9s clock */
+    .pk-blob--greet { animation: pkWiggle 9s ease-in-out infinite var(--t0); }
+    .pk-blob--greet .pk-blob__dot   { animation: pkBlink 7.3s ease-in-out infinite, pkDotOff 9s ease-in-out infinite var(--t0); }
+    .pk-blob--greet .pk-blob__arc   { animation: pkArcOn 9s ease-in-out infinite var(--t0); }
+    .pk-blob--greet .pk-blob__blush { animation: pkBlushOn 9s ease-in-out infinite var(--t0); }
+
+    /* Reactions, each on its own state only */
+    .pk-blob.is-excited { animation: pkHop 0.65s ease-in-out infinite; }
+    .pk-blob.is-excited .pk-blob__dot   { opacity: 0; animation: none; }
+    .pk-blob.is-excited .pk-blob__arc   { opacity: 1; }
+    .pk-blob.is-excited .pk-blob__blush { opacity: 0.62; }
+    .pk-blob.is-curious .pk-blob__brow, .pk-blob.is-confused .pk-blob__brow { opacity: 1; }
+    .pk-blob.is-confused .pk-blob__brow { left: 37%; rotate: 12deg; }
+    .pk-blob.is-curious .pk-blob__bubble, .pk-blob.is-confused .pk-blob__bubble { display: flex; }
+    .pk-blob.is-curious .pk-blob__bubble::after, .pk-blob.is-confused .pk-blob__bubble::after { content: "?"; }
+    .pk-blob.is-thinking .pk-blob__bubble { display: flex; }
+    .pk-blob.is-thinking .pk-blob__bubble b { display: block; animation: pkDots 1.2s ease-in-out infinite; }
+    .pk-blob.is-thinking .pk-blob__bubble b:nth-child(2) { animation-delay: 0.2s; }
+    .pk-blob.is-thinking .pk-blob__bubble b:nth-child(3) { animation-delay: 0.4s; }
+
+    .pk-blob--bare .pk-blob__eyes, .pk-blob--bare .pk-blob__blush,
+    .pk-blob--bare .pk-blob__brow, .pk-blob--bare .pk-blob__bubble { display: none; }
+
+    @keyframes pkMorph {
       0%,100% { border-radius: 62% 38% 44% 56% / 40% 60% 54% 46%; scale: 1 1; }
-      33%     { border-radius: 40% 60% 58% 42% / 58% 42% 44% 56%; scale: 1.05 0.95; }
-      66%     { border-radius: 56% 44% 36% 64% / 46% 56% 62% 38%; scale: 0.96 1.04; }
+      33%     { border-radius: 40% 60% 58% 42% / 58% 42% 44% 56%; scale: calc(1 + var(--amp)) calc(1 - var(--amp)); }
+      66%     { border-radius: 56% 44% 36% 64% / 46% 56% 62% 38%; scale: calc(1 - var(--amp) * 0.8) calc(1 + var(--amp) * 0.8); }
     }
-    @keyframes lHalo   { 0%,100% { scale: 1.12; opacity: 0.22; } 50% { scale: 1.32; opacity: 0.10; } }
-    @keyframes lBlink  { 0%,93%,100% { scale: 1 1; } 96% { scale: 1 0.1; } }
-    @keyframes lDotOff { 0%,64%,86%,100% { opacity: 1; } 69%,82% { opacity: 0; } }
-    @keyframes lArcOn  { 0%,64%,86%,100% { opacity: 0; } 69%,82% { opacity: 1; } }
-    @keyframes lBlushOn{ 0%,65%,88%,100% { opacity: 0; } 70%,83% { opacity: 0.62; } }
-    @keyframes lWiggle {
+    @keyframes pkHalo   { 0%,100% { scale: 1.12; opacity: 0.22; } 50% { scale: 1.32; opacity: 0.10; } }
+    @keyframes pkBlink  { 0%,93%,100% { scale: 1 1; } 96% { scale: 1 0.1; } }
+    @keyframes pkDotOff { 0%,64%,86%,100% { opacity: 1; } 69%,82% { opacity: 0; } }
+    @keyframes pkArcOn  { 0%,64%,86%,100% { opacity: 0; } 69%,82% { opacity: 1; } }
+    @keyframes pkBlushOn{ 0%,65%,88%,100% { opacity: 0; } 70%,83% { opacity: 0.62; } }
+    @keyframes pkWiggle {
       0%,64%,100% { rotate: 0deg;    translate: 0 0; }
       69%         { rotate: -5deg;   translate: -2% -3%; }
       73%         { rotate: 4.5deg;  translate: 2% -1%; }
@@ -100,6 +151,13 @@
       81%         { rotate: 2.5deg;  translate: 1% -1%; }
       86%         { rotate: 0deg;    translate: 0 0; }
     }
+    @keyframes pkHop  { 0%,100% { translate: 0 0; } 50% { translate: 0 -8%; } }
+    @keyframes pkDots { 0%,100% { opacity: 0.25; translate: 0 0; } 50% { opacity: 1; translate: 0 -25%; } }
+
+    /* Landing: the mascot sits in a 150px well, 104px, greeting once */
+    .landing-orb-wrap { z-index: 2; position: relative; width: 150px; height: 150px; }
+    .landing-orb-wrap .pk-blob { position: absolute; inset: 23px; --size: 104px; }
+    .landing-orb-wrap .pk-blob--greet { --t0: -3.98s; }
 
     /* ── Polka field ─────────────────────────────────────────────────────
        Poken, polka dot. Every dot launches from the middle and lands on a
@@ -127,7 +185,7 @@
     }
     @media (prefers-reduced-motion: reduce) {
       .landing-field i { animation: none; translate: var(--x) var(--y); scale: 1; opacity: var(--o); }
-      .l-blob, .l-blob * { animation: none !important; }
+      .pk-blob, .pk-blob * { animation: none !important; }
     }
 
     .landing-copy { position: relative; z-index: 2; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
@@ -1481,14 +1539,16 @@
       <i style="--x:27.0vmin;--y:40.4vmin;--d:1.10vmin;--c:#93C5FD;--delay:1.150s;--beat:4.0s;--o:0.70"></i>
     </div>
     <div class="landing-orb-wrap">
-      <div class="l-blob">
-        <div class="l-aura"></div><div class="l-aura"></div>
-        <div class="l-skin"></div>
-        <div class="l-blush"><b></b><b></b></div>
-        <div class="l-eyes">
-          <div class="l-eye"><span class="l-dot"></span><span class="l-arc"></span></div>
-          <div class="l-eye"><span class="l-dot"></span><span class="l-arc"></span></div>
+      <div class="pk-blob is-idle pk-blob--greet">
+        <div class="pk-blob__aura"></div><div class="pk-blob__aura"></div>
+        <div class="pk-blob__skin"></div>
+        <div class="pk-blob__blush"><b></b><b></b></div>
+        <div class="pk-blob__eyes">
+          <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
+          <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
         </div>
+        <span class="pk-blob__brow"></span>
+        <span class="pk-blob__bubble"><b></b><b></b><b></b></span>
       </div>
     </div>
     <div class="landing-copy">
