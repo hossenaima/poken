@@ -56,6 +56,8 @@ team's review are all on the PR.
 | App-wide auth 1/3: Supabase auth moved into its own module | [#41](https://github.com/poken-app/poken/issues/41) | [#42](https://github.com/poken-app/poken/pull/42) | |
 | App-wide auth 2/3: return to the screen sign-in started from | [#43](https://github.com/poken-app/poken/issues/43) | [#44](https://github.com/poken-app/poken/pull/44) | |
 | App-wide auth 3/3: one account control on every screen that wants one | [#45](https://github.com/poken-app/poken/issues/45) | [#46](https://github.com/poken-app/poken/pull/46) | |
+| In-app confirm dialog, and Delete all for Learn history | [#47](https://github.com/poken-app/poken/issues/47) | [#48](https://github.com/poken-app/poken/pull/48) | |
+| Teaching history: delete one or all, and a way back to the landing page | [#49](https://github.com/poken-app/poken/issues/49) | [#50](https://github.com/poken-app/poken/pull/50) | |
 
 ## Layout
 
