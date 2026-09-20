@@ -2169,9 +2169,9 @@ function showReflection(data) {
     h3.textContent = "";
     if (icon) { h3.appendChild(icon); h3.append(" " + label); } else { h3.textContent = label; }
   }
-  teachAgainBtn.innerHTML = `&#x1F393; ${escapeHtml(L("teachAgain", "Teach Again"))}`;
+  teachAgainBtn.textContent = L("teachAgain", "Teach Again");
   const backBtn = document.getElementById("backToLearnBtn");
-  if (backBtn) backBtn.innerHTML = `&#x1F4DA; ${escapeHtml(L("backToLearning", "Back to learning"))}`;
+  if (backBtn) backBtn.textContent = L("backToLearning", "Back to learning");
   changeTopicBtn.textContent = L("changeTopic", "Change topic");
 
   reflectionSummary.textContent = data.summary || "";

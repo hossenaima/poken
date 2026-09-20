@@ -210,7 +210,7 @@
     }
     @keyframes fdDrift {
       0%,100% { translate: 0 0;      scale: 1;         opacity: var(--o); }
-      30%     { translate: 5px -6px; scale: 1.05 0.95; opacity: calc(var(--o) * 0.7); }
+      30%     { translate: 5px -6px; scale: 1.05 0.95; opacity: calc(var(--o) * 0.85); }
       65%     { translate: -4px 4px; scale: 0.95 1.05; opacity: var(--o); }
     }
     @media (max-width: 64rem) { .float-field i:not(.fd-edge) { display: none; } }
@@ -1087,11 +1087,11 @@
     /* The whole mascot palette, warm through cool. Ink stays dark: white would fail
        against the yellow and green stops even though it passes over the coral one. */
     .reflection-btn.primary {
-      background: linear-gradient(100deg, #FFCB45 0%, #A7C878 22%, #93C5FD 44%, #C4B5FD 64%, #FF3D91 84%, #FF7355 100%);
+      background: linear-gradient(100deg, #FFE7B0 0%, #D5E7BE 22%, #CFE3FC 44%, #E2DAFE 64%, #FFC2DD 84%, #FFC5B6 100%);
       color: #2A2118; border: 0;
       font-weight: 800; font-size: 1.15rem; padding: 1rem 3rem;
       box-shadow: 0 4px 20px rgba(42, 33, 24, 0.14), inset 0 1px 0 rgba(255,255,255,0.45);
-      display: flex; align-items: center; gap: 0.5rem;
+      display: inline-flex; align-items: center; justify-content: center;
     }
     .reflection-btn.primary:hover {
       /* keep the gradient — overriding background here would flatten it back to one colour */
@@ -1567,20 +1567,22 @@
   <!-- LEARN (Phase 1) -->
   <div id="learn-screen">
     <div class="float-field" aria-hidden="true">
-      <i class="fd-edge" style="--x:1.5%;--y:12vh;--d:1.42vmin;--c:#FFCB45;--beat:13.0s;--delay:-11.27s;--o:0.48"></i>
-      <i class="fd-edge" style="--x:2.2%;--y:46vh;--d:1.38vmin;--c:#93C5FD;--beat:8.5s;--delay:-7.44s;--o:0.59"></i>
-      <i class="fd-edge" style="--x:1.8%;--y:82vh;--d:1.11vmin;--c:#FDA4AF;--beat:11.5s;--delay:-9.22s;--o:0.51"></i>
-      <i class="fd-edge" style="--x:97.4%;--y:20vh;--d:1.07vmin;--c:#FF7355;--beat:8.5s;--delay:-2.66s;--o:0.51"></i>
-      <i class="fd-edge" style="--x:97.8%;--y:58vh;--d:0.90vmin;--c:#A7C878;--beat:13.0s;--delay:-0.58s;--o:0.59"></i>
-      <i class="fd-edge" style="--x:97.2%;--y:90vh;--d:1.04vmin;--c:#C4B5FD;--beat:8.5s;--delay:-8.1s;--o:0.5"></i>
-      <i style="--x:5.8%;--y:7vh;--d:1.72vmin;--c:#FF3D91;--beat:11.5s;--delay:-0.0s;--o:0.6"></i>
-      <i style="--x:8.4%;--y:29vh;--d:2.43vmin;--c:#FFCB45;--beat:8.5s;--delay:-4.82s;--o:0.55"></i>
-      <i style="--x:6.1%;--y:63vh;--d:2.26vmin;--c:#93C5FD;--beat:10.0s;--delay:-0.43s;--o:0.42"></i>
-      <i style="--x:9.0%;--y:93vh;--d:2.41vmin;--c:#FDA4AF;--beat:7.0s;--delay:-2.77s;--o:0.52"></i>
-      <i style="--x:91.6%;--y:9vh;--d:2.26vmin;--c:#FF7355;--beat:8.5s;--delay:-5.93s;--o:0.53"></i>
-      <i style="--x:94.3%;--y:38vh;--d:2.34vmin;--c:#A7C878;--beat:11.5s;--delay:-5.32s;--o:0.49"></i>
-      <i style="--x:92.1%;--y:72vh;--d:1.52vmin;--c:#C4B5FD;--beat:8.5s;--delay:-7.78s;--o:0.43"></i>
-      <i style="--x:4.3%;--y:38vh;--d:2.41vmin;--c:#FF3D91;--beat:8.5s;--delay:-4.01s;--o:0.45"></i>
+      <i class="fd-edge" style="--x:4.5%;--y:9vh;--d:3.32vmin;--c:#FFCB45;--beat:8.5s;--delay:-1.23s;--o:0.76"></i>
+      <i class="fd-edge" style="--x:7.0%;--y:35vh;--d:3.11vmin;--c:#93C5FD;--beat:10.0s;--delay:-1.18s;--o:0.91"></i>
+      <i class="fd-edge" style="--x:4.1%;--y:66vh;--d:2.75vmin;--c:#FDA4AF;--beat:11.5s;--delay:-8.66s;--o:0.87"></i>
+      <i class="fd-edge" style="--x:6.8%;--y:91vh;--d:3.21vmin;--c:#FF7355;--beat:13.0s;--delay:-12.02s;--o:0.80"></i>
+      <i style="--x:14.4%;--y:2vh;--d:2.23vmin;--c:#A7C878;--beat:7.0s;--delay:-0.36s;--o:0.88"></i>
+      <i style="--x:14.3%;--y:34vh;--d:3.56vmin;--c:#C4B5FD;--beat:8.5s;--delay:-4.47s;--o:0.90"></i>
+      <i style="--x:13.6%;--y:66vh;--d:2.97vmin;--c:#FF3D91;--beat:10.0s;--delay:-6.66s;--o:0.82"></i>
+      <i style="--x:13.6%;--y:92vh;--d:3.50vmin;--c:#FFCB45;--beat:11.5s;--delay:-10.29s;--o:0.83"></i>
+      <i class="fd-edge" style="--x:95.7%;--y:3vh;--d:2.46vmin;--c:#93C5FD;--beat:13.0s;--delay:-10.96s;--o:0.95"></i>
+      <i class="fd-edge" style="--x:92.5%;--y:34vh;--d:3.45vmin;--c:#FDA4AF;--beat:7.0s;--delay:-3.51s;--o:0.94"></i>
+      <i class="fd-edge" style="--x:95.9%;--y:64vh;--d:3.36vmin;--c:#FF7355;--beat:8.5s;--delay:-2.70s;--o:0.88"></i>
+      <i class="fd-edge" style="--x:94.4%;--y:92vh;--d:3.38vmin;--c:#A7C878;--beat:10.0s;--delay:-5.84s;--o:0.85"></i>
+      <i style="--x:85.2%;--y:5vh;--d:3.24vmin;--c:#C4B5FD;--beat:11.5s;--delay:-7.55s;--o:0.83"></i>
+      <i style="--x:87.2%;--y:36vh;--d:2.32vmin;--c:#FF3D91;--beat:13.0s;--delay:-1.64s;--o:0.88"></i>
+      <i style="--x:86.0%;--y:65vh;--d:2.72vmin;--c:#FFCB45;--beat:7.0s;--delay:-3.30s;--o:0.90"></i>
+      <i style="--x:86.9%;--y:94vh;--d:3.11vmin;--c:#93C5FD;--beat:8.5s;--delay:-2.09s;--o:0.78"></i>
     </div>
     <div class="poken-account-corner" data-poken-account="learn"></div>
     <div class="learn-shell">
@@ -1635,20 +1637,22 @@
   <!-- OPEN QUESTIONS -->
   <div id="questions-screen">
     <div class="float-field" aria-hidden="true">
-      <i class="fd-edge" style="--x:1.5%;--y:15vh;--d:1.08vmin;--c:#FFCB45;--beat:7.0s;--delay:-2.02s;--o:0.55"></i>
-      <i class="fd-edge" style="--x:2.2%;--y:49vh;--d:1.08vmin;--c:#93C5FD;--beat:10.0s;--delay:-3.2s;--o:0.49"></i>
-      <i class="fd-edge" style="--x:1.8%;--y:85vh;--d:0.97vmin;--c:#FDA4AF;--beat:13.0s;--delay:-11.63s;--o:0.54"></i>
-      <i class="fd-edge" style="--x:97.4%;--y:23vh;--d:1.11vmin;--c:#FF7355;--beat:8.5s;--delay:-5.44s;--o:0.48"></i>
-      <i class="fd-edge" style="--x:97.8%;--y:61vh;--d:1.43vmin;--c:#A7C878;--beat:7.0s;--delay:-4.16s;--o:0.46"></i>
-      <i class="fd-edge" style="--x:97.2%;--y:90vh;--d:1.27vmin;--c:#C4B5FD;--beat:10.0s;--delay:-2.89s;--o:0.45"></i>
-      <i style="--x:5.8%;--y:10vh;--d:2.24vmin;--c:#FF3D91;--beat:13.0s;--delay:-8.09s;--o:0.53"></i>
-      <i style="--x:8.4%;--y:32vh;--d:2.22vmin;--c:#FFCB45;--beat:10.0s;--delay:-4.79s;--o:0.49"></i>
-      <i style="--x:6.1%;--y:66vh;--d:2.44vmin;--c:#93C5FD;--beat:7.0s;--delay:-4.92s;--o:0.58"></i>
-      <i style="--x:9.0%;--y:93vh;--d:1.63vmin;--c:#FDA4AF;--beat:11.5s;--delay:-5.64s;--o:0.6"></i>
-      <i style="--x:91.6%;--y:12vh;--d:2.18vmin;--c:#FF7355;--beat:13.0s;--delay:-5.79s;--o:0.59"></i>
-      <i style="--x:94.3%;--y:41vh;--d:1.57vmin;--c:#A7C878;--beat:10.0s;--delay:-7.5s;--o:0.47"></i>
-      <i style="--x:92.1%;--y:75vh;--d:2.07vmin;--c:#C4B5FD;--beat:11.5s;--delay:-2.24s;--o:0.53"></i>
-      <i style="--x:4.3%;--y:41vh;--d:1.62vmin;--c:#FF3D91;--beat:8.5s;--delay:-6.84s;--o:0.54"></i>
+      <i class="fd-edge" style="--x:7.8%;--y:9vh;--d:2.28vmin;--c:#FFCB45;--beat:8.5s;--delay:-6.90s;--o:0.77"></i>
+      <i class="fd-edge" style="--x:6.9%;--y:37vh;--d:3.40vmin;--c:#93C5FD;--beat:10.0s;--delay:-2.29s;--o:0.80"></i>
+      <i class="fd-edge" style="--x:4.1%;--y:65vh;--d:2.42vmin;--c:#FDA4AF;--beat:11.5s;--delay:-4.59s;--o:0.84"></i>
+      <i class="fd-edge" style="--x:6.9%;--y:93vh;--d:3.53vmin;--c:#FF7355;--beat:13.0s;--delay:-5.82s;--o:0.86"></i>
+      <i style="--x:10.6%;--y:2vh;--d:3.42vmin;--c:#A7C878;--beat:7.0s;--delay:-6.26s;--o:0.82"></i>
+      <i style="--x:14.4%;--y:37vh;--d:3.45vmin;--c:#C4B5FD;--beat:8.5s;--delay:-4.73s;--o:0.86"></i>
+      <i style="--x:10.4%;--y:59vh;--d:2.45vmin;--c:#FF3D91;--beat:10.0s;--delay:-5.10s;--o:0.78"></i>
+      <i style="--x:11.2%;--y:96vh;--d:3.14vmin;--c:#FFCB45;--beat:11.5s;--delay:-10.04s;--o:0.79"></i>
+      <i class="fd-edge" style="--x:95.2%;--y:8vh;--d:2.94vmin;--c:#93C5FD;--beat:13.0s;--delay:-4.82s;--o:0.93"></i>
+      <i class="fd-edge" style="--x:94.4%;--y:34vh;--d:3.57vmin;--c:#FDA4AF;--beat:7.0s;--delay:-1.33s;--o:0.94"></i>
+      <i class="fd-edge" style="--x:95.0%;--y:65vh;--d:3.23vmin;--c:#FF7355;--beat:8.5s;--delay:-2.27s;--o:0.88"></i>
+      <i class="fd-edge" style="--x:93.1%;--y:92vh;--d:2.90vmin;--c:#A7C878;--beat:10.0s;--delay:-3.63s;--o:0.92"></i>
+      <i style="--x:90.3%;--y:9vh;--d:2.69vmin;--c:#C4B5FD;--beat:11.5s;--delay:-6.38s;--o:0.90"></i>
+      <i style="--x:87.7%;--y:34vh;--d:3.52vmin;--c:#FF3D91;--beat:13.0s;--delay:-10.65s;--o:0.91"></i>
+      <i style="--x:90.3%;--y:63vh;--d:3.28vmin;--c:#FFCB45;--beat:7.0s;--delay:-2.24s;--o:0.85"></i>
+      <i style="--x:89.8%;--y:96vh;--d:2.99vmin;--c:#93C5FD;--beat:8.5s;--delay:-5.16s;--o:0.85"></i>
     </div>
     <div class="poken-account-corner" data-poken-account="questions"></div>
     <div class="q-shell">
@@ -1666,19 +1670,22 @@
   <!-- SETUP (Command Center) -->
   <div id="setup-screen">
     <div class="float-field" aria-hidden="true">
-      <i class="fd-edge" style="--x:1.0%;--y:9vh;--d:1.43vmin;--c:#FFCB45;--beat:11.5s;--delay:-8.49s;--o:0.47"></i>
-      <i class="fd-edge" style="--x:1.6%;--y:31vh;--d:1.06vmin;--c:#93C5FD;--beat:13.0s;--delay:-5.01s;--o:0.51"></i>
-      <i class="fd-edge" style="--x:1.1%;--y:54vh;--d:1.26vmin;--c:#FDA4AF;--beat:7.0s;--delay:-5.5s;--o:0.6"></i>
-      <i class="fd-edge" style="--x:1.7%;--y:76vh;--d:0.99vmin;--c:#FF7355;--beat:7.0s;--delay:-0.91s;--o:0.49"></i>
-      <i class="fd-edge" style="--x:1.2%;--y:94vh;--d:1.05vmin;--c:#A7C878;--beat:11.5s;--delay:-2.42s;--o:0.58"></i>
-      <i class="fd-edge" style="--x:97.8%;--y:14vh;--d:1.36vmin;--c:#C4B5FD;--beat:7.0s;--delay:-1.18s;--o:0.46"></i>
-      <i class="fd-edge" style="--x:98.2%;--y:41vh;--d:1.30vmin;--c:#FF3D91;--beat:7.0s;--delay:-4.71s;--o:0.59"></i>
-      <i class="fd-edge" style="--x:97.6%;--y:64vh;--d:1.46vmin;--c:#FFCB45;--beat:10.0s;--delay:-8.75s;--o:0.49"></i>
-      <i class="fd-edge" style="--x:98.3%;--y:86vh;--d:1.22vmin;--c:#93C5FD;--beat:13.0s;--delay:-4.63s;--o:0.45"></i>
-      <i style="--x:2.3%;--y:20vh;--d:1.62vmin;--c:#FDA4AF;--beat:13.0s;--delay:-10.68s;--o:0.52"></i>
-      <i style="--x:2.4%;--y:68vh;--d:2.42vmin;--c:#FF7355;--beat:11.5s;--delay:-0.78s;--o:0.46"></i>
-      <i style="--x:96.9%;--y:28vh;--d:1.43vmin;--c:#A7C878;--beat:7.0s;--delay:-4.83s;--o:0.56"></i>
-      <i style="--x:97.0%;--y:76vh;--d:2.12vmin;--c:#C4B5FD;--beat:11.5s;--delay:-4.7s;--o:0.51"></i>
+      <i class="fd-edge" style="--x:5.0%;--y:7vh;--d:2.38vmin;--c:#FFCB45;--beat:8.5s;--delay:-4.05s;--o:0.93"></i>
+      <i class="fd-edge" style="--x:6.3%;--y:36vh;--d:2.22vmin;--c:#93C5FD;--beat:10.0s;--delay:-2.74s;--o:0.92"></i>
+      <i class="fd-edge" style="--x:4.9%;--y:65vh;--d:2.86vmin;--c:#FDA4AF;--beat:11.5s;--delay:-5.49s;--o:0.92"></i>
+      <i class="fd-edge" style="--x:6.6%;--y:90vh;--d:2.52vmin;--c:#FF7355;--beat:13.0s;--delay:-11.78s;--o:0.78"></i>
+      <i style="--x:11.3%;--y:2vh;--d:3.14vmin;--c:#A7C878;--beat:7.0s;--delay:-5.15s;--o:0.76"></i>
+      <i style="--x:12.5%;--y:35vh;--d:3.29vmin;--c:#C4B5FD;--beat:8.5s;--delay:-2.43s;--o:0.91"></i>
+      <i style="--x:12.6%;--y:65vh;--d:3.20vmin;--c:#FF3D91;--beat:10.0s;--delay:-4.01s;--o:0.93"></i>
+      <i style="--x:13.8%;--y:95vh;--d:3.55vmin;--c:#FFCB45;--beat:11.5s;--delay:-4.28s;--o:0.78"></i>
+      <i class="fd-edge" style="--x:92.1%;--y:6vh;--d:2.50vmin;--c:#93C5FD;--beat:13.0s;--delay:-5.71s;--o:0.94"></i>
+      <i class="fd-edge" style="--x:94.5%;--y:34vh;--d:2.79vmin;--c:#FDA4AF;--beat:7.0s;--delay:-3.97s;--o:0.92"></i>
+      <i class="fd-edge" style="--x:94.1%;--y:63vh;--d:3.02vmin;--c:#FF7355;--beat:8.5s;--delay:-5.69s;--o:0.93"></i>
+      <i class="fd-edge" style="--x:95.7%;--y:95vh;--d:2.59vmin;--c:#A7C878;--beat:10.0s;--delay:-6.84s;--o:0.87"></i>
+      <i style="--x:89.2%;--y:7vh;--d:3.55vmin;--c:#C4B5FD;--beat:11.5s;--delay:-6.50s;--o:0.93"></i>
+      <i style="--x:89.3%;--y:34vh;--d:3.09vmin;--c:#FF3D91;--beat:13.0s;--delay:-3.61s;--o:0.95"></i>
+      <i style="--x:85.7%;--y:66vh;--d:3.40vmin;--c:#FFCB45;--beat:7.0s;--delay:-0.87s;--o:0.95"></i>
+      <i style="--x:89.8%;--y:94vh;--d:3.46vmin;--c:#93C5FD;--beat:8.5s;--delay:-3.67s;--o:0.75"></i>
     </div>
     <div class="poken-account-corner" data-poken-account="setup"></div>
     <canvas id="ambientCanvas"></canvas>
@@ -2087,8 +2094,8 @@
       </div>
 
       <div class="reflection-actions">
-        <button class="reflection-btn primary" id="teachAgainBtn" type="button">&#x1F393; Teach Again</button>
-        <button class="reflection-btn" id="backToLearnBtn" type="button">&#x1F4DA; Back to learning</button>
+        <button class="reflection-btn primary" id="teachAgainBtn" type="button">Teach Again</button>
+        <button class="reflection-btn" id="backToLearnBtn" type="button">Back to learning</button>
         <button class="reflection-btn" id="changeTopicBtn" type="button">Change topic</button>
       </div>
     </div>
