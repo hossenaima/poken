@@ -1,10 +1,11 @@
 /**
  * Extract plain text from PDF, PPTX, text files; optional image OCR via Gemini.
  */
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import JSZip from 'jszip';
-// pdf-parse is imported lazily: its pdfjs-dist dependency throws at import time when
-// the optional native @napi-rs/canvas is absent (no DOMMatrix). Gemini vision is the primary
-// PDF path; this text extraction is only the fallback, so it must never take the process down.
+// pdf-parse is never imported into the server: it runs in its own process (pdf-text-worker.mjs),
+// so neither its memory nor a crash on a bad PDF can take the server down. See pdfTextLayer.
 
 const MAX_FILE_BYTES = 12 * 1024 * 1024; // 12 MB
 const MAX_EXTRACT_CHARS = 120_000;
@@ -15,17 +16,40 @@ function truncate(s: string): string {
   return t.slice(0, MAX_EXTRACT_CHARS) + '\n\n[… truncated …]';
 }
 
-/** The PDF's own embedded text and its page count, read locally. Throws if the file won't parse. */
-export async function pdfTextLayer(buf: Buffer): Promise<{ text: string; pages: number }> {
-  // pdf-parse v2+ uses the PDFParse class (the default export is no longer a function)
-  const { PDFParse } = await import('pdf-parse');
-  const parser = new PDFParse({ data: new Uint8Array(buf) });
-  try {
-    const r = await parser.getText();
-    return { text: r?.text ?? '', pages: r?.total ?? 0 };
-  } finally {
-    await parser.destroy().catch(() => {});
-  }
+const PDF_WORKER = fileURLToPath(new URL('./pdf-text-worker.mjs', import.meta.url));
+const PDF_WORKER_TIMEOUT_MS = 30_000;
+
+/**
+ * The PDF's own embedded text and its page count, read locally. Rejects if the file won't parse.
+ * Runs in a separate plain-node process (server/pdf-text-worker.mjs), never inside the server:
+ * under tsx, pdfjs used ~510 MB for an 8-page handout and Cloud Run killed the container. Plain
+ * node needs ~75 MB, freed when the child exits. The heap cap and timeout mean a pathological PDF
+ * kills only the child, and the caller falls back to vision.
+ */
+export function pdfTextLayer(buf: Buffer): Promise<{ text: string; pages: number }> {
+  return new Promise((resolve, reject) => {
+    // spawn, not fork: nothing of the parent's tsx loader flags is inherited.
+    const child = spawn(process.execPath, ['--max-old-space-size=256', PDF_WORKER], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, NODE_OPTIONS: '' },
+    });
+    const out: Buffer[] = [];
+    const err: Buffer[] = [];
+    child.stdout.on('data', (d: Buffer) => out.push(d));
+    child.stderr.on('data', (d: Buffer) => err.push(d));
+    const timer = setTimeout(() => child.kill('SIGKILL'), PDF_WORKER_TIMEOUT_MS);
+    child.on('error', (e) => { clearTimeout(timer); reject(e); });
+    child.on('close', (code, signal) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        const why = Buffer.concat(err).toString().trim().split('\n').pop() || '';
+        return reject(new Error(`PDF text worker ${signal ? `killed (${signal})` : `exited ${code}`}${why ? `: ${why}` : ''}`));
+      }
+      try { resolve(JSON.parse(Buffer.concat(out).toString())); } catch (e) { reject(e); }
+    });
+    child.stdin.on('error', () => { /* the child can exit before reading all of it; 'close' reports why */ });
+    child.stdin.end(buf);
+  });
 }
 
 export async function extractFromBuffer(
