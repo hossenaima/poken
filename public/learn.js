@@ -30,6 +30,12 @@
   const fileInput  = document.getElementById("learnFile");
   const uploadEl   = document.getElementById("learnUploadLabel");
   const uploadText = document.getElementById("learnUploadText");
+  const tocEl       = document.getElementById("learnToc");
+  const tocList     = document.getElementById("learnTocList");
+  const followForm  = document.getElementById("learnFollowup");
+  const followInput = document.getElementById("learnFollowupInput");
+  const followBtn   = document.getElementById("learnFollowupBtn");
+  const topBtn      = document.getElementById("learnTopBtn");
 
   // Persistence is optional: learn-store.js defines window.pokenStore (never throws).
   // Saving needs a signed-in (Google) user; signed out, the tree lives in memory only.
@@ -58,6 +64,71 @@
     for (let n = node; n && n.parentId != null; n = byId(n.parentId)) out.unshift({ selection: n.label });
     return out;
   };
+  // Breadcrumb label: a multi-paragraph selection or a long question would make an unreadable
+  // trail. Also keeps labels inside the database's 400-char limit (a question's full text is saved separately).
+  const shorten = (s) => { const f = s.replace(/\s+/g, " "); return f.length > 90 ? `${f.slice(0, 90).trimEnd()}…` : f; };
+
+  // ── Contents, follow-up box, back to top ────────────────────────────────
+  // The contents are rebuilt from the page itself, so they always match what is on screen: every
+  // explanation by its label, nested as deep as it sits, and the ### sections inside each one.
+  // Coalesced to one rebuild per frame, since a streaming node re-renders on every chunk.
+  let tocQueued = false;
+  function queueToc() {
+    if (tocQueued) return;
+    tocQueued = true;
+    requestAnimationFrame(() => { tocQueued = false; renderToc(); });
+  }
+  function renderToc() {
+    const items = [];
+    for (const el of treeEl.querySelectorAll(".learn-node, .learn-node > h4.learn-block")) {
+      const isNode = el.classList.contains("learn-node");
+      const nodeEl = isNode ? el : el.parentElement;
+      let depth = 0;
+      for (let p = nodeEl.parentElement; p && p !== treeEl; p = p.parentElement) if (p.classList.contains("learn-node")) depth++;
+      const n = byId(nodeEl.dataset.nodeId);
+      if (!n) continue;
+      const text = isNode ? (n.parentId == null ? topic : n.label) : el.textContent.trim();
+      if (text) items.push({ el, n, isNode, depth: depth + (isNode ? 0 : 1), text });
+    }
+    tocList.replaceChildren(...items.map(({ el, n, isNode, depth, text }) => {
+      const li = document.createElement("li");
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = text;
+      b.title = text;
+      if (isNode) b.className = "toc-node";
+      b.style.setProperty("--depth", Math.min(depth, 4));
+      b.addEventListener("click", () => {
+        revealAncestors(el);
+        if (isNode && el.classList.contains("collapsed")) setFolded(n, false);
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      li.append(b);
+      return li;
+    }));
+    // The title alone is nothing to navigate; the list earns its space once there is a second entry.
+    tocEl.hidden = items.length < 2;
+    followForm.hidden = !nodes.some(n => n.parentId == null);
+  }
+
+  // A question about the topic as a whole, not about a highlight. It hangs under the root's last
+  // paragraph, after any deep-dives already there, so follow-ups read top to bottom in the order asked.
+  const FOLLOWUP_CONTEXT_CHARS = 5_500;   // the server keeps 6,000 of parentText
+  followForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const question = followInput.value.trim();
+    const root = nodes.find(n => n.parentId == null);
+    if (!question || !root || streamingCount) return;
+    followInput.value = "";
+    const node = createNode(root.id, shorten(question), Math.max(0, blocksOf(root.text).length - 1), question, { kind: "ask" });
+    node.el.scrollIntoView({ behavior: "smooth", block: "start" });
+    explain(node, { topic, language: langEl.value, chain: [], question, parentText: compileNotes(FOLLOWUP_CONTEXT_CHARS) });
+  });
+
+  const syncTopBtn = () => { topBtn.hidden = window.scrollY < 600; };
+  window.addEventListener("scroll", syncTopBtn, { passive: true });
+  topBtn.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+
   // Blocks are chunks separated by blank lines, each a paragraph, a "###" subhead or a list.
   // The prompt allows exactly that plus **bold**; everything else the model may emit anyway
   // (links, code, tables, blockquotes, emoji, [1]-style citations, *emphasis*) is stripped
@@ -116,7 +187,7 @@
     return { text: out, bold: remap(bold), italic: remap(italic) };
   }
 
-  function blocksOf(text) {
+  function proseBlocksOf(text) {
     const blocks = [];
     for (const chunk of text.split(/\n\s*\n/)) {
       let para = [], list = null, quote = [], table = null;
@@ -170,6 +241,79 @@
     }
     return blocks;
   }
+  // ── Code and math ─────────────────────────────────────────────────────────
+  // Code fences and display math can hold blank lines, so they are cut out BEFORE the blank-line
+  // split in proseBlocksOf and become blocks of their own. The prose between them goes through
+  // proseBlocksOf unchanged, so text with neither splits exactly as it always has (saved trees
+  // address children by block index). Either may still be open mid-stream: what has arrived shows.
+  function blocksOf(text) {
+    const blocks = [];
+    let prose = [], code = null;
+    const flush = () => { if (prose.length) blocks.push(...proseWithMath(prose.join("\n"))); prose = []; };
+    for (const line of text.split("\n")) {
+      const f = LINE.fence.exec(line);
+      if (code) {
+        // A fence closes on a line of the same character, at least as long, with nothing after it.
+        if (f && line.trim() === f[1] && f[1][0] === code.fence[0] && f[1].length >= code.fence.length) {
+          blocks.push(codeBlock(code));
+          code = null;
+        } else code.lines.push(line);
+      } else if (f) {
+        flush();
+        code = { fence: f[1], lang: line.trim().slice(f[1].length).trim().split(/\s+/)[0], lines: [] };
+      } else prose.push(line);
+    }
+    flush();
+    if (code) blocks.push(codeBlock(code));
+    return blocks;
+  }
+  const codeBlock = ({ lang, lines }) => ({ kind: "code", lang, text: lines.join("\n").replace(/\s+$/, "") });
+
+  // $$…$$ and \[…\] are display math wherever the model put them. \(…\) and $…$ are inline: a lone
+  // symbol ($x$, $v_0$, $\theta$) stays in its sentence as text, anything bigger is pulled out into
+  // a block of its own. The $…$ rule is pandoc's (no space just inside either delimiter, no digit
+  // right after the closing one), so "costs $5 and $10" is left alone as prices.
+  // Groups: 1–2 $$ body/closer, 3–4 \[ \], 5–6 \( \), 7 inline $. An empty closer means still open.
+  const MATH = /\$\$([\s\S]*?)(\$\$|$)|\\\[([\s\S]*?)(\\\]|$)|\\\(([\s\S]*?)(\\\)|$)|(?<![\\$\w])\$(?=[^\s$])([^$\n]*?[^\s$\\])\$(?![\d$])/g;
+  const GREEK = Object.fromEntries(("alpha α beta β gamma γ delta δ epsilon ε theta θ lambda λ mu μ pi π rho ρ sigma σ tau τ " +
+    "phi φ omega ω Gamma Γ Delta Δ Theta Θ Lambda Λ Pi Π Sigma Σ Phi Φ Omega Ω").match(/\S+ \S+/g).map(p => p.split(" ")));
+  const SUP = "⁰¹²³⁴⁵⁶⁷⁸⁹", SUB = "₀₁₂₃₄₅₆₇₈₉";
+  function inlineSymbol(tex) {
+    const t = tex.trim();
+    if (/^\d+(\.\d+)?$/.test(t)) return t;
+    const g = /^\\([A-Za-z]+)$/.exec(t);
+    if (g) return GREEK[g[1]] ?? null;
+    const m = /^([A-Za-z]{1,2})(?:([_^])\{?(\d{1,2})\}?)?$/.exec(t);
+    if (!m) return null;
+    return m[1] + (m[2] ? [...m[3]].map(d => (m[2] === "^" ? SUP : SUB)[d]).join("") : "");
+  }
+  function proseWithMath(text) {
+    const out = [];
+    let carry = "", last = 0;
+    for (const m of text.matchAll(MATH)) {
+      const inline = m[7] ?? (m[5] != null && m[6] ? m[5] : null);
+      const symbol = inline != null ? inlineSymbol(inline) : null;
+      const before = carry + text.slice(last, m.index);
+      last = m.index + m[0].length;
+      if (symbol != null) { carry = before + symbol; continue; }
+      carry = "";
+      out.push(...proseBlocksOf(before));
+      const tex = (m[1] ?? m[3] ?? m[5] ?? m[7]).trim();
+      const open = (m[1] != null && !m[2]) || (m[3] != null && !m[4]) || (m[5] != null && !m[6]);
+      if (tex) out.push(mathBlock(tex, open));
+    }
+    out.push(...proseBlocksOf(carry + text.slice(last)));
+    return out;
+  }
+  // One equation per line, so a derivation or a system reads down the page rather than across it.
+  // A block using & alignment stays one aligned environment so its columns still line up.
+  function mathBlock(tex, open) {
+    const rows = tex.split(/\n|\\\\/).map(l => l.trim()).filter(Boolean);
+    const lines = /\\begin\{/.test(tex) ? [tex]
+      : /(^|[^\\])&/.test(tex) ? [`\\begin{aligned}${rows.join("\\\\")}\\end{aligned}`]
+      : rows;
+    return { kind: "math", text: tex, lines, open };
+  }
   const plainBlocksOf = (text) => blocksOf(text).map(b => b.text);
 
   function reset() {
@@ -179,6 +323,7 @@
     hideToolbar();
     teachBtn.disabled = true;
     updateBanner();
+    queueToc();
   }
 
   // ── Uploaded material ───────────────────────────────────────────────────
@@ -366,7 +511,7 @@
       // A table is the one block that can be wider than the column, so it is wrapped in a
       // scroller and the WRAPPER carries .learn-block — block indexing, drag-select and the
       // collapse rules all need the indexed element to be a direct child of the node.
-      const TAGS = { subhead: "h4", quote: "blockquote", table: "div" };
+      const TAGS = { subhead: "h4", quote: "blockquote", table: "div", math: "div", code: "pre" };
       const tag = TAGS[block.kind] || (block.kind === "list" ? (block.ordered ? "ol" : "ul") : "p");
       const p = document.createElement(tag);
       // Every block carries .learn-block whatever its tag: drag-select, block indexing and the
@@ -376,7 +521,17 @@
       if (block.kind === "table") p.classList.add("learn-table-wrap");
       p.dataset.nodeId = node.id;
       p.dataset.blockIdx = i;
-      if (block.kind === "table") {
+      if (block.kind === "math") {
+        p.classList.add("learn-math");
+        p.dataset.latex = block.text;   // what selection and context read, rather than rendered glyphs
+        renderMath(p, block);
+      } else if (block.kind === "code") {
+        p.classList.add("learn-code");
+        if (block.lang) p.dataset.lang = block.lang;
+        const code = document.createElement("code");
+        code.textContent = block.text;
+        p.append(code);
+      } else if (block.kind === "table") {
         const table = document.createElement("table");
         block.rows.forEach((cells, r) => {
           const tr = document.createElement("tr");
@@ -403,7 +558,31 @@
       for (const child of children.get(i) || []) node.el.appendChild(child);
     });
     if (node.suggestEl) node.el.appendChild(node.suggestEl);   // suggestions stay last
+    queueToc();
   }
+
+  // KaTeX builds its own escaped markup from the LaTeX, and with trust off (its default) commands
+  // like \href are refused, so model-written LaTeX cannot inject HTML. Each equation is rendered
+  // once and reused, because the whole node re-renders on every streamed chunk.
+  const mathCache = new Map();
+  function renderMath(el, block) {
+    for (const tex of block.lines) {
+      const eq = document.createElement("div");
+      eq.className = "learn-eq";
+      if (block.open || !window.katex) {
+        eq.classList.add("learn-eq-src");   // still streaming, or KaTeX didn't load: show the source
+        eq.textContent = tex;
+      } else {
+        if (!mathCache.has(tex)) mathCache.set(tex, window.katex.renderToString(tex, { displayMode: true, throwOnError: false }));
+        eq.innerHTML = mathCache.get(tex);
+      }
+      el.append(eq);
+    }
+  }
+  // KaTeX loads deferred so a slow CDN never holds up the app; anything drawn before it arrived
+  // (a saved topic restored at page load) is redrawn once it does.
+  document.getElementById("katexJs")?.addEventListener("load", () => nodes.forEach(n => n.text && renderBlocks(n)), { once: true });
+
 
   // Append text[from, to) to el, wrapping bold ranges in <strong> and italic ranges in <em>.
   // The two sets can overlap (***both***), so cut at every boundary instead of walking one set.
@@ -574,6 +753,7 @@
         after.insertAdjacentElement("afterend", node.el);
       }
     }
+    queueToc();
     return node;
   }
 
@@ -637,6 +817,7 @@
 
   function setGoBusy(busy) {
     goBtn.disabled = busy;
+    followBtn.disabled = busy;
     goBtn.innerHTML = busy ? '<span class="learn-spinner"></span>Learning…' : "Learn";
   }
 
@@ -686,6 +867,7 @@
     // to the whole word. Not for Han characters — no spaces, so "the word" would be the sentence.
     const inWord = (c) => !!c && /[\p{L}\p{N}]/u.test(c) && !/\p{Script=Han}/u.test(c);
     const parts = blocks.map(b => {
+      if (b.dataset.latex != null) return b.dataset.latex;   // an equation is taken whole, as LaTeX
       const full = b.textContent;
       let s = b.contains(range.startContainer) ? offsetIn(b, range.startContainer, range.startOffset) : 0;
       let e = b.contains(range.endContainer) ? offsetIn(b, range.endContainer, range.endOffset) : full.length;
@@ -699,7 +881,7 @@
       node,
       blockIdx: Number(used[used.length - 1].dataset.blockIdx),
       text: parts.filter(Boolean).join("\n\n"),
-      context: used.map(b => b.textContent).join("\n\n"),
+      context: used.map(b => b.dataset.latex ?? b.textContent).join("\n\n"),
     };
   }
 
@@ -710,9 +892,6 @@
   function spawn({ nodeId, blockIdx, text, context }, mode, question = "", parentTextOverride = "") {
     const parent = byId(nodeId);
     const parentText = parentTextOverride || context || plainBlocksOf(parent.text)[blockIdx] || "";
-    // Breadcrumb label: a multi-paragraph selection would make an unreadable trail. Also keeps
-    // labels inside the database's 400-char limit (a question's full text is saved separately).
-    const shorten = (s) => { const f = s.replace(/\s+/g, " "); return f.length > 90 ? `${f.slice(0, 90).trimEnd()}…` : f; };
     const short = shorten(text);
     const label = mode === "ask" ? shorten(question)
       : mode === "simplify" ? `In simpler words: ${short}`

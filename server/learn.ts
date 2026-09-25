@@ -13,7 +13,7 @@ import { streamSSE } from 'hono/streaming';
 import { Modality, Type } from '@google/genai';
 import type { GoogleGenAI } from '@google/genai';
 import { extractFromBuffer } from './materials-extract.js';
-import { analyzePdfWithVision, analyzeImageWithVision, formatForContext } from './materials-vision.js';
+import { readPdf, analyzeImageWithVision, formatForContext } from './materials-vision.js';
 
 const LEARN_MODEL = 'gemini-2.5-flash';
 // Nano Banana 2. Compared on the same Calvin-cycle prompt (2026-09-19): 2.5-flash-image garbled
@@ -139,11 +139,30 @@ Format — structure the page so it can be *scanned*, not just read. An unbroken
 - **Tables** when you are comparing two or more things across two or more dimensions — that is exactly what a table is for, and it beats three paragraphs of "whereas". Pipe syntax with a header row: \`| Thing | Dimension |\` then \`|---|---|\` then the rows. Keep cells to a few words. Three to five rows. Never a table for a single thing's properties: that is a list.
 - **Blockquotes** ("> " on its own line) only for a genuine quotation, definition or principle worth pausing on — it renders centred and set apart, so it must earn that weight. At most one per explanation, and often none.
 
-Never use every device in one explanation; reach for a device only where it genuinely fits the content, and let the rest be clean prose. No emoji, no code fences, no links.
+- **Math**: every equation, formula or derivation step goes in its own display block — \`$$\` on a line by itself, the LaTeX, then \`$$\` on a line by itself — never inside a sentence. One equation per line inside the block; a derivation is several lines, one step each. Introduce the block in the sentence before it and explain it in the sentence after. In prose, name a single symbol in plain text or Unicode (x, v₀, Δt, θ) — no \`$\` delimiters mid-sentence.
+- **Code**: only when the topic is genuinely about programming or a precise procedure. Put it in a fenced block with its language — \`\`\`python\` on its own line, the code, then \`\`\`\` on its own line — never inline in a sentence. Keep each block short and focused on one idea, and explain it in prose around it.
+
+Never use every device in one explanation; reach for a device only where it genuinely fits the content, and let the rest be clean prose. No emoji, no links.
 - No preamble and no closing summary line.`;
 }
 
 function userPrompt(topic: string, chain: ChainLink[], selection: string, parentText: string, question: string, simplify: boolean): string {
+  // A follow-up typed into the box under the page: about the topic, not about a highlight.
+  if (question && !chain.length) {
+    return `The learner is studying "${topic}".${parentText ? `
+
+What has been explained to them so far (for context — do not restate it):
+"""
+${parentText}
+"""` : ''}
+
+They asked this follow-up question:
+"""
+${question}
+"""
+
+Answer it directly: the first sentence is the answer, then explain why. Connect it to what they have already covered where that genuinely helps, but do not re-summarize it. Keep it to what the question needs (2–5 paragraphs). If it drifts from the topic, answer it anyway, briefly.`;
+  }
   if (!chain.length) {
     return `Explain "${topic}" so that someone could teach it to a curious student.`;
   }
@@ -185,7 +204,8 @@ function clean(s: unknown, max: number): string {
 
 export function registerLearnRoutes(app: Hono, ai: GoogleGenAI, normalizeLanguage: (raw: string | null) => string): void {
   // POST { topic, language, chain?: [{selection}], selection?, parentText?, question?, mode? }
-  // question: "Ask" on a highlight — answers it instead of a generic deep-dive.
+  // question: "Ask" on a highlight — answers it instead of a generic deep-dive. With an empty
+  // chain it is a follow-up about the whole topic, and parentText carries what was covered.
   // mode: 'simplify' re-explains the highlight in plain words.
   // → SSE: data: {"text": "..."} chunks, then data: {"done": true}
   app.post('/api/learn/explain', async (c) => {
@@ -207,7 +227,8 @@ export function registerLearnRoutes(app: Hono, ai: GoogleGenAI, normalizeLanguag
     // client holds it and sends it back, so the server stays stateless like the rest of Learn.
     const material = typeof body?.material === 'string' ? body.material.trim().slice(0, MAX_MATERIAL_CHARS) : '';
     if (chain.length && !selection) return c.json({ error: 'selection required when chain is non-empty' }, 400);
-    if ((question || simplify) && !chain.length) return c.json({ error: 'question/simplify require a selection' }, 400);
+    // A question with no chain is a follow-up about the whole topic; simplify always needs a span.
+    if (simplify && !chain.length) return c.json({ error: 'simplify requires a selection' }, 400);
 
     return streamSSE(c, async (stream) => {
       try {
@@ -295,7 +316,7 @@ Style: clean flat-vector textbook illustration on a white background, simple sha
     try {
       let text = '';
       if (isPdf) {
-        text = formatForContext(await analyzePdfWithVision(ai, buf, name));
+        text = formatForContext(await readPdf(ai, buf, name));
       } else if (isImage) {
         text = formatForContext(await analyzeImageWithVision(ai, buf, mimeType, name));
       } else {

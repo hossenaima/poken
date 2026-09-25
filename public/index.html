@@ -7,6 +7,10 @@
   <link rel="icon" type="image/svg+xml" href="/logo.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <!-- KaTeX renders Learn Mode's equations. Pinned by integrity hash; the stylesheet doesn't block
+       first paint and the script is deferred, so a slow CDN never holds up the rest of the app. -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.9/dist/katex.min.css" integrity="sha384-lPx0C4zIUZLpveABMwOFcFeGZwsvKBJfhJ85FN1PYOV7xApBcFMhcAEMVKF8loOI" crossorigin="anonymous" media="print" onload="this.media='all'" />
+  <script id="katexJs" defer src="https://cdn.jsdelivr.net/npm/katex@0.18.9/dist/katex.min.js" integrity="sha384-19KE2cFb3U+RUWmyhBz7aLOGDG8WrRC6hE3oY/HTZZlAAVWYTdmvLC//+TIV3zUx" crossorigin="anonymous"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1255,15 +1259,16 @@
     }
     .session-persona:focus { outline: none; border-color: #9CA3AF; }
     #learn-screen { display: none; min-height: 100vh; position: relative; isolation: isolate; }
-    .learn-shell { max-width: 44rem; margin: 0 auto; padding: 2rem 1.25rem 6rem; }
-    .learn-layout { max-width: 44rem; margin: 0 auto; }
-    #learn-screen.with-media .learn-layout {
-      display: flex; gap: 1.5rem; align-items: flex-start;
-      max-width: 82rem;
+    .learn-shell { grid-column: 2; min-width: 0; width: 100%; max-width: 44rem; margin: 0 auto; padding: 2rem 1.25rem 6rem; }
+    /* Three tracks: contents | the page | an opened upload. The page track is centred on its own,
+       so the contents appearing never shifts the text sideways. */
+    .learn-layout {
+      display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 44rem) minmax(0, 1fr);
+      column-gap: 1.5rem; align-items: start; padding: 0 1.5rem;
     }
-    #learn-screen.with-media .learn-shell { margin: 0; flex: 1 1 0; min-width: 0; }
+    #learn-screen.with-media .learn-layout { grid-template-columns: 14rem minmax(0, 44rem) 32rem; justify-content: center; }
     .learn-media {
-      flex: 0 0 32rem; position: sticky; top: 1rem;
+      grid-column: 3; position: sticky; top: 1rem;
       background: #fff; border: 1px solid var(--poken-border-solid);
       border-radius: 12px; overflow: hidden; margin-top: 2rem;
       display: flex; flex-direction: column; height: calc(100vh - 4rem);
@@ -1285,9 +1290,24 @@
     .learn-media-body { flex: 1; overflow: auto; }
     .learn-media-body > iframe, .learn-media-body > img { width: 100%; height: 100%; border: 0; display: block; }
     .learn-media-body > img { height: auto; object-fit: contain; }
+    @media (max-width: 88rem) {
+      /* An open upload outranks the contents: below this width they can't both sit beside the page
+         without squeezing the text, so the contents step aside while a file is open. */
+      #learn-screen.with-media .learn-toc { display: none; }
+      #learn-screen.with-media .learn-layout { grid-template-columns: minmax(0, 44rem) 32rem; }
+      #learn-screen.with-media .learn-shell { grid-column: 1; }
+      #learn-screen.with-media .learn-media { grid-column: 2; }
+    }
     @media (max-width: 78rem) {
-      #learn-screen.with-media .learn-layout { display: block; max-width: 44rem; }
-      .learn-media { position: static; height: auto; max-height: 60vh; flex: none; }
+      /* Too narrow for the page and an upload side by side: the upload drops under the page. */
+      #learn-screen.with-media .learn-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 44rem) minmax(0, 1fr); }
+      #learn-screen.with-media .learn-shell, #learn-screen.with-media .learn-media { grid-column: 2; }
+      .learn-media { position: static; height: auto; max-height: 60vh; margin: 0 1.25rem 2rem; }
+    }
+    @media (max-width: 75rem) { .learn-toc { display: none; } }   /* no margin left to hold it */
+    @media (max-width: 48rem) {
+      .learn-layout, #learn-screen.with-media .learn-layout { grid-template-columns: minmax(0, 1fr); column-gap: 0; padding: 0; }
+      .learn-shell, .learn-media, #learn-screen.with-media .learn-shell, #learn-screen.with-media .learn-media { grid-column: 1; }
     }
     .learn-view { flex: none; }
     .learn-view[hidden] { display: none; }
@@ -1394,6 +1414,73 @@
       border-bottom: 1px solid var(--poken-border-solid);
     }
     blockquote.learn-block em { font-style: normal; }   /* emphasis inside an italic block */
+
+    /* ── Learn: equations and code ─────────────────────────────── */
+    /* Each equation on its own centred line; a wide one scrolls rather than breaking the column. */
+    .learn-math { margin: 0.35rem 0 1.1rem; overflow-x: auto; overflow-y: hidden; }
+    .learn-eq { text-align: center; padding: 0.1rem 0; }
+    .learn-eq .katex-display { margin: 0.3rem 0; }
+    .learn-eq .katex { font-size: 1.1em; }
+    .learn-eq-src {   /* mid-stream, or KaTeX didn't load: the LaTeX itself */
+      text-align: left; white-space: pre-wrap; color: var(--poken-text-secondary);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.875rem;
+    }
+    pre.learn-code {
+      margin: 0.35rem 0 1.1rem; padding: 0.85rem 1rem; overflow-x: auto; white-space: pre; tab-size: 4;
+      background: #F7F6F2; border: 1px solid var(--poken-border-solid); border-radius: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8125rem; line-height: 1.6;
+    }
+    pre.learn-code[data-lang]::before {
+      content: attr(data-lang); display: block; margin: -0.2rem 0 0.45rem;
+      font-family: inherit; font-size: 0.66rem; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--poken-text-secondary);
+    }
+
+    /* ── Learn: contents, follow-up box, back to top ──────────── */
+    .learn-node, h4.learn-block { scroll-margin-top: 1rem; }
+    .learn-toc {
+      grid-column: 1; justify-self: end; width: 14rem; box-sizing: border-box;
+      position: sticky; top: 1.5rem; margin-top: 2rem; max-height: calc(100vh - 3rem); overflow-y: auto;
+      background: #fff; border: 1px solid var(--poken-border-solid); border-radius: 12px;
+      padding: 0.85rem 0.5rem 0.85rem 0.75rem;
+    }
+    .learn-toc[hidden], .learn-followup[hidden], .learn-top-btn[hidden] { display: none; }
+    .learn-toc-title {
+      margin: 0 0 0.4rem 0.35rem; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--poken-text-secondary);
+    }
+    .learn-toc-list { list-style: none; margin: 0; padding: 0; }
+    .learn-toc-list button {
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+      width: 100%; text-align: left; background: none; border: 0; cursor: pointer; border-radius: 6px;
+      font-family: inherit; font-size: 0.8125rem; line-height: 1.35; color: var(--poken-text-secondary);
+      padding: 0.28rem 0.35rem 0.28rem calc(0.35rem + var(--depth, 0) * 0.8rem);
+    }
+    .learn-toc-list button:hover { background: #F9FAFB; color: var(--poken-text); }
+    .learn-toc-list button.toc-node { font-weight: 600; color: var(--poken-text); }
+    /* Sticks to the bottom of the window while the page scrolls under it. */
+    .learn-followup {
+      position: sticky; bottom: 1rem; z-index: 5; margin-top: 1rem;
+      display: flex; gap: 0.5rem; align-items: center;
+      background: #fff; border: 1px solid var(--poken-border-solid); border-radius: 14px;
+      padding: 0.4rem 0.4rem 0.4rem 0.9rem; box-shadow: 0 6px 24px rgba(17, 24, 39, 0.08);
+    }
+    .learn-followup:focus-within { border-color: var(--poken-accent); }
+    .learn-followup input[type="text"] {
+      flex: 1; width: auto; min-width: 0; border: 0; border-radius: 0; background: none; padding: 0.45rem 0;
+      font-family: inherit; font-size: 0.9375rem; color: var(--poken-text);
+    }
+    .learn-followup input[type="text"]:focus { box-shadow: none; }
+    #learnFollowupBtn {
+      flex: none; font-family: inherit; font-size: 0.875rem; font-weight: 500; padding: 0.55rem 1rem; border: none;
+      border-radius: 10px; background: var(--poken-accent); color: #fff; cursor: pointer;
+    }
+    #learnFollowupBtn:disabled { opacity: 0.5; cursor: default; }
+    .learn-top-btn {
+      flex: none; width: 2.3rem; height: 2.3rem; border-radius: 10px; cursor: pointer; font-size: 1rem; line-height: 1;
+      background: #fff; border: 1px solid var(--poken-border-solid); color: var(--poken-text-secondary);
+    }
+    .learn-top-btn:hover { background: #F9FAFB; color: var(--poken-text); }
     /* The table scrolls inside its own block rather than pushing the column wide: on a phone a
        3-column comparison cannot fit, and a clipped last column is worse than a scrollbar. */
     .learn-table-wrap { overflow-x: auto; margin: 1.1rem 0; -webkit-overflow-scrolling: touch; }
@@ -1676,6 +1763,10 @@
     </div>
     <div class="poken-account-corner" data-poken-account="learn"></div>
     <div class="learn-layout">
+    <nav class="learn-toc" id="learnToc" aria-label="Contents" hidden>
+      <p class="learn-toc-title">Contents</p>
+      <ol class="learn-toc-list" id="learnTocList"></ol>
+    </nav>
     <div class="learn-shell">
       <header class="learn-top">
         <button class="learn-back" id="learnBackBtn" type="button">&larr; Back</button>
@@ -1712,6 +1803,11 @@
         <div class="learn-topics" id="learnTopics"></div>
         <div id="learnTree"></div>
       </div>
+      <form class="learn-followup" id="learnFollowup" hidden>
+        <input type="text" id="learnFollowupInput" placeholder="Ask anything else about this topic…" autocomplete="off" maxlength="600" aria-label="Ask a follow-up question" />
+        <button type="submit" id="learnFollowupBtn">Ask</button>
+        <button type="button" class="learn-top-btn" id="learnTopBtn" aria-label="Back to top" title="Back to top" hidden>&uarr;</button>
+      </form>
     </div>
     <aside class="learn-media" id="learnMedia" hidden>
       <div class="learn-media-bar">

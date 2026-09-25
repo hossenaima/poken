@@ -11,7 +11,7 @@ import { Converter } from 'opencc-js';
 import { registerLearnRoutes } from '../server/learn.js';
 import { extractFromBuffer } from '../server/materials-extract.js';
 import {
-  analyzePdfWithVision,
+  readPdf,
   analyzeImageWithVision,
   formatForContext,
 } from '../server/materials-vision.js';
@@ -781,7 +781,7 @@ function buildServer(): http.Server {
           return { content: formatted.slice(0, maxChars) };
         }
         if (isPdf) {
-          const pdfResult = await analyzePdfWithVision(ai, buf, name);
+          const pdfResult = await readPdf(ai, buf, name);
           const formatted = formatForContext(pdfResult);
           return { content: formatted.slice(0, maxChars) };
         }
