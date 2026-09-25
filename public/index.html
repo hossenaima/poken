@@ -1622,9 +1622,43 @@
       display: inline-block; width: 12px; height: 12px; vertical-align: -1px; margin-right: 0.4rem;
       border-color: rgba(255,255,255,0.35); border-top-color: #fff;
     }
+  
+    /* ── Desktop only ──────────────────────────────────────────────
+       Phones get one screen instead of the app. A phone is touch as the main pointer AND a
+       phone-sized screen in either orientation (under 600px wide, or under 500px tall when
+       turned sideways), so a tablet, a touchscreen laptop or a narrow desktop window is never
+       locked out. The app still loads underneath; it just isn't shown or reachable. */
+    #mobile-block { display: none; }
+    @media (pointer: coarse) and (max-width: 37.5rem), (pointer: coarse) and (max-height: 31.25rem) {
+      body > :not(#mobile-block) { display: none !important; }
+      #mobile-block {
+        display: flex; position: fixed; inset: 0; z-index: 2147483647;
+        flex-direction: column; align-items: center; justify-content: center; gap: 0.9rem;
+        padding: 2rem 1.75rem; text-align: center; background: #FAF9F5;
+      }
+      #mobile-block .pk-blob { --size: 96px; margin-bottom: 0.75rem; }
+      .mobile-block-title { margin: 0; font-size: 1.6rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.2; color: #2A2118; }
+      .mobile-block-sub { margin: 0; max-width: 20rem; font-size: 0.95rem; line-height: 1.5; color: #6B6255; }
+    }
   </style>
 </head>
 <body>
+  <!-- Shown instead of the app on phones only; see "Desktop only" in the styles. -->
+  <div id="mobile-block">
+    <div class="pk-blob is-idle" aria-hidden="true">
+      <div class="pk-blob__aura"></div><div class="pk-blob__aura"></div>
+      <div class="pk-blob__skin"></div>
+      <div class="pk-blob__blush"><b></b><b></b></div>
+      <div class="pk-blob__eyes">
+        <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
+        <div class="pk-blob__eye"><span class="pk-blob__dot"></span><span class="pk-blob__arc"></span></div>
+      </div>
+      <span class="pk-blob__brow"></span>
+      <span class="pk-blob__bubble"><b></b><b></b><b></b></span>
+    </div>
+    <h1 class="mobile-block-title">Poken is best used on Desktop</h1>
+    <p class="mobile-block-sub">Open poken.live on a laptop or desktop computer to learn and teach.</p>
+  </div>
 
   <!-- LANDING -->
   <div id="landing-screen">
