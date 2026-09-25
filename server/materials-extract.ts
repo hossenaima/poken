@@ -15,6 +15,19 @@ function truncate(s: string): string {
   return t.slice(0, MAX_EXTRACT_CHARS) + '\n\n[… truncated …]';
 }
 
+/** The PDF's own embedded text and its page count, read locally. Throws if the file won't parse. */
+export async function pdfTextLayer(buf: Buffer): Promise<{ text: string; pages: number }> {
+  // pdf-parse v2+ uses the PDFParse class (the default export is no longer a function)
+  const { PDFParse } = await import('pdf-parse');
+  const parser = new PDFParse({ data: new Uint8Array(buf) });
+  try {
+    const r = await parser.getText();
+    return { text: r?.text ?? '', pages: r?.total ?? 0 };
+  } finally {
+    await parser.destroy().catch(() => {});
+  }
+}
+
 export async function extractFromBuffer(
   buf: Buffer,
   mime: string,
@@ -40,25 +53,12 @@ export async function extractFromBuffer(
     }
   }
 
-  // PDF — pdf-parse v2+ uses PDFParse class (default export is no longer a function)
+  // PDF
   if (mime === 'application/pdf' || lower.endsWith('.pdf')) {
-    let parser: { getText(): Promise<{ text?: string }>; destroy(): Promise<void> } | null = null;
     try {
-      const { PDFParse } = await import('pdf-parse');
-      parser = new PDFParse({ data: new Uint8Array(buf) });
-      const textResult = await parser.getText();
-      const text = textResult?.text ?? '';
-      return { text: truncate(text) };
+      return { text: truncate((await pdfTextLayer(buf)).text) };
     } catch (e) {
       return { text: '', error: e instanceof Error ? e.message : 'PDF parse failed.' };
-    } finally {
-      if (parser) {
-        try {
-          await parser.destroy();
-        } catch {
-          /* ignore */
-        }
-      }
     }
   }
 

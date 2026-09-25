@@ -4,6 +4,7 @@
  * that preserves diagrams, charts, figures, equations, and layout context.
  */
 import type { GoogleGenAI } from '@google/genai';
+import { pdfTextLayer } from './materials-extract.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +27,12 @@ export interface VisionAnalysisResult {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const FAST_MODEL = 'gemini-2.5-flash';
+// Extraction is transcription, not reasoning. Measured on an 8-page handout and a photo of a
+// page: with thinking on, a photo took ~24 s and PDFs sometimes came back summarised to an
+// eighth of their text; with it off, a photo takes ~12 s and PDFs come back whole every time.
+const NO_THINKING = { thinkingConfig: { thinkingBudget: 0 } };
+// Below this much embedded text per page a PDF is treated as scanned and sent to vision.
+const MIN_TEXT_CHARS_PER_PAGE = 100;
 const MAX_INLINE_PDF_MB = 20;
 const CHUNK_PAGES = 10;
 const MAX_CONCURRENT = 3;
@@ -63,6 +70,25 @@ const PDF_CONTEXT_PROMPT = `You previously extracted content from a teaching doc
 3. **Key Questions:** What questions might a student ask about the visual content?
 
 Keep it concise but thorough. Format as plain text with clear headings.`;
+
+/**
+ * Read a PDF: its own text layer when it has one, vision only when it doesn't.
+ * Nearly every handout, exported deck and paper carries real text, and reading it locally takes
+ * milliseconds and returns all of it. Vision has to re-type the whole document as model output
+ * (~20 s for 8 pages), so it is kept for scanned and image-only PDFs, which have no text layer.
+ * The trade: a text-layer PDF no longer gets its figures described.
+ */
+export async function readPdf(ai: GoogleGenAI, buf: Buffer, filename: string): Promise<VisionAnalysisResult> {
+  try {
+    const { text, pages } = await pdfTextLayer(buf);
+    if (pages > 0 && text.replace(/\s/g, '').length / pages >= MIN_TEXT_CHARS_PER_PAGE) {
+      return { text: text.trim(), visualElements: [], filename, type: 'pdf', pageCount: pages };
+    }
+  } catch (e: any) {
+    console.warn(`[Vision] text layer unreadable for ${filename}, using vision:`, e?.message);
+  }
+  return analyzePdfWithVision(ai, buf, filename);
+}
 
 /**
  * Analyze a PDF using Gemini's native vision — sees text, images, charts, equations.
@@ -105,6 +131,7 @@ export async function analyzePdfWithVision(
     const gen = await ai.models.generateContent({
       model: FAST_MODEL,
       contents: [{ role: 'user', parts }],
+      config: NO_THINKING,
     });
 
     const raw = (gen.text || '').trim();
@@ -233,6 +260,7 @@ export async function analyzeImageWithVision(
           { text: IMAGE_ANALYSIS_PROMPT },
         ],
       }],
+      config: NO_THINKING,
     });
 
     const raw = (gen.text || '').trim();
