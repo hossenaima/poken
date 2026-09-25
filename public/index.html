@@ -1292,22 +1292,20 @@
     .learn-media-body > img { height: auto; object-fit: contain; }
     @media (max-width: 88rem) {
       /* An open upload outranks the contents: below this width they can't both sit beside the page
-         without squeezing the text, so the contents step aside while a file is open. */
+         without squeezing the text, so the contents step aside while a file is open. The page and
+         the file then share the width 11:8, the same ratio as 44rem:32rem, so they shrink together
+         and the file stays on the right all the way down to tablet width. */
       #learn-screen.with-media .learn-toc { display: none; }
-      #learn-screen.with-media .learn-layout { grid-template-columns: minmax(0, 44rem) 32rem; }
+      #learn-screen.with-media .learn-layout { grid-template-columns: minmax(0, 11fr) minmax(18rem, 8fr); max-width: 80.5rem; margin: 0 auto; }
       #learn-screen.with-media .learn-shell { grid-column: 1; }
       #learn-screen.with-media .learn-media { grid-column: 2; }
     }
-    @media (max-width: 78rem) {
-      /* Too narrow for the page and an upload side by side: the upload drops under the page. */
-      #learn-screen.with-media .learn-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 44rem) minmax(0, 1fr); }
-      #learn-screen.with-media .learn-shell, #learn-screen.with-media .learn-media { grid-column: 2; }
-      .learn-media { position: static; height: auto; max-height: 60vh; margin: 0 1.25rem 2rem; }
-    }
     @media (max-width: 75rem) { .learn-toc { display: none; } }   /* no margin left to hold it */
     @media (max-width: 48rem) {
+      /* Phones and small tablets: no room beside the page, so an opened upload drops under it. */
       .learn-layout, #learn-screen.with-media .learn-layout { grid-template-columns: minmax(0, 1fr); column-gap: 0; padding: 0; }
       .learn-shell, .learn-media, #learn-screen.with-media .learn-shell, #learn-screen.with-media .learn-media { grid-column: 1; }
+      .learn-media { position: static; height: auto; max-height: 60vh; margin: 0 1.25rem 2rem; }
     }
     .learn-view { flex: none; }
     .learn-view[hidden] { display: none; }
